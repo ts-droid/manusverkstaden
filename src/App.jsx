@@ -546,7 +546,7 @@ function SelectionToolbar({ position, onEdit, onNewChapter, onClose }) {
   );
 }
 
-// ─── EDIT MODAL ───
+// ─── EDIT MODAL with formatting ───
 function EditModal({ text, paragraphId, chapterTitle, onSave, onCreateChapter, onClose }) {
   const [editedText, setEditedText] = useState(text);
   const textareaRef = useRef(null);
@@ -561,17 +561,91 @@ function EditModal({ text, paragraphId, chapterTitle, onSave, onCreateChapter, o
     }
   }, []);
 
+  // Wrap selected text with markers (e.g., *italic*, **bold**)
+  const applyFormat = (marker) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const selected = editedText.substring(start, end);
+
+    if (start === end) return; // nothing selected
+
+    // Check if already wrapped with this marker – toggle off
+    const before = editedText.substring(0, start);
+    const after = editedText.substring(end);
+    const markerLen = marker.length;
+
+    if (before.endsWith(marker) && after.startsWith(marker)) {
+      // Remove markers
+      const newText = before.slice(0, -markerLen) + selected + after.slice(markerLen);
+      setEditedText(newText);
+      setTimeout(() => {
+        ta.selectionStart = start - markerLen;
+        ta.selectionEnd = end - markerLen;
+        ta.focus();
+      }, 0);
+    } else {
+      // Add markers
+      const newText = before + marker + selected + marker + after;
+      setEditedText(newText);
+      setTimeout(() => {
+        ta.selectionStart = start + markerLen;
+        ta.selectionEnd = end + markerLen;
+        ta.focus();
+        ta.style.height = "auto";
+        ta.style.height = Math.min(ta.scrollHeight, 500) + "px";
+      }, 0);
+    }
+  };
+
+  // Keyboard shortcuts
+  const handleKeyDown = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
+      e.preventDefault();
+      applyFormat('*');
+    } else if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+      e.preventDefault();
+      applyFormat('**');
+    }
+  };
+
+  const FormatBtn = ({ label, title, shortcut, onClick, preview }) => (
+    <button onClick={onClick} title={`${title} (${shortcut})`} style={{
+      background: "none", border: `1px solid ${border}`, borderRadius: 5, padding: "4px 10px",
+      cursor: "pointer", fontFamily: font, fontSize: 13, color: ink,
+      display: "flex", alignItems: "center", gap: 4, transition: "all 0.12s",
+    }}
+      onMouseEnter={e => { e.currentTarget.style.background = bg; e.currentTarget.style.borderColor = accent; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.borderColor = border; }}
+    >
+      <span style={preview}>{label}</span>
+    </button>
+  );
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
-      <div style={{ position: "relative", background: surface, borderRadius: 16, width: 680, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.18)" }}>
+      <div style={{ position: "relative", background: surface, borderRadius: 16, width: 720, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.18)" }}>
         {/* Header */}
-        <div style={{ padding: "20px 28px 16px", borderBottom: `1px solid ${border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-          <div>
-            <h3 style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Redigera text</h3>
-            <span style={{ fontFamily: uiFont, fontSize: 11, color: muted }}>{chapterTitle} · {wordCount} ord</span>
+        <div style={{ padding: "20px 28px 12px", borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div>
+              <h3 style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Redigera text</h3>
+              <span style={{ fontFamily: uiFont, fontSize: 11, color: muted }}>{chapterTitle} · {wordCount} ord</span>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
+
+          {/* Formatting toolbar */}
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <FormatBtn label="K" title="Kursiv" shortcut="⌘I" onClick={() => applyFormat('*')} preview={{ fontStyle: "italic" }} />
+            <FormatBtn label="F" title="Fetstil" shortcut="⌘B" onClick={() => applyFormat('**')} preview={{ fontWeight: 700 }} />
+            <div style={{ width: 1, height: 20, background: border, margin: "0 4px" }} />
+            <span style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>
+              Markera text → klicka format. *kursiv* · **fetstil**
+            </span>
+          </div>
         </div>
 
         {/* Editor */}
@@ -584,6 +658,7 @@ function EditModal({ text, paragraphId, chapterTitle, onSave, onCreateChapter, o
               e.target.style.height = "auto";
               e.target.style.height = Math.min(e.target.scrollHeight, 500) + "px";
             }}
+            onKeyDown={handleKeyDown}
             style={{
               width: "100%", minHeight: 200, padding: 16, borderRadius: 10, border: `1px solid ${border}`,
               fontFamily: font, fontSize: 15.5, lineHeight: 1.85, color: "#3d2e23",
@@ -1852,23 +1927,60 @@ export default function App() {
 
   const currentChapter = chapters.find(c => c.id === activeChapter) || chapters[0];
 
+  // Render inline formatting: **bold** and *italic*
+  const renderFormatted = (str, keyPrefix = "f") => {
+    // Split by **bold** first, then *italic*
+    const parts = [];
+    const boldRegex = /\*\*(.+?)\*\*/g;
+    let lastIdx = 0;
+    let match;
+
+    while ((match = boldRegex.exec(str)) !== null) {
+      if (match.index > lastIdx) {
+        // Process italic in the non-bold part
+        parts.push(...renderItalic(str.slice(lastIdx, match.index), `${keyPrefix}-${lastIdx}`));
+      }
+      parts.push(<strong key={`${keyPrefix}-b${match.index}`}>{match[1]}</strong>);
+      lastIdx = match.index + match[0].length;
+    }
+    if (lastIdx < str.length) {
+      parts.push(...renderItalic(str.slice(lastIdx), `${keyPrefix}-${lastIdx}`));
+    }
+    return parts.length ? parts : [str];
+  };
+
+  const renderItalic = (str, keyPrefix = "i") => {
+    const parts = [];
+    const italicRegex = /\*(.+?)\*/g;
+    let lastIdx = 0;
+    let match;
+
+    while ((match = italicRegex.exec(str)) !== null) {
+      if (match.index > lastIdx) parts.push(<span key={`${keyPrefix}-t${lastIdx}`}>{str.slice(lastIdx, match.index)}</span>);
+      parts.push(<em key={`${keyPrefix}-i${match.index}`}>{match[1]}</em>);
+      lastIdx = match.index + match[0].length;
+    }
+    if (lastIdx < str.length) parts.push(<span key={`${keyPrefix}-t${lastIdx}`}>{str.slice(lastIdx)}</span>);
+    return parts.length ? parts : [<span key={keyPrefix}>{str}</span>];
+  };
+
   const renderText = (para) => {
     const { text, suggestions } = para;
-    if (!suggestions || !suggestions.length) return <span>{text}</span>;
+    if (!suggestions || !suggestions.length) return renderFormatted(text, `p${para.id}`);
     const parts = [];
     let last = 0;
     const sorted = [...suggestions].filter(s => s.original).sort((a, b) => text.indexOf(a.original) - text.indexOf(b.original));
     for (const s of sorted) {
       const idx = text.indexOf(s.original, last);
       if (idx === -1) continue;
-      if (idx > last) parts.push(<span key={`t${last}`}>{text.slice(last, idx)}</span>);
+      if (idx > last) parts.push(<span key={`t${last}`}>{...renderFormatted(text.slice(last, idx), `t${last}`)}</span>);
       const isAcc = accepted.has(s.id), isRej = rejected.has(s.id), isAct = activeSuggestion === s.id;
       const p = PRIORITY[s.priority];
       if (p) {
-        // Rejected suggestions: show original text normally, no highlight
         if (isRej) {
-          parts.push(<span key={`s${s.id}`} data-suggestion-id={s.id}>{s.original}</span>);
+          parts.push(<span key={`s${s.id}`} data-suggestion-id={s.id}>{...renderFormatted(s.original, `r${s.id}`)}</span>);
         } else {
+          const displayText = isAcc && s.replacement ? s.replacement : s.original;
           parts.push(
             <span key={`s${s.id}`} data-suggestion-id={s.id} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
               background: isAcc ? "#dcfce7" : isAct ? `${p.color}30` : `${p.color}0c`,
@@ -1876,15 +1988,15 @@ export default function App() {
               padding: "1px 2px", borderRadius: 3, cursor: "pointer",
               transition: "all 0.3s", outline: isAct ? `2px solid ${p.color}50` : "none", outlineOffset: 1,
             }}>
-              {isAcc && s.replacement ? s.replacement : s.original}
+              {...renderFormatted(displayText, `s${s.id}`)}
             </span>
           );
         }
       }
       last = idx + s.original.length;
     }
-    if (last < text.length) parts.push(<span key="end">{text.slice(last)}</span>);
-    return parts.length ? parts : <span>{text}</span>;
+    if (last < text.length) parts.push(<span key="end">{...renderFormatted(text.slice(last), "end")}</span>);
+    return parts.length ? parts : renderFormatted(text, `p${para.id}`);
   };
 
   return (

@@ -139,6 +139,37 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
     }),
   ];
 
+  /**
+   * Parse markdown-style formatting into TextRun objects.
+   * Supports *italic* and **bold**.
+   */
+  function parseFormattedText(str, baseFont, baseSize) {
+    const runs = [];
+    // Match **bold** and *italic*
+    const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+    let lastIdx = 0;
+    let match;
+
+    while ((match = regex.exec(str)) !== null) {
+      // Add plain text before match
+      if (match.index > lastIdx) {
+        runs.push(new TextRun({ text: str.slice(lastIdx, match.index), font: baseFont, size: baseSize }));
+      }
+      if (match[2]) {
+        // **bold**
+        runs.push(new TextRun({ text: match[2], font: baseFont, size: baseSize, bold: true }));
+      } else if (match[3]) {
+        // *italic*
+        runs.push(new TextRun({ text: match[3], font: baseFont, size: baseSize, italics: true }));
+      }
+      lastIdx = match.index + match[0].length;
+    }
+    if (lastIdx < str.length) {
+      runs.push(new TextRun({ text: str.slice(lastIdx), font: baseFont, size: baseSize }));
+    }
+    return runs.length ? runs : [new TextRun({ text: str, font: baseFont, size: baseSize })];
+  }
+
   // ─── Chapter sections ───
   const chapterSections = chapters.map((chapter, chapterIdx) => {
     const paras = paragraphsByChapter?.[chapter.id] || [];
@@ -152,13 +183,7 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
       ...textParagraphs.map(text => new Paragraph({
         spacing: { line: lineSpacingTwips, after: Math.round(lineSpacingTwips * 0.5) },
         indent: { firstLine: 720 }, // 1.27 cm indent
-        children: [
-          new TextRun({
-            text: text.trim(),
-            font,
-            size: sizeHalfPts,
-          }),
-        ],
+        children: parseFormattedText(text.trim(), font, sizeHalfPts),
       })),
     ];
 
