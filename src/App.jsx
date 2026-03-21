@@ -861,7 +861,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
 }
 
 // ─── DEVELOP PANEL ───
-function DevelopPanel({ dnaProfile }) {
+function DevelopPanel({ dnaProfile, chapterContent, chapterTitle, onResult }) {
   const [tab, setTab] = useState("dna");
   const tabs = [
     { id: "dna", label: "Språklig DNA" },
@@ -883,7 +883,7 @@ function DevelopPanel({ dnaProfile }) {
       <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
         {tab === "dna" && <DNAView profile={dnaProfile} />}
         {tab === "emotion" && <EmotionView />}
-        {tab === "develop" && <DevelopView />}
+        {tab === "develop" && <DevelopView dnaProfile={dnaProfile} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} />}
         {tab === "brainstorm" && <BrainstormView />}
       </div>
     </div>
@@ -946,13 +946,83 @@ function EmotionView() {
   );
 }
 
-function DevelopView() {
+function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, onResult }) {
   const [mode, setMode] = useState(null);
+  const [userText, setUserText] = useState(inputText || "");
+  const [rewriteFocus, setRewriteFocus] = useState([]);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Sync input text when selection changes
+  useEffect(() => { if (inputText) setUserText(inputText); }, [inputText]);
+
   const modes = [
     { id: "expand", icon: "↔", label: "Bygga ut scen", desc: "Fördjupa en befintlig scen med sinnesintryck, dialog eller internmonolog" },
     { id: "rewrite", icon: "✎", label: "Skriva om", desc: "Omarbeta en passage – visa istället för att berätta" },
     { id: "newscene", icon: "+", label: "Ny scen / kapitel", desc: "Generera helt nytt textavsnitt som passar in i manuset" },
   ];
+
+  const rewriteOptions = ["Visa istf berätta", "Mer dialog", "Mer sinnesintryck", "Höja tempot", "Sänka tempot", "Fördjupa känsla"];
+
+  const handleGenerate = async () => {
+    if (!userText.trim() && mode !== "newscene") return;
+    setGenerating(true);
+    setError(null);
+
+    const dnaStr = dnaProfile ? `\nFörfattarens DNA-profil: Perspektiv: ${dnaProfile.perspective}, Tempus: ${dnaProfile.tense}, Tonalitet: ${dnaProfile.tonality}, Meningslängd: ${dnaProfile.avgSentenceLen}, Dialogstil: ${dnaProfile.dialogStyle}, Bildspråk: ${dnaProfile.dominantImagery}` : "";
+
+    const contextSnippet = chapterContent ? chapterContent.slice(0, 6000) : "";
+
+    let systemMsg = `Du är en kreativ skrivassistent för svenska manus. Du matchar alltid författarens stil, ton och röst.${dnaStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara ALLTID med JSON i detta format:\n{\n  "developedText": "<den utvecklade texten>",\n  "reasoning": "<1-3 meningar som förklarar ditt resonemang och hur texten passar in i berättelsen>"\n}`;
+
+    let userMsg = "";
+    if (mode === "expand") {
+      userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst:\n\n${userText}`;
+    } else if (mode === "rewrite") {
+      const focus = rewriteFocus.length > 0 ? `\nFokus: ${rewriteFocus.join(", ")}` : "";
+      userMsg = `Skriv om denna passage.${focus}\n\n${userText}`;
+    } else if (mode === "newscene") {
+      userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil:\n\n${userText}`;
+    }
+
+    try {
+      const response = await sendMessage({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: systemMsg,
+        messages: [{ role: "user", content: userMsg }],
+      });
+
+      if (response) {
+        const text = extractText(response);
+        const parsed = parseJsonResponse(text);
+        if (parsed?.developedText) {
+          onResult({
+            mode,
+            modeLabel: modes.find(m => m.id === mode)?.label,
+            originalText: userText,
+            developedText: parsed.developedText,
+            reasoning: parsed.reasoning || "AI har genererat en ny version baserat på din text och författarprofil.",
+          });
+        } else {
+          // Fallback: treat the whole response as text
+          onResult({
+            mode,
+            modeLabel: modes.find(m => m.id === mode)?.label,
+            originalText: userText,
+            developedText: text,
+            reasoning: "Texten har genererats baserat på din förfrågan.",
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Develop failed:", err);
+      setError(err.message || "Generering misslyckades. Kontrollera API-nyckeln.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div style={{ fontFamily: uiFont, fontSize: 12 }}>
       {!mode ? (
@@ -965,7 +1035,10 @@ function DevelopView() {
               width: "100%", textAlign: "left", padding: "12px 14px", borderRadius: 9, cursor: "pointer", fontFamily: uiFont,
               border: `1px solid ${border}`, background: surface, marginBottom: 6, display: "flex", gap: 12, alignItems: "center",
               transition: "all 0.15s",
-            }}>
+            }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = accent}
+              onMouseLeave={e => e.currentTarget.style.borderColor = border}
+            >
               <span style={{ width: 32, height: 32, borderRadius: 7, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: accent, fontWeight: 700, flexShrink: 0 }}>{m.icon}</span>
               <div>
                 <div style={{ fontWeight: 600, color: ink, fontSize: 12.5 }}>{m.label}</div>
@@ -976,7 +1049,7 @@ function DevelopView() {
         </>
       ) : (
         <>
-          <button onClick={() => setMode(null)} style={{ background: "none", border: "none", fontFamily: uiFont, fontSize: 11, color: muted, cursor: "pointer", marginBottom: 12, padding: 0 }}>← Tillbaka</button>
+          <button onClick={() => { setMode(null); setError(null); }} style={{ background: "none", border: "none", fontFamily: uiFont, fontSize: 11, color: muted, cursor: "pointer", marginBottom: 12, padding: 0 }}>← Tillbaka</button>
           <div style={{ padding: "14px 14px", background: bg, borderRadius: 9 }}>
             <div style={{ fontWeight: 600, color: ink, fontSize: 13, marginBottom: 8 }}>{modes.find(m => m.id === mode)?.label}</div>
             <div style={{ fontSize: 11, color: muted, lineHeight: 1.5, marginBottom: 12 }}>
@@ -986,17 +1059,46 @@ function DevelopView() {
             </div>
             {mode === "rewrite" && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
-                {["Visa istf berätta", "Mer dialog", "Mer sinnesintryck", "Höja tempot", "Sänka tempot", "Fördjupa känsla"].map(opt => (
-                  <span key={opt} style={{ padding: "4px 10px", borderRadius: 12, border: `1px solid ${border}`, fontSize: 10, color: ink, cursor: "pointer", background: surface }}>{opt}</span>
-                ))}
+                {rewriteOptions.map(opt => {
+                  const active = rewriteFocus.includes(opt);
+                  return (
+                    <span key={opt} onClick={() => setRewriteFocus(prev => active ? prev.filter(x => x !== opt) : [...prev, opt])} style={{
+                      padding: "4px 10px", borderRadius: 12, fontSize: 10, cursor: "pointer", transition: "all 0.12s",
+                      border: active ? `1.5px solid ${accent}` : `1px solid ${border}`,
+                      background: active ? accentLight : surface, color: active ? accent : ink, fontWeight: active ? 600 : 400,
+                    }}>{opt}</span>
+                  );
+                })}
               </div>
             )}
-            <textarea placeholder={mode === "newscene" ? "Beskriv scenen: vad ska hända, vilka karaktärer, vilken stämning..." : "Klistra in eller markera text i manuset..."} style={{
-              width: "100%", minHeight: 80, padding: 10, borderRadius: 7, border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 11.5,
-              resize: "vertical", background: surface, color: ink, outline: "none", boxSizing: "border-box",
-            }} />
-            <button style={{ marginTop: 8, width: "100%", padding: "10px 0", borderRadius: 7, border: "none", background: accent, color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}>
-              Generera förslag
+            <textarea
+              value={userText}
+              onChange={e => setUserText(e.target.value)}
+              placeholder={mode === "newscene" ? "Beskriv scenen: vad ska hända, vilka karaktärer, vilken stämning..." : "Klistra in eller markera text i manuset..."}
+              style={{
+                width: "100%", minHeight: 80, padding: 10, borderRadius: 7, border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 11.5,
+                resize: "vertical", background: surface, color: ink, outline: "none", boxSizing: "border-box",
+              }}
+            />
+            {error && (
+              <div style={{ marginTop: 6, padding: "6px 10px", borderRadius: 6, background: "#fef2f2", color: "#b91c1c", fontSize: 10.5 }}>{error}</div>
+            )}
+            <button
+              onClick={handleGenerate}
+              disabled={generating || (!userText.trim() && mode !== "newscene")}
+              style={{
+                marginTop: 8, width: "100%", padding: "10px 0", borderRadius: 7, border: "none",
+                background: generating ? "#d4c8bb" : accent, color: "#fff", fontSize: 12, fontWeight: 600,
+                cursor: generating ? "default" : "pointer", fontFamily: uiFont,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}
+            >
+              {generating ? (
+                <>
+                  <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  AI skriver...
+                </>
+              ) : "Generera förslag"}
             </button>
           </div>
         </>
@@ -1166,6 +1268,136 @@ function PricingPage({ onBack }) {
                 <span style={{ color: muted, textDecoration: "line-through" }}>{p.trad}</span>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DEVELOP RESULT MODAL ───
+function DevelopResultModal({ result, onInsert, onRegenerate, onClose }) {
+  const [editing, setEditing] = useState(false);
+  const [editedText, setEditedText] = useState(result.developedText);
+  const textareaRef = useRef(null);
+  const wordCount = editedText.trim().split(/\s+/).filter(w => w).length;
+
+  useEffect(() => {
+    if (editing && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + "px";
+    }
+  }, [editing]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
+      <div style={{ position: "relative", background: surface, borderRadius: 16, width: 720, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.18)" }}>
+        {/* Header */}
+        <div style={{ padding: "20px 28px 14px", borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <h3 style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>
+                {result.modeLabel || "Utvecklad text"}
+              </h3>
+              <span style={{ fontFamily: uiFont, fontSize: 11, color: muted }}>{wordCount} ord genererade</span>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
+          </div>
+        </div>
+
+        {/* AI Reasoning */}
+        <div style={{ padding: "12px 28px", background: "#fdf8f0", borderBottom: `1px solid ${border}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>💡</span>
+            <div>
+              <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: accent, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>AI:ns resonemang</div>
+              <p style={{ fontFamily: uiFont, fontSize: 12, color: "#5a4e42", lineHeight: 1.6, margin: 0 }}>{result.reasoning}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+          {/* Original text (if applicable) */}
+          {result.originalText && result.mode !== "newscene" && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: uiFont, fontSize: 9.5, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Original</div>
+              <div style={{
+                padding: "12px 14px", borderRadius: 8, background: bg, border: `1px solid ${border}`,
+                fontFamily: font, fontSize: 14, lineHeight: 1.8, color: muted, fontStyle: "italic",
+                maxHeight: 120, overflowY: "auto",
+              }}>
+                {result.originalText.slice(0, 500)}{result.originalText.length > 500 ? "..." : ""}
+              </div>
+            </div>
+          )}
+
+          {/* Developed text */}
+          <div>
+            <div style={{ fontFamily: uiFont, fontSize: 9.5, fontWeight: 600, color: "#27864a", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              {editing ? "Redigera texten" : "Genererad text"}
+            </div>
+            {editing ? (
+              <textarea
+                ref={textareaRef}
+                value={editedText}
+                onChange={(e) => {
+                  setEditedText(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = Math.min(e.target.scrollHeight, 400) + "px";
+                }}
+                style={{
+                  width: "100%", minHeight: 150, padding: 14, borderRadius: 8, border: `2px solid ${accent}`,
+                  fontFamily: font, fontSize: 15, lineHeight: 1.85, color: "#3d2e23",
+                  resize: "none", background: "#fff", outline: "none", boxSizing: "border-box",
+                }}
+              />
+            ) : (
+              <div style={{
+                padding: "14px 16px", borderRadius: 8, background: "#f0faf3", border: "1px solid #27864a30",
+                fontFamily: font, fontSize: 15, lineHeight: 1.85, color: ink,
+              }}>
+                {editedText}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ padding: "14px 28px 20px", borderTop: `1px solid ${border}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {editing ? (
+                <button onClick={() => setEditing(false)} style={{
+                  fontFamily: uiFont, fontSize: 12, padding: "9px 18px", borderRadius: 7,
+                  border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500,
+                }}>✓ Klar med redigering</button>
+              ) : (
+                <button onClick={() => setEditing(true)} style={{
+                  fontFamily: uiFont, fontSize: 12, padding: "9px 18px", borderRadius: 7,
+                  border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500,
+                  display: "flex", alignItems: "center", gap: 5,
+                }}>✎ Redigera</button>
+              )}
+              <button onClick={onRegenerate} style={{
+                fontFamily: uiFont, fontSize: 12, padding: "9px 18px", borderRadius: 7,
+                border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 5,
+              }}>↻ Generera om</button>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={onClose} style={{
+                fontFamily: uiFont, fontSize: 12, padding: "9px 18px", borderRadius: 7,
+                border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer",
+              }}>Avbryt</button>
+              <button onClick={() => onInsert(editedText)} style={{
+                fontFamily: uiFont, fontSize: 12, padding: "9px 22px", borderRadius: 7,
+                border: "none", background: "#27864a", color: "#fff", cursor: "pointer", fontWeight: 600,
+                display: "flex", alignItems: "center", gap: 5,
+              }}>↓ Infoga i manus</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1383,6 +1615,7 @@ export default function App() {
   const [selectionToolbar, setSelectionToolbar] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
+  const [developResult, setDevelopResult] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
   const mainRef = useRef(null);
   const saveTimerRef = useRef(null);
@@ -2178,7 +2411,7 @@ export default function App() {
               </div>
             </>
           )}
-          {rightPanel === "develop" && <DevelopPanel dnaProfile={dnaProfile} />}
+          {rightPanel === "develop" && <DevelopPanel dnaProfile={dnaProfile} chapterContent={currentChapter?.content} chapterTitle={currentChapter?.title} onResult={setDevelopResult} />}
           {rightPanel === "translate" && <TranslatePanel langs={transLangs} />}
         </aside>
       </div>
@@ -2213,6 +2446,32 @@ export default function App() {
           onSave={(newText) => handleSaveParagraph(editModal.paraId, newText)}
           onCreateChapter={(text) => handleCreateChapterFromText(text, editModal.paraId)}
           onClose={() => setEditModal(null)}
+        />
+      )}
+
+      {/* DEVELOP RESULT MODAL */}
+      {developResult && (
+        <DevelopResultModal
+          result={developResult}
+          onInsert={(text) => {
+            // Insert developed text at end of current chapter
+            if (activeChapter) {
+              const chapter = chapters.find(c => c.id === activeChapter);
+              if (chapter) {
+                const newContent = chapter.content + "\n\n" + text;
+                setChapters(prev => prev.map(ch =>
+                  ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
+                ));
+                setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: splitIntoParagraphs(newContent) }));
+              }
+            }
+            setDevelopResult(null);
+          }}
+          onRegenerate={() => {
+            // Close modal and let user regenerate from the panel
+            setDevelopResult(null);
+          }}
+          onClose={() => setDevelopResult(null)}
         />
       )}
 
