@@ -4,6 +4,8 @@ import { sendMessage, extractText, parseJsonResponse } from "./lib/ai-client";
 import { buildPrompt, buildReviewRequest } from "./lib/prompt-builder";
 import { saveProject, loadProject, clearProject, hasSavedProject } from "./lib/storage";
 import { exportToDocx, downloadBlob } from "./lib/export";
+import { useAuth } from "./contexts/AuthContext";
+import { apiClient } from "./lib/api-client";
 
 // ─── DATA ───
 const GENRES = [
@@ -1593,9 +1595,443 @@ function RestorePrompt({ timestamp, onRestore, onDiscard }) {
   );
 }
 
+// ─── AUTH PAGE ───
+function AuthPage({ onLogin, onRegister, error: externalError }) {
+  const [tab, setTab] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      await onLogin(email, password);
+    } catch (err) {
+      setError(err.message || "Inloggning misslyckades");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (password !== confirmPassword) {
+      setError("Lösenorden matchar inte");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Lösenordet måste vara minst 6 tecken");
+      return;
+    }
+    setLoading(true);
+    try {
+      await onRegister(email, password, name);
+    } catch (err) {
+      setError(err.message || "Registrering misslyckades");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const displayError = error || externalError;
+
+  const inputStyle = {
+    width: "100%", padding: "11px 14px", borderRadius: 8, border: `1px solid ${border}`,
+    background: bg, fontFamily: uiFont, fontSize: 13, color: ink, outline: "none",
+    boxSizing: "border-box", transition: "border-color 0.2s",
+  };
+  const labelStyle = { fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: muted, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.04em" };
+
+  return (
+    <div style={{ minHeight: "100vh", background: bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: font }}>
+      <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Logo */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <div style={{ width: 36, height: 36, background: ink, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 18, fontWeight: 700 }}>M</div>
+        <span style={{ fontSize: 24, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
+      </div>
+      <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 32px", textAlign: "center" }}>AI-stödd manusgranskning for författare, redaktörer och förlag</p>
+
+      <div style={{ width: "100%", maxWidth: 420, background: surface, borderRadius: 16, padding: "32px 36px", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 0, marginBottom: 28, borderBottom: `2px solid ${border}` }}>
+          {[{ id: "login", label: "Logga in" }, { id: "register", label: "Skapa konto" }].map(t => (
+            <button key={t.id} onClick={() => { setTab(t.id); setError(null); }} style={{
+              flex: 1, padding: "10px 0", border: "none", background: "none", fontFamily: uiFont,
+              fontSize: 13, fontWeight: 600, cursor: "pointer", color: tab === t.id ? accent : muted,
+              borderBottom: tab === t.id ? `2px solid ${accent}` : "2px solid transparent",
+              marginBottom: -2, transition: "all 0.2s",
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {displayError && (
+          <div style={{ marginBottom: 16, padding: "10px 14px", background: "#fdf0ef", borderRadius: 8, borderLeft: `3px solid #c0392b`, fontFamily: uiFont, fontSize: 12, color: "#c0392b" }}>
+            {displayError}
+          </div>
+        )}
+
+        {tab === "login" ? (
+          <form onSubmit={handleLogin}>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>E-post</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={labelStyle}>Lösenord</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Ditt lösenord" style={inputStyle} />
+            </div>
+            <button type="submit" disabled={loading} style={{
+              width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
+              background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
+              cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
+            }}>{loading ? "Loggar in..." : "Logga in"}</button>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister}>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Namn</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Ditt namn" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>E-post</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Lösenord</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Minst 6 tecken" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={labelStyle}>Bekräfta lösenord</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required placeholder="Upprepa lösenord" style={inputStyle} />
+            </div>
+            <button type="submit" disabled={loading} style={{
+              width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
+              background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
+              cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
+            }}>{loading ? "Skapar konto..." : "Skapa konto"}</button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD VIEW ───
+function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile }) {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiClient.getProjects();
+        setProjects(data.projects || data || []);
+      } catch (err) {
+        console.error("Failed to load projects:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleDelete = async (id) => {
+    if (deleting) return;
+    setDeleting(id);
+    try {
+      await apiClient.deleteProject(id);
+      setProjects(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      console.error("Delete failed:", err);
+    } finally {
+      setDeleting(null);
+      setMenuOpen(null);
+    }
+  };
+
+  const formatDate = (d) => {
+    if (!d) return "";
+    const date = new Date(d);
+    return date.toLocaleDateString("sv-SE", { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: bg, fontFamily: font }}>
+      <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Header */}
+      <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: surface }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 30, height: 30, background: ink, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 15, fontWeight: 700 }}>M</div>
+          <span style={{ fontSize: 17, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>{user?.name || user?.email}</span>
+          <button onClick={onProfile} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Profil</button>
+          <button onClick={onLogout} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>Logga ut</button>
+        </div>
+      </header>
+
+      {/* Content */}
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 24px" }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700, color: ink, margin: "0 0 6px", letterSpacing: "-0.02em" }}>Dina manus</h1>
+        <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 32px" }}>Välj ett projekt att arbeta med eller skapa ett nytt.</p>
+
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 60 }}>
+            <div style={{ width: 36, height: 36, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
+            <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>Laddar projekt...</div>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260, 1fr))", gap: 16 }}>
+            {/* New project card */}
+            <button onClick={onNewProject} style={{
+              padding: "32px 20px", borderRadius: 14, border: `2px dashed ${border}`, background: "transparent",
+              cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              gap: 10, minHeight: 180, transition: "all 0.2s",
+            }}>
+              <div style={{ width: 48, height: 48, borderRadius: "50%", background: accentLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, color: accent }}>+</div>
+              <span style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: accent }}>Nytt manus</span>
+            </button>
+
+            {/* Project cards */}
+            {projects.map(project => {
+              const totalWords = project.wordCount || project.chapters?.reduce((s, c) => s + (c.wordCount || 0), 0) || 0;
+              const chapterCount = project.chapterCount || project.chapters?.length || 0;
+              const progress = project.progress || 0;
+              return (
+                <div key={project.id} style={{
+                  background: surface, borderRadius: 14, padding: "20px 20px 16px", border: `1px solid ${border}`,
+                  display: "flex", flexDirection: "column", gap: 10, position: "relative", minHeight: 180,
+                }}>
+                  {/* Three-dot menu */}
+                  <div style={{ position: "absolute", top: 12, right: 12 }}>
+                    <button onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === project.id ? null : project.id); }} style={{
+                      background: "none", border: "none", cursor: "pointer", padding: "4px 6px", fontSize: 16, color: muted, lineHeight: 1,
+                    }}>...</button>
+                    {menuOpen === project.id && (
+                      <div style={{ position: "absolute", right: 0, top: "100%", background: surface, border: `1px solid ${border}`, borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", zIndex: 10, minWidth: 120, overflow: "hidden" }}>
+                        <button onClick={() => handleDelete(project.id)} disabled={deleting === project.id} style={{
+                          width: "100%", padding: "9px 14px", border: "none", background: "none", textAlign: "left",
+                          fontFamily: uiFont, fontSize: 12, color: "#c0392b", cursor: "pointer",
+                        }}>{deleting === project.id ? "Raderar..." : "Radera"}</button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <h3 style={{ fontFamily: font, fontSize: 16, fontWeight: 700, color: ink, margin: "0 0 4px", letterSpacing: "-0.01em", paddingRight: 24 }}>{project.title || "Namnlöst manus"}</h3>
+                    {project.genre && <span style={{ fontFamily: uiFont, fontSize: 10, color: muted, background: bg, padding: "2px 8px", borderRadius: 6, fontWeight: 500 }}>{project.genre}</span>}
+                  </div>
+
+                  <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, display: "flex", gap: 12 }}>
+                    <span>{chapterCount} kapitel</span>
+                    <span>{totalWords.toLocaleString()} ord</span>
+                  </div>
+
+                  {/* Progress bar */}
+                  {progress > 0 && (
+                    <div style={{ height: 4, background: border, borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${Math.min(progress, 100)}%`, background: accent, borderRadius: 2, transition: "width 0.3s" }} />
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>{formatDate(project.updatedAt || project.updated_at)}</span>
+                    <button onClick={() => onOpenProject(project)} style={{
+                      fontFamily: uiFont, fontSize: 11, padding: "6px 16px", borderRadius: 7, border: "none",
+                      background: accent, color: "#fff", cursor: "pointer", fontWeight: 600,
+                    }}>Öppna</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── PROFILE VIEW ───
+function ProfileView({ user, onBack }) {
+  const [usage, setUsage] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [loadingUsage, setLoadingUsage] = useState(true);
+  const [upgrading, setUpgrading] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [usageData, projectData] = await Promise.all([
+          apiClient.getUsage().catch(() => null),
+          apiClient.getProjects().catch(() => ({ projects: [] })),
+        ]);
+        if (usageData) setUsage(usageData);
+        setProjects(projectData.projects || projectData || []);
+      } catch (err) {
+        console.error("Profile load error:", err);
+      } finally {
+        setLoadingUsage(false);
+      }
+    })();
+  }, []);
+
+  const handleUpgrade = async () => {
+    setUpgrading(true);
+    try {
+      if (user.plan && user.plan !== "trial") {
+        const res = await apiClient.openPortal();
+        if (res.url) window.location.href = res.url;
+      } else {
+        const res = await apiClient.createCheckout();
+        if (res.url) window.location.href = res.url;
+      }
+    } catch (err) {
+      console.error("Upgrade error:", err);
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const planLabels = { trial: "PROVA", basic: "GRUND", publisher: "FÖRLAG" };
+  const planColors = { trial: muted, basic: accent, publisher: "#27864a" };
+  const currentPlan = user?.plan || "trial";
+
+  const sectionStyle = { background: surface, borderRadius: 14, padding: "24px 28px", border: `1px solid ${border}`, marginBottom: 20 };
+  const sectionTitle = { fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 16px" };
+  const statRow = { display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${border}`, fontFamily: uiFont, fontSize: 12.5 };
+
+  return (
+    <div style={{ minHeight: "100vh", background: bg, fontFamily: font }}>
+      <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Header */}
+      <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", padding: "0 24px", background: surface }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", fontFamily: uiFont, fontSize: 12, color: muted, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 16 }}>&larr;</span> Tillbaka till dashboard
+        </button>
+      </header>
+
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px" }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700, color: ink, margin: "0 0 32px", letterSpacing: "-0.02em" }}>Min profil</h1>
+
+        {/* Account info */}
+        <div style={sectionStyle}>
+          <h2 style={sectionTitle}>Kontoinformation</h2>
+          <div style={statRow}>
+            <span style={{ color: muted }}>Namn</span>
+            <span style={{ color: ink, fontWeight: 500 }}>{user?.name || "—"}</span>
+          </div>
+          <div style={statRow}>
+            <span style={{ color: muted }}>E-post</span>
+            <span style={{ color: ink, fontWeight: 500 }}>{user?.email || "—"}</span>
+          </div>
+          <div style={{ ...statRow, borderBottom: "none" }}>
+            <span style={{ color: muted }}>Plan</span>
+            <span style={{
+              fontFamily: uiFont, fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 6,
+              background: `${planColors[currentPlan]}18`, color: planColors[currentPlan],
+            }}>{planLabels[currentPlan] || currentPlan}</span>
+          </div>
+        </div>
+
+        {/* Usage */}
+        <div style={sectionStyle}>
+          <h2 style={sectionTitle}>Månadens användning</h2>
+          {loadingUsage ? (
+            <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, padding: 16, textAlign: "center" }}>Laddar...</div>
+          ) : usage ? (
+            <>
+              <div style={statRow}>
+                <span style={{ color: muted }}>Granskningar</span>
+                <span style={{ color: ink, fontWeight: 500 }}>{usage.reviews ?? usage.reviewCount ?? 0}</span>
+              </div>
+              <div style={statRow}>
+                <span style={{ color: muted }}>DNA-profiler</span>
+                <span style={{ color: ink, fontWeight: 500 }}>{usage.dnaProfiles ?? usage.dna ?? 0}</span>
+              </div>
+              <div style={statRow}>
+                <span style={{ color: muted }}>Utveckling</span>
+                <span style={{ color: ink, fontWeight: 500 }}>{usage.development ?? usage.develop ?? 0}</span>
+              </div>
+              <div style={statRow}>
+                <span style={{ color: muted }}>Översättningar</span>
+                <span style={{ color: ink, fontWeight: 500 }}>{usage.translations ?? usage.translate ?? 0}</span>
+              </div>
+              <div style={{ ...statRow, borderBottom: "none", fontWeight: 600 }}>
+                <span style={{ color: ink }}>Total kostnad</span>
+                <span style={{ color: accent }}>{usage.totalCost != null ? `${usage.totalCost} kr` : "—"}</span>
+              </div>
+            </>
+          ) : (
+            <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, padding: 8 }}>Ingen data tillgänglig</div>
+          )}
+        </div>
+
+        {/* Projects */}
+        <div style={sectionStyle}>
+          <h2 style={sectionTitle}>Projekt</h2>
+          {projects.length === 0 ? (
+            <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, padding: 8 }}>Inga projekt ännu</div>
+          ) : (
+            projects.map((p, i) => (
+              <div key={p.id} style={{ ...statRow, borderBottom: i < projects.length - 1 ? `1px solid ${border}` : "none" }}>
+                <span style={{ color: ink }}>{p.title || "Namnlöst"}</span>
+                <span style={{ color: muted, fontSize: 11 }}>{p.chapterCount || p.chapters?.length || 0} kap</span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Publishing placeholder */}
+        <div style={sectionStyle}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <h2 style={{ ...sectionTitle, margin: 0 }}>Publicering</h2>
+            <span style={{ fontFamily: uiFont, fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: `${accent}18`, color: accent }}>Kommer snart</span>
+          </div>
+          <div style={{ display: "flex", gap: 20, fontFamily: uiFont, fontSize: 12, color: muted }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 28, marginBottom: 4, opacity: 0.5 }}>📖</div>
+              <span>E-bok</span>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 28, marginBottom: 4, opacity: 0.5 }}>🎧</div>
+              <span>Ljudbok</span>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 28, marginBottom: 4, opacity: 0.5 }}>🖨</div>
+              <span>Tryck</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Upgrade button */}
+        <button onClick={handleUpgrade} disabled={upgrading} style={{
+          width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
+          background: upgrading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
+          cursor: upgrading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
+        }}>{upgrading ? "Laddar..." : "Uppgradera plan"}</button>
+      </div>
+    </div>
+  );
+}
+
 // ═══ MAIN APP ═══
 export default function App() {
-  // Flow: "loading" → "upload" → "settings" → "processing" → "editor"
+  const { user, loading: authLoading, login, register, logout, isAuthenticated } = useAuth();
+
+  // Flow: "auth" → "dashboard" → "upload" → "settings" → "processing" → "editor" / "profile"
   const [view, setView] = useState("loading"); // start with loading to check for saved data
   const [uploadedFile, setUploadedFile] = useState(null);
   const [chapters, setChapters] = useState([]);
@@ -1624,6 +2060,11 @@ export default function App() {
 
   // ─── RESTORE ON MOUNT ───
   useEffect(() => {
+    if (authLoading) return; // wait for auth to settle
+    if (!isAuthenticated) {
+      setView("auth");
+      return;
+    }
     (async () => {
       try {
         const saved = await loadProject();
@@ -1642,14 +2083,14 @@ export default function App() {
           setView("editor");
           autoSaveEnabled.current = true;
         } else {
-          setView("upload");
+          setView("dashboard");
         }
       } catch (err) {
         console.error("Restore failed:", err);
-        setView("upload");
+        setView("dashboard");
       }
     })();
-  }, []);
+  }, [authLoading, isAuthenticated]);
 
   // ─── AUTO-SAVE ───
   useEffect(() => {
@@ -1696,7 +2137,7 @@ export default function App() {
     setModules([]);
     setUploadedFile(null);
     setActiveChapter(null);
-    setView("upload");
+    setView("dashboard");
   };
 
   // Step 1 → Step 2
@@ -2144,7 +2585,9 @@ export default function App() {
   const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
 
   // ─── RENDER ───
-  if (view === "loading") return (
+
+  // Auth loading spinner
+  if (authLoading || view === "loading") return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, fontFamily: uiFont }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ width: 40, height: 40, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
@@ -2153,6 +2596,31 @@ export default function App() {
       </div>
     </div>
   );
+
+  // Not authenticated → show auth page
+  if (!isAuthenticated) return (
+    <AuthPage onLogin={login} onRegister={register} />
+  );
+
+  // Dashboard
+  if (view === "dashboard" || (view === "loading" && isAuthenticated)) return (
+    <DashboardView
+      user={user}
+      onOpenProject={(project) => {
+        // TODO: load project data into editor state
+        setView("upload");
+      }}
+      onNewProject={() => setView("upload")}
+      onLogout={async () => { await logout(); setView("loading"); }}
+      onProfile={() => setView("profile")}
+    />
+  );
+
+  // Profile
+  if (view === "profile") return (
+    <ProfileView user={user} onBack={() => setView("dashboard")} />
+  );
+
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
   if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} onStart={handleStartProcessing} onBack={() => setView("upload")} />;
   if (view === "processing") return <ProcessingView chapters={chapters} statusText={processingStatus} />;
