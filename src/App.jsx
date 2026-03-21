@@ -1483,9 +1483,11 @@ export default function App() {
       updatedChapters[i] = { ...updatedChapters[i], status: "done" };
       setChapters([...updatedChapters]);
 
-      // Pause between chapters to avoid rate limiting
+      // Longer pause between chapters to avoid rate limiting (API allows ~5 req/min)
       if (i < updatedChapters.length - 1) {
-        await new Promise(r => setTimeout(r, 1500));
+        const pauseMs = 8000; // 8 seconds between chapters
+        setProcessingStatus(`Paus innan nästa kapitel... (${i + 2 - skipped}/${updatedChapters.length - skipped})`);
+        await new Promise(r => setTimeout(r, pauseMs));
       }
     }
 
@@ -1585,6 +1587,85 @@ export default function App() {
   };
 
   // Split chapter at a paragraph boundary
+  // ─── ANALYZE ALL UNREVIEWED CHAPTERS ───
+  const [batchAnalyzing, setBatchAnalyzing] = useState(false);
+  const handleAnalyzeUnreviewed = async () => {
+    if (batchAnalyzing) return;
+    setBatchAnalyzing(true);
+
+    const systemPrompt = buildPrompt({
+      project: { title: uploadedFile?.name?.replace(/\.[^.]+$/, '') },
+      genres,
+      modules: { develop: modules.includes("develop"), translate: modules.includes("translate") },
+      translationLanguages: transLangs,
+    });
+
+    // Find chapters without suggestions
+    const unreviewed = chapters.filter(ch => {
+      const paras = paragraphsByChapter[ch.id] || [];
+      return !paras.some(p => p.suggestions?.length > 0);
+    });
+
+    if (unreviewed.length === 0) {
+      setBatchAnalyzing(false);
+      return;
+    }
+
+    for (let i = 0; i < unreviewed.length; i++) {
+      const ch = unreviewed[i];
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
+      setProcessingStatus(`Analyserar ${ch.title} (${i + 1}/${unreviewed.length})...`);
+
+      // Ensure paragraphs exist
+      let paras = paragraphsByChapter[ch.id];
+      if (!paras || paras.length === 0) {
+        paras = splitIntoParagraphs(ch.content);
+        setParagraphsByChapter(prev => ({ ...prev, [ch.id]: paras }));
+      }
+
+      let success = false;
+      for (let attempt = 0; attempt < 3 && !success; attempt++) {
+        try {
+          if (attempt > 0) {
+            const wait = Math.pow(2, attempt) * 3000;
+            setProcessingStatus(`Retry ${attempt} för ${ch.title} – väntar ${wait / 1000}s...`);
+            await new Promise(r => setTimeout(r, wait));
+          }
+
+          const request = buildReviewRequest(systemPrompt, ch.content);
+          const response = await sendMessage(request);
+
+          if (response) {
+            const text = extractText(response);
+            const parsed = parseJsonResponse(text);
+            if (parsed?.suggestions?.length) {
+              const enrichedParas = attachSuggestionsToParagraphs(paras, parsed.suggestions, ch.id);
+              setParagraphsByChapter(prev => ({ ...prev, [ch.id]: enrichedParas }));
+            }
+          }
+          success = true;
+        } catch (err) {
+          console.error(`Batch review failed for ${ch.title} (attempt ${attempt + 1}):`, err);
+          if (attempt === 2) {
+            setProcessingStatus(`⚠ ${ch.title} kunde inte analyseras`);
+            await new Promise(r => setTimeout(r, 1500));
+          }
+        }
+      }
+
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "done" } : c));
+
+      // 10 second pause between chapters to stay under rate limit
+      if (i < unreviewed.length - 1) {
+        setProcessingStatus(`Paus innan ${unreviewed[i + 1].title}... (${i + 2}/${unreviewed.length})`);
+        await new Promise(r => setTimeout(r, 10000));
+      }
+    }
+
+    setProcessingStatus("");
+    setBatchAnalyzing(false);
+  };
+
   const handleSplitChapter = (chapterId, paragraphIndex) => {
     const chapter = chapters.find(c => c.id === chapterId);
     if (!chapter) return;
@@ -1845,6 +1926,26 @@ export default function App() {
             </span>
           )}
           <button onClick={() => { if (window.confirm("Vill du börja om med ett nytt manus? Allt osparat arbete försvinner.")) handleStartFresh(); }} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer" }}>Nytt manus</button>
+          {/* Analyze unreviewed button */}
+          {(() => {
+            const unreviewedCount = chapters.filter(ch => {
+              const paras = paragraphsByChapter[ch.id] || [];
+              return !paras.some(p => p.suggestions?.length > 0);
+            }).length;
+            return unreviewedCount > 0 ? (
+              <button
+                onClick={handleAnalyzeUnreviewed}
+                disabled={batchAnalyzing}
+                style={{
+                  fontFamily: uiFont, fontSize: 11, padding: "5px 14px", borderRadius: 5, border: "none",
+                  background: batchAnalyzing ? "#d4c8bb" : "#b8860b", color: "#fff", cursor: batchAnalyzing ? "default" : "pointer",
+                  fontWeight: 600, display: "flex", alignItems: "center", gap: 5,
+                }}
+              >
+                {batchAnalyzing ? `Analyserar...` : `Analysera (${unreviewedCount})`}
+              </button>
+            ) : null;
+          })()}
           <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
           <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>Inställningar</button>
           <button onClick={() => setView("pricing")} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>Priser</button>
@@ -1858,6 +1959,27 @@ export default function App() {
           {genres.map(id => { const g = GENRES.find(x => x.id === id); return g ? <span key={id} style={{ fontFamily: uiFont, fontSize: 10, padding: "2px 8px", borderRadius: 10, background: bg, color: "#5a4e42" }}>{g.icon} {g.label}</span> : null; })}
           {modules.includes("develop") && <span style={{ fontFamily: uiFont, fontSize: 10, padding: "2px 8px", borderRadius: 10, background: accentLight, color: accent, fontWeight: 600 }}>Skrivutveckling</span>}
           {modules.includes("translate") && <span style={{ fontFamily: uiFont, fontSize: 10, padding: "2px 8px", borderRadius: 10, background: accentLight, color: accent, fontWeight: 600 }}>Översättning: {transLangs.map(id => LANGUAGES.find(l => l.id === id)?.flag).join(" ")}</span>}
+        </div>
+      )}
+
+      {/* BATCH ANALYSIS STATUS BAR */}
+      {(batchAnalyzing || reanalyzingChapter) && processingStatus && (
+        <div style={{
+          padding: "6px 16px", background: "#fdf6e3", borderBottom: `1px solid #e8d9a8`,
+          display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+        }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%", background: "#b8860b",
+            animation: "pulse 1.5s ease-in-out infinite",
+          }} />
+          <span style={{ fontFamily: uiFont, fontSize: 11, color: "#7a6520" }}>{processingStatus}</span>
+          {batchAnalyzing && (
+            <button onClick={() => setBatchAnalyzing(false)} style={{
+              marginLeft: "auto", fontFamily: uiFont, fontSize: 10, padding: "3px 10px",
+              borderRadius: 4, border: `1px solid #e8d9a8`, background: "transparent",
+              color: "#7a6520", cursor: "pointer",
+            }}>Avbryt</button>
+          )}
         </div>
       )}
 
