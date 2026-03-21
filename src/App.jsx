@@ -1411,27 +1411,46 @@ export default function App() {
       setChapters([...updatedChapters]);
       setProcessingStatus(`Analyserar ${updatedChapters[i].title} (${i + 1}/${updatedChapters.length})...`);
 
-      try {
-        const request = buildReviewRequest(systemPrompt, updatedChapters[i].content);
-        const response = await sendMessage(request);
+      let success = false;
+      for (let attempt = 0; attempt < 3 && !success; attempt++) {
+        try {
+          if (attempt > 0) {
+            const wait = Math.pow(2, attempt) * 2000; // 4s, 8s
+            setProcessingStatus(`Rate limit – väntar ${wait / 1000}s innan retry... (${updatedChapters[i].title})`);
+            await new Promise(r => setTimeout(r, wait));
+            setProcessingStatus(`Analyserar ${updatedChapters[i].title} (${i + 1}/${updatedChapters.length}) – retry ${attempt}...`);
+          }
 
-        if (response) {
-          const text = extractText(response);
-          const parsed = parseJsonResponse(text);
-          if (parsed?.suggestions?.length) {
-            // Attach suggestions to paragraphs
-            const chapterParas = updatedParas[updatedChapters[i].id] || [];
-            const enrichedParas = attachSuggestionsToParagraphs(chapterParas, parsed.suggestions, updatedChapters[i].id);
-            updatedParas[updatedChapters[i].id] = enrichedParas;
-            setParagraphsByChapter({ ...updatedParas });
+          const request = buildReviewRequest(systemPrompt, updatedChapters[i].content);
+          const response = await sendMessage(request);
+
+          if (response) {
+            const text = extractText(response);
+            const parsed = parseJsonResponse(text);
+            if (parsed?.suggestions?.length) {
+              const chapterParas = updatedParas[updatedChapters[i].id] || [];
+              const enrichedParas = attachSuggestionsToParagraphs(chapterParas, parsed.suggestions, updatedChapters[i].id);
+              updatedParas[updatedChapters[i].id] = enrichedParas;
+              setParagraphsByChapter({ ...updatedParas });
+            }
+          }
+          success = true;
+        } catch (err) {
+          console.error(`Review failed for chapter ${i + 1} (attempt ${attempt + 1}):`, err);
+          if (attempt === 2) {
+            setProcessingStatus(`⚠ ${updatedChapters[i].title} kunde inte analyseras – fortsätter...`);
+            await new Promise(r => setTimeout(r, 1500));
           }
         }
-      } catch (err) {
-        console.error(`Review failed for chapter ${i + 1}:`, err);
       }
 
       updatedChapters[i] = { ...updatedChapters[i], status: "done" };
       setChapters([...updatedChapters]);
+
+      // Pause between chapters to avoid rate limiting
+      if (i < updatedChapters.length - 1) {
+        await new Promise(r => setTimeout(r, 1500));
+      }
     }
 
     // DNA profile
@@ -1683,9 +1702,9 @@ export default function App() {
       const isAcc = accepted.has(s.id), isRej = rejected.has(s.id), isAct = activeSuggestion === s.id;
       const p = PRIORITY[s.priority];
       if (p) {
-        // Rejected suggestions: show original text with NO styling (as if no suggestion exists)
+        // Rejected suggestions: show original text normally, no highlight
         if (isRej) {
-          parts.push(<span key={`s${s.id}`}>{s.original}</span>);
+          parts.push(<span key={`s${s.id}`} data-suggestion-id={s.id}>{s.original}</span>);
         } else {
           parts.push(
             <span key={`s${s.id}`} data-suggestion-id={s.id} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
