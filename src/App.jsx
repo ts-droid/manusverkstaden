@@ -1265,8 +1265,8 @@ function RestorePrompt({ timestamp, onRestore, onDiscard }) {
 
 // ═══ MAIN APP ═══
 export default function App() {
-  // Flow: "upload" → "settings" → "processing" → "editor"
-  const [view, setView] = useState("upload");
+  // Flow: "loading" → "upload" → "settings" → "processing" → "editor"
+  const [view, setView] = useState("loading"); // start with loading to check for saved data
   const [uploadedFile, setUploadedFile] = useState(null);
   const [chapters, setChapters] = useState([]);
   const [paragraphsByChapter, setParagraphsByChapter] = useState({});
@@ -1286,14 +1286,48 @@ export default function App() {
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
-  const [restorePrompt, setRestorePrompt] = useState(null); // { timestamp }
   const mainRef = useRef(null);
   const saveTimerRef = useRef(null);
   const saveIndicatorRef = useRef(null);
+  const autoSaveEnabled = useRef(false); // prevent save before restore decision
+
+  // ─── RESTORE ON MOUNT ───
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await loadProject();
+        if (saved?.chapters?.length > 0) {
+          // Auto-restore: go straight to editor with saved data
+          setChapters(saved.chapters);
+          setParagraphsByChapter(saved.paragraphsByChapter || {});
+          setAccepted(saved.accepted instanceof Set ? saved.accepted : new Set(saved.accepted || []));
+          setRejected(saved.rejected instanceof Set ? saved.rejected : new Set(saved.rejected || []));
+          setDnaProfile(saved.dnaProfile || null);
+          setGenres(saved.genres || []);
+          setModules(saved.modules || []);
+          setTransLangs(saved.transLangs || ["en"]);
+          setActiveChapter(saved.activeChapter || saved.chapters?.[0]?.id);
+          setUploadedFile({ name: saved.fileName || "Manus" });
+          setView("editor");
+          autoSaveEnabled.current = true;
+        } else {
+          setView("upload");
+        }
+      } catch (err) {
+        console.error("Restore failed:", err);
+        setView("upload");
+      }
+    })();
+  }, []);
 
   // ─── AUTO-SAVE ───
   useEffect(() => {
     if (view !== "editor" || chapters.length === 0) return;
+    // Small delay on first render to let restore finish
+    if (!autoSaveEnabled.current) {
+      autoSaveEnabled.current = true;
+      return;
+    }
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
@@ -1319,38 +1353,19 @@ export default function App() {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [chapters, paragraphsByChapter, accepted, rejected, dnaProfile, genres, modules, transLangs, activeChapter, view]);
 
-  // ─── RESTORE ON MOUNT ───
-  useEffect(() => {
-    (async () => {
-      const hasData = await hasSavedProject();
-      if (hasData) {
-        const saved = await loadProject();
-        if (saved?.chapters?.length > 0) {
-          setRestorePrompt({ timestamp: saved.timestamp, data: saved });
-        }
-      }
-    })();
-  }, []);
-
-  const handleRestore = () => {
-    const d = restorePrompt.data;
-    setChapters(d.chapters || []);
-    setParagraphsByChapter(d.paragraphsByChapter || {});
-    setAccepted(d.accepted instanceof Set ? d.accepted : new Set(d.accepted || []));
-    setRejected(d.rejected instanceof Set ? d.rejected : new Set(d.rejected || []));
-    setDnaProfile(d.dnaProfile || null);
-    setGenres(d.genres || []);
-    setModules(d.modules || []);
-    setTransLangs(d.transLangs || ["en"]);
-    setActiveChapter(d.activeChapter || d.chapters?.[0]?.id);
-    setUploadedFile({ name: d.fileName || "Manus" });
-    setView("editor");
-    setRestorePrompt(null);
-  };
-
-  const handleDiscardRestore = async () => {
+  // ─── START FRESH (clear saved data) ───
+  const handleStartFresh = async () => {
     await clearProject();
-    setRestorePrompt(null);
+    setChapters([]);
+    setParagraphsByChapter({});
+    setAccepted(new Set());
+    setRejected(new Set());
+    setDnaProfile(null);
+    setGenres([]);
+    setModules([]);
+    setUploadedFile(null);
+    setActiveChapter(null);
+    setView("upload");
   };
 
   // Step 1 → Step 2
@@ -1639,6 +1654,15 @@ export default function App() {
   const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
 
   // ─── RENDER ───
+  if (view === "loading") return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, fontFamily: uiFont }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ width: 40, height: 40, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+        <div style={{ fontSize: 13, color: muted }}>Laddar...</div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    </div>
+  );
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
   if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} onStart={handleStartProcessing} onBack={() => setView("upload")} />;
   if (view === "processing") return <ProcessingView chapters={chapters} statusText={processingStatus} />;
@@ -1715,6 +1739,7 @@ export default function App() {
               {saveStatus === "saving" ? "Sparar..." : "✓ Sparat"}
             </span>
           )}
+          <button onClick={() => { if (window.confirm("Vill du börja om med ett nytt manus? Allt osparat arbete försvinner.")) handleStartFresh(); }} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer" }}>Nytt manus</button>
           <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
           <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>Inställningar</button>
           <button onClick={() => setView("pricing")} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>Priser</button>
@@ -1873,14 +1898,7 @@ export default function App() {
         />
       )}
 
-      {/* RESTORE PROMPT */}
-      {restorePrompt && (
-        <RestorePrompt
-          timestamp={restorePrompt.timestamp}
-          onRestore={handleRestore}
-          onDiscard={handleDiscardRestore}
-        />
-      )}
+      {/* RestorePrompt removed – auto-restore on mount */}
     </div>
   );
 }
