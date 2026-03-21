@@ -1186,6 +1186,20 @@ export default function App() {
     }));
   };
 
+  // ─── SCROLL TO SUGGESTION IN TEXT ───
+  useEffect(() => {
+    if (!activeSuggestion || !mainRef.current) return;
+    const el = mainRef.current.querySelector(`[data-suggestion-id="${activeSuggestion}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Flash animation
+      el.style.transition = "background 0.15s";
+      const original = el.style.background;
+      el.style.background = "#a0522d30";
+      setTimeout(() => { el.style.background = original; }, 800);
+    }
+  }, [activeSuggestion]);
+
   // ─── TEXT SELECTION HANDLER ───
   const handleTextSelection = useCallback(() => {
     const sel = window.getSelection();
@@ -1310,11 +1324,12 @@ export default function App() {
       const p = PRIORITY[s.priority];
       if (p) {
         parts.push(
-          <span key={`s${s.id}`} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
-            background: isAcc ? "#dcfce7" : isRej ? "transparent" : isAct ? `${p.color}18` : `${p.color}0c`,
+          <span key={`s${s.id}`} data-suggestion-id={s.id} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
+            background: isAcc ? "#dcfce7" : isRej ? "transparent" : isAct ? `${p.color}30` : `${p.color}0c`,
             borderBottom: isAcc ? "none" : `2px solid ${isRej ? "#ccc" : p.color}`,
             padding: "1px 2px", borderRadius: 3, cursor: "pointer",
-            textDecoration: isRej ? "line-through" : "none", opacity: isRej ? 0.45 : 1, transition: "all 0.15s",
+            textDecoration: isRej ? "line-through" : "none", opacity: isRej ? 0.45 : 1,
+            transition: "all 0.3s", outline: isAct ? `2px solid ${p.color}50` : "none", outlineOffset: 1,
           }}>
             {isAcc && s.replacement ? s.replacement : s.original}
           </span>
