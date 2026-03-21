@@ -435,6 +435,54 @@ function SplitChapterPopover({ chapter, onSplit, onClose }) {
   );
 }
 
+// ─── COLLAPSIBLE PARAGRAPH EDIT SECTION ───
+function ParagraphEditSection({ paragraphs, onEdit }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div style={{ marginTop: 16, borderTop: `1px solid ${border}`, paddingTop: 10 }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "6px 8px", borderRadius: 6, border: "none", background: "transparent",
+          cursor: "pointer", fontFamily: uiFont, fontSize: 10.5, color: muted,
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 12 }}>✎</span>
+          Redigera stycken ({paragraphs.length})
+        </span>
+        <span style={{ fontSize: 9, transition: "transform 0.15s", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+      </button>
+      {expanded && (
+        <div style={{ marginTop: 6 }}>
+          {paragraphs.map((para, i) => (
+            <button
+              key={para.id}
+              onClick={() => onEdit(para.id, para.text)}
+              style={{
+                width: "100%", textAlign: "left", padding: "5px 8px", marginBottom: 2, borderRadius: 5,
+                border: `1px solid ${border}`, background: surface, cursor: "pointer",
+                fontFamily: uiFont, fontSize: 10, color: muted, display: "flex", alignItems: "center", gap: 6,
+                transition: "all 0.12s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = bg; e.currentTarget.style.borderColor = accent + "60"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = surface; e.currentTarget.style.borderColor = border; }}
+            >
+              <span style={{ color: accent, flexShrink: 0, fontSize: 10 }}>✎</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, color: ink, fontSize: 10.5 }}>
+                Stycke {i + 1}
+              </span>
+              <span style={{ fontSize: 9, color: muted, flexShrink: 0 }}>{para.text.split(/\s+/).length} ord</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── SELECTION TOOLBAR (floating) ───
 function SelectionToolbar({ position, onEdit, onNewChapter, onClose }) {
   if (!position) return null;
@@ -1695,33 +1743,7 @@ export default function App() {
                 </div>
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
-                {/* Paragraph edit buttons */}
-                {currentParagraphs.length > 0 && (
-                  <div style={{ marginBottom: 10 }}>
-                    {currentParagraphs.map((para, i) => (
-                      <button
-                        key={para.id}
-                        onClick={() => handleEditParagraph(para.id, para.text)}
-                        style={{
-                          width: "100%", textAlign: "left", padding: "7px 10px", marginBottom: 3, borderRadius: 6,
-                          border: `1px solid ${border}`, background: surface, cursor: "pointer",
-                          fontFamily: uiFont, fontSize: 10.5, color: muted, display: "flex", alignItems: "center", gap: 8,
-                          transition: "all 0.12s",
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = bg; e.currentTarget.style.borderColor = accent + "60"; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = surface; e.currentTarget.style.borderColor = border; }}
-                      >
-                        <span style={{ fontSize: 12, color: accent, flexShrink: 0 }}>✎</span>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, color: ink, fontSize: 11 }}>
-                          Stycke {i + 1}
-                        </span>
-                        <span style={{ fontSize: 9, color: muted, flexShrink: 0 }}>{para.text.split(/\s+/).length} ord</span>
-                      </button>
-                    ))}
-                    <div style={{ height: 1, background: border, margin: "8px 0" }} />
-                  </div>
-                )}
-
+                {/* Suggestion cards – primary content */}
                 {filtered.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "36px 16px", fontFamily: uiFont, fontSize: 12, color: muted }}>
                     {allSuggestions.length === 0 ? "Inga förslag för detta kapitel än." : allSuggestions.length === accepted.size + rejected.size ? <><div style={{ fontSize: 28, marginBottom: 10 }}>✓</div>Alla förslag hanterade!</> : "Inga förslag matchar filtret."}
@@ -1733,6 +1755,11 @@ export default function App() {
                     onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); }}
                   />
                 ))}
+
+                {/* Collapsible paragraph edit section */}
+                {currentParagraphs.length > 0 && (
+                  <ParagraphEditSection paragraphs={currentParagraphs} onEdit={handleEditParagraph} />
+                )}
               </div>
               <div style={{ padding: "10px 14px", borderTop: `1px solid ${border}`, fontFamily: uiFont, fontSize: 10, color: muted, display: "flex", justifyContent: "space-between" }}>
                 <span>✓ {accepted.size}</span><span>✗ {rejected.size}</span>
