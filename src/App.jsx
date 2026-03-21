@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { parseManuscript, splitIntoParagraphs, countWords } from "./lib/manuscript-parser";
 import { sendMessage, extractText, parseJsonResponse } from "./lib/ai-client";
 import { buildPrompt, buildReviewRequest } from "./lib/prompt-builder";
@@ -428,6 +428,128 @@ function SplitChapterPopover({ chapter, onSplit, onClose }) {
           style={{ flex: 1, padding: "6px 0", borderRadius: 5, border: "none", background: selectedLine !== null ? accent : "#d4c8bb", color: "#fff", fontSize: 11, fontWeight: 600, cursor: selectedLine !== null ? "pointer" : "default", fontFamily: uiFont }}
         >Dela här</button>
         <button onClick={onClose} style={{ padding: "6px 10px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: muted, fontSize: 11, cursor: "pointer", fontFamily: uiFont }}>Avbryt</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── SELECTION TOOLBAR (floating) ───
+function SelectionToolbar({ position, onEdit, onNewChapter, onClose }) {
+  if (!position) return null;
+  return (
+    <div style={{
+      position: "fixed", left: position.x, top: position.y, transform: "translate(-50%, -110%)",
+      background: ink, borderRadius: 8, padding: "5px 4px", display: "flex", gap: 3, zIndex: 50,
+      boxShadow: "0 6px 24px rgba(0,0,0,0.22)", animation: "fadeIn 0.12s ease-out",
+    }}>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -100%) scale(0.95); } to { opacity: 1; transform: translate(-50%, -110%) scale(1); } }`}</style>
+      <button onClick={onEdit} style={{
+        background: "transparent", border: "none", color: "#f7f4ef", fontFamily: uiFont, fontSize: 11,
+        padding: "6px 12px", borderRadius: 5, cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+        fontWeight: 500, whiteSpace: "nowrap",
+      }}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
+        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+      >
+        <span style={{ fontSize: 13 }}>✎</span> Redigera
+      </button>
+      <div style={{ width: 1, background: "rgba(255,255,255,0.18)", margin: "4px 0" }} />
+      <button onClick={onNewChapter} style={{
+        background: "transparent", border: "none", color: "#f7f4ef", fontFamily: uiFont, fontSize: 11,
+        padding: "6px 12px", borderRadius: 5, cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+        fontWeight: 500, whiteSpace: "nowrap",
+      }}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
+        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+      >
+        <span style={{ fontSize: 13 }}>+</span> Nytt kapitel
+      </button>
+      {/* Arrow */}
+      <div style={{
+        position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%)",
+        width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `6px solid ${ink}`,
+      }} />
+    </div>
+  );
+}
+
+// ─── EDIT MODAL ───
+function EditModal({ text, paragraphId, chapterTitle, onSave, onCreateChapter, onClose }) {
+  const [editedText, setEditedText] = useState(text);
+  const textareaRef = useRef(null);
+  const wordCount = editedText.trim().split(/\s+/).filter(w => w).length;
+  const hasChanges = editedText !== text;
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 500) + "px";
+    }
+  }, []);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
+      <div style={{ position: "relative", background: surface, borderRadius: 16, width: 680, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.18)" }}>
+        {/* Header */}
+        <div style={{ padding: "20px 28px 16px", borderBottom: `1px solid ${border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <div>
+            <h3 style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Redigera text</h3>
+            <span style={{ fontFamily: uiFont, fontSize: 11, color: muted }}>{chapterTitle} · {wordCount} ord</span>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
+        </div>
+
+        {/* Editor */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+          <textarea
+            ref={textareaRef}
+            value={editedText}
+            onChange={(e) => {
+              setEditedText(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = Math.min(e.target.scrollHeight, 500) + "px";
+            }}
+            style={{
+              width: "100%", minHeight: 200, padding: 16, borderRadius: 10, border: `1px solid ${border}`,
+              fontFamily: font, fontSize: 15.5, lineHeight: 1.85, color: "#3d2e23",
+              resize: "none", background: bg, outline: "none", boxSizing: "border-box",
+              transition: "border-color 0.15s",
+            }}
+            onFocus={e => e.target.style.borderColor = accent}
+            onBlur={e => e.target.style.borderColor = border}
+          />
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 28px 20px", borderTop: `1px solid ${border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <button onClick={() => onCreateChapter(editedText)} style={{
+            fontFamily: uiFont, fontSize: 11.5, padding: "8px 16px", borderRadius: 6, cursor: "pointer",
+            border: `1px solid ${border}`, background: surface, color: ink, fontWeight: 500,
+            display: "flex", alignItems: "center", gap: 6,
+          }}
+            onMouseEnter={e => e.currentTarget.style.background = bg}
+            onMouseLeave={e => e.currentTarget.style.background = surface}
+          >
+            <span style={{ fontSize: 14 }}>+</span> Skapa nytt kapitel
+          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} style={{
+              fontFamily: uiFont, fontSize: 12, padding: "8px 20px", borderRadius: 6,
+              border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer",
+            }}>Avbryt</button>
+            <button
+              onClick={() => { onSave(editedText); onClose(); }}
+              disabled={!hasChanges}
+              style={{
+                fontFamily: uiFont, fontSize: 12, padding: "8px 24px", borderRadius: 6, border: "none",
+                background: hasChanges ? accent : "#d4c8bb", color: "#fff", cursor: hasChanges ? "pointer" : "default",
+                fontWeight: 600, transition: "background 0.15s",
+              }}
+            >Spara ändringar</button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -899,6 +1021,9 @@ export default function App() {
   const [rightPanel, setRightPanel] = useState("suggestions");
   const [processingStatus, setProcessingStatus] = useState("");
   const [dnaProfile, setDnaProfile] = useState(null);
+  const [selectionToolbar, setSelectionToolbar] = useState(null); // { x, y, text, paraId }
+  const [editModal, setEditModal] = useState(null); // { text, paraId, chapterTitle }
+  const mainRef = useRef(null);
 
   // Step 1 → Step 2
   const handleUploadNext = (file, parsedChapters) => {
@@ -1061,6 +1186,103 @@ export default function App() {
     }));
   };
 
+  // ─── TEXT SELECTION HANDLER ───
+  const handleTextSelection = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+      setSelectionToolbar(null);
+      return;
+    }
+    const selectedText = sel.toString().trim();
+    if (selectedText.length < 2) return;
+
+    // Find which paragraph this selection is in
+    const range = sel.getRangeAt(0);
+    const paraEl = range.startContainer.parentElement?.closest("[data-para-id]");
+    const paraId = paraEl?.dataset?.paraId || null;
+
+    const rect = range.getBoundingClientRect();
+    setSelectionToolbar({
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+      text: selectedText,
+      paraId,
+    });
+  }, []);
+
+  // ─── EDIT PARAGRAPH ───
+  const handleEditParagraph = (paraId, text) => {
+    setEditModal({
+      text,
+      paraId,
+      chapterTitle: currentChapter?.title || "Kapitel",
+    });
+    setSelectionToolbar(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  // ─── SAVE PARAGRAPH EDIT ───
+  const handleSaveParagraph = (paraId, newText) => {
+    if (!activeChapter) return;
+    const paras = [...(paragraphsByChapter[activeChapter] || [])];
+    const idx = paras.findIndex(p => p.id === paraId);
+    if (idx === -1) return;
+
+    paras[idx] = { ...paras[idx], text: newText };
+    setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: paras }));
+
+    // Also update the chapter content
+    const newContent = paras.map(p => p.text).join("\n\n");
+    setChapters(prev => prev.map(ch =>
+      ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
+    ));
+  };
+
+  // ─── CREATE NEW CHAPTER FROM TEXT ───
+  const handleCreateChapterFromText = (text, sourceParaId) => {
+    if (!activeChapter || !text.trim()) return;
+
+    const newId = Date.now();
+    const chapterIndex = chapters.findIndex(c => c.id === activeChapter);
+
+    // If coming from a paragraph, remove that text from the source paragraph
+    if (sourceParaId) {
+      const paras = [...(paragraphsByChapter[activeChapter] || [])];
+      const paraIdx = paras.findIndex(p => p.id === sourceParaId);
+      if (paraIdx !== -1) {
+        const remaining = paras[paraIdx].text.replace(text, "").trim();
+        if (remaining) {
+          paras[paraIdx] = { ...paras[paraIdx], text: remaining };
+        } else {
+          paras.splice(paraIdx, 1);
+        }
+        setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: paras }));
+        const newContent = paras.map(p => p.text).join("\n\n");
+        setChapters(prev => prev.map(ch =>
+          ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
+        ));
+      }
+    }
+
+    const newChapter = {
+      id: newId,
+      number: chapterIndex + 2,
+      title: `Nytt kapitel`,
+      content: text,
+      wordCount: countWords(text),
+      status: "done",
+    };
+
+    const updatedChapters = [...chapters];
+    updatedChapters.splice(chapterIndex + 1, 0, newChapter);
+    updatedChapters.forEach((ch, i) => { ch.number = i + 1; });
+    setChapters(updatedChapters);
+    setParagraphsByChapter(prev => ({ ...prev, [newId]: splitIntoParagraphs(text) }));
+    setActiveChapter(newId);
+    setEditModal(null);
+    setSelectionToolbar(null);
+  };
+
   // Get current chapter paragraphs
   const currentParagraphs = paragraphsByChapter[activeChapter] || [];
   const allSuggestions = currentParagraphs.flatMap(p => p.suggestions || []);
@@ -1156,7 +1378,7 @@ export default function App() {
         <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} onSplitChapter={handleSplitChapter} />
 
         {/* MAIN TEXT */}
-        <main style={{ flex: 1, overflowY: "auto", padding: "36px 52px", maxWidth: 680, margin: "0 auto" }}>
+        <main ref={mainRef} onMouseUp={handleTextSelection} style={{ flex: 1, overflowY: "auto", padding: "36px 52px", maxWidth: 680, margin: "0 auto", position: "relative" }}>
           <div style={{ marginBottom: 28 }}>
             <h2 style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>
               {currentChapter?.title}
@@ -1168,9 +1390,11 @@ export default function App() {
             </div>
           </div>
           {currentParagraphs.map(para => (
-            <p key={para.id} style={{ fontSize: 16.5, lineHeight: 1.85, marginBottom: 22, color: "#3d2e23" }}>
-              {renderText(para)}
-            </p>
+            <div key={para.id} data-para-id={para.id} style={{ position: "relative", group: "para" }}>
+              <p style={{ fontSize: 16.5, lineHeight: 1.85, marginBottom: 22, color: "#3d2e23", position: "relative" }}>
+                {renderText(para)}
+              </p>
+            </div>
           ))}
         </main>
 
@@ -1192,6 +1416,33 @@ export default function App() {
                 </div>
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
+                {/* Paragraph edit buttons */}
+                {currentParagraphs.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    {currentParagraphs.map((para, i) => (
+                      <button
+                        key={para.id}
+                        onClick={() => handleEditParagraph(para.id, para.text)}
+                        style={{
+                          width: "100%", textAlign: "left", padding: "7px 10px", marginBottom: 3, borderRadius: 6,
+                          border: `1px solid ${border}`, background: surface, cursor: "pointer",
+                          fontFamily: uiFont, fontSize: 10.5, color: muted, display: "flex", alignItems: "center", gap: 8,
+                          transition: "all 0.12s",
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = bg; e.currentTarget.style.borderColor = accent + "60"; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = surface; e.currentTarget.style.borderColor = border; }}
+                      >
+                        <span style={{ fontSize: 12, color: accent, flexShrink: 0 }}>✎</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, color: ink, fontSize: 11 }}>
+                          Stycke {i + 1}
+                        </span>
+                        <span style={{ fontSize: 9, color: muted, flexShrink: 0 }}>{para.text.split(/\s+/).length} ord</span>
+                      </button>
+                    ))}
+                    <div style={{ height: 1, background: border, margin: "8px 0" }} />
+                  </div>
+                )}
+
                 {filtered.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "36px 16px", fontFamily: uiFont, fontSize: 12, color: muted }}>
                     {allSuggestions.length === 0 ? "Inga förslag för detta kapitel än." : allSuggestions.length === accepted.size + rejected.size ? <><div style={{ fontSize: 28, marginBottom: 10 }}>✓</div>Alla förslag hanterade!</> : "Inga förslag matchar filtret."}
@@ -1213,6 +1464,34 @@ export default function App() {
           {rightPanel === "translate" && <TranslatePanel langs={transLangs} />}
         </aside>
       </div>
+
+      {/* SELECTION TOOLBAR */}
+      <SelectionToolbar
+        position={selectionToolbar}
+        onEdit={() => {
+          if (selectionToolbar) {
+            handleEditParagraph(selectionToolbar.paraId, selectionToolbar.text);
+          }
+        }}
+        onNewChapter={() => {
+          if (selectionToolbar?.text) {
+            handleCreateChapterFromText(selectionToolbar.text, selectionToolbar.paraId);
+          }
+        }}
+        onClose={() => setSelectionToolbar(null)}
+      />
+
+      {/* EDIT MODAL */}
+      {editModal && (
+        <EditModal
+          text={editModal.text}
+          paragraphId={editModal.paraId}
+          chapterTitle={editModal.chapterTitle}
+          onSave={(newText) => handleSaveParagraph(editModal.paraId, newText)}
+          onCreateChapter={(text) => handleCreateChapterFromText(text, editModal.paraId)}
+          onClose={() => setEditModal(null)}
+        />
+      )}
 
       {/* SETTINGS MODAL */}
       {showSettings && (
