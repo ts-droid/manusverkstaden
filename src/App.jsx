@@ -605,17 +605,30 @@ function EditModal({ text, paragraphId, chapterTitle, onSave, onCreateChapter, o
   );
 }
 
-function SuggestionCard({ s, isActive, onToggle, onAccept, onReject }) {
+function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onUndo }) {
   const p = PRIORITY[s.priority];
+  const isHandled = status === "accepted" || status === "rejected";
+
   return (
     <div onClick={onToggle} style={{
       padding: "12px 12px", marginBottom: 6, borderRadius: 9,
       border: `1px solid ${isActive ? p.color + "50" : border}`,
-      background: isActive ? p.bg : surface, cursor: "pointer", transition: "all 0.15s",
+      background: isHandled ? (status === "accepted" ? "#f0faf3" : bg) : isActive ? p.bg : surface,
+      cursor: "pointer", transition: "all 0.15s",
+      opacity: isHandled ? 0.7 : 1,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: p.color, flexShrink: 0 }} />
         <span style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: p.color }}>{LEVEL_LABELS[s.level]}</span>
+        {isHandled && (
+          <span style={{
+            fontFamily: uiFont, fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4,
+            background: status === "accepted" ? "#27864a20" : muted + "20",
+            color: status === "accepted" ? "#27864a" : muted,
+          }}>
+            {status === "accepted" ? "✓ Godkänd" : "✗ Avvisad"}
+          </span>
+        )}
         <span style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginLeft: "auto" }}>
           {s.type === "style" ? "✦ Stil" : s.type === "repetition" ? "↻ Upprepning" : "▧ Struktur"}
         </span>
@@ -630,13 +643,23 @@ function SuggestionCard({ s, isActive, onToggle, onAccept, onReject }) {
           {s.replacement}
         </div>
       )}
-      {isActive && (
+      {isActive && !isHandled && (
         <div style={{ marginTop: 8 }}>
           <p style={{ fontFamily: uiFont, fontSize: 11.5, color: "#5a4e42", lineHeight: 1.55, margin: "0 0 10px" }}>{s.reason}</p>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={e => { e.stopPropagation(); onAccept(); }} style={{ flex: 1, padding: "7px 0", borderRadius: 5, border: "none", background: "#27864a", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}>✓ Godkänn</button>
             <button onClick={e => { e.stopPropagation(); onReject(); }} style={{ flex: 1, padding: "7px 0", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: muted, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}>✗ Avvisa</button>
           </div>
+        </div>
+      )}
+      {isActive && isHandled && (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ fontFamily: uiFont, fontSize: 11.5, color: "#5a4e42", lineHeight: 1.55, margin: "0 0 8px" }}>{s.reason}</p>
+          <button onClick={e => { e.stopPropagation(); onUndo(); }} style={{
+            width: "100%", padding: "7px 0", borderRadius: 5, border: `1px solid ${border}`,
+            background: surface, color: ink, fontSize: 11, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+          }}>↩ Ångra</button>
         </div>
       )}
     </div>
@@ -1605,7 +1628,15 @@ export default function App() {
   // Get current chapter paragraphs
   const currentParagraphs = paragraphsByChapter[activeChapter] || [];
   const allSuggestions = currentParagraphs.flatMap(p => p.suggestions || []);
-  const filtered = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id) && (filterPriority === "all" || s.priority === filterPriority));
+  // Show all suggestions: pending first, then handled. Filter by priority.
+  const filtered = allSuggestions
+    .filter(s => filterPriority === "all" || s.priority === filterPriority)
+    .sort((a, b) => {
+      const aHandled = accepted.has(a.id) || rejected.has(a.id) ? 1 : 0;
+      const bHandled = accepted.has(b.id) || rejected.has(b.id) ? 1 : 0;
+      return aHandled - bHandled; // pending first
+    });
+  const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
 
   // ─── RENDER ───
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
@@ -1746,15 +1777,31 @@ export default function App() {
                 {/* Suggestion cards – primary content */}
                 {filtered.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "36px 16px", fontFamily: uiFont, fontSize: 12, color: muted }}>
-                    {allSuggestions.length === 0 ? "Inga förslag för detta kapitel än." : allSuggestions.length === accepted.size + rejected.size ? <><div style={{ fontSize: 28, marginBottom: 10 }}>✓</div>Alla förslag hanterade!</> : "Inga förslag matchar filtret."}
+                    {allSuggestions.length === 0 ? "Inga förslag för detta kapitel än." : "Inga förslag matchar filtret."}
                   </div>
-                ) : filtered.map(s => (
-                  <SuggestionCard key={s.id} s={s} isActive={activeSuggestion === s.id}
-                    onToggle={() => setActiveSuggestion(activeSuggestion === s.id ? null : s.id)}
-                    onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); }}
-                    onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); }}
-                  />
-                ))}
+                ) : (
+                  <>
+                    {pendingCount === 0 && allSuggestions.length > 0 && (
+                      <div style={{ textAlign: "center", padding: "12px 16px 8px", fontFamily: uiFont, fontSize: 12, color: "#27864a" }}>
+                        <div style={{ fontSize: 22, marginBottom: 4 }}>✓</div>
+                        Alla förslag hanterade! Klicka för att ångra.
+                      </div>
+                    )}
+                    {filtered.map(s => (
+                      <SuggestionCard key={s.id} s={s} isActive={activeSuggestion === s.id}
+                        status={accepted.has(s.id) ? "accepted" : rejected.has(s.id) ? "rejected" : "pending"}
+                        onToggle={() => setActiveSuggestion(activeSuggestion === s.id ? null : s.id)}
+                        onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); }}
+                        onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); }}
+                        onUndo={() => {
+                          setAccepted(prev => { const n = new Set(prev); n.delete(s.id); return n; });
+                          setRejected(prev => { const n = new Set(prev); n.delete(s.id); return n; });
+                          setActiveSuggestion(null);
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
 
                 {/* Collapsible paragraph edit section */}
                 {currentParagraphs.length > 0 && (
@@ -1762,7 +1809,8 @@ export default function App() {
                 )}
               </div>
               <div style={{ padding: "10px 14px", borderTop: `1px solid ${border}`, fontFamily: uiFont, fontSize: 10, color: muted, display: "flex", justifyContent: "space-between" }}>
-                <span>✓ {accepted.size}</span><span>✗ {rejected.size}</span>
+                <span>{pendingCount} kvar</span>
+                <span>✓ {accepted.size} · ✗ {rejected.size}</span>
               </div>
             </>
           )}
@@ -1776,7 +1824,12 @@ export default function App() {
         position={selectionToolbar}
         onEdit={() => {
           if (selectionToolbar) {
-            handleEditParagraph(selectionToolbar.paraId, selectionToolbar.text);
+            // Open edit modal with the FULL paragraph text, not just the selection
+            const paras = paragraphsByChapter[activeChapter] || [];
+            const para = paras.find(p => p.id === selectionToolbar.paraId);
+            if (para) {
+              handleEditParagraph(selectionToolbar.paraId, para.text);
+            }
           }
         }}
         onNewChapter={() => {
