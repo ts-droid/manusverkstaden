@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───
+
+enum Plan {
+  PROVA
+  GRUND
+  FORLAG
+}
+
+enum ChapterStatus {
+  PENDING
+  REVIEWING
+  REVIEWED
+  APPROVED
+}
+
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+// ─── MODELS ───
+
+model User {
+  id                   String        @id @default(cuid())
+  email                String        @unique
+  passwordHash         String
+  name                 String?
+  plan                 Plan          @default(PROVA)
+  stripeCustomerId     String?       @unique
+  stripeSubscriptionId String?
+  projects             Project[]
+  usageRecords         UsageRecord[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+}
+
+model Project {
+  id             String    @id @default(cuid())
+  title          String
+  language       String    @default("sv")
+  targetAudience String?
+  timePeriod     String?
+  perspective    String?
+  tense          String?
+  tonality       String?
+  genres         String[]
+  modules        String[]
+  transLanguages String[]
+  dnaProfile     Json?
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapters       Chapter[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Chapter {
+  id           String        @id @default(cuid())
+  number       Int
+  title        String
+  content      String
+  wordCount    Int
+  status       ChapterStatus @default(PENDING)
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  suggestions  Suggestion[]
+  translations Translation[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([projectId])
+}
+
+model Suggestion {
+  id          String           @id @default(cuid())
+  type        String
+  priority    String
+  level       Int
+  original    String
+  replacement String?
+  reason      String
+  status      SuggestionStatus @default(PENDING)
+  chapterId   String
+  chapter     Chapter          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+
+  @@index([chapterId])
+}
+
+model Translation {
+  id        String   @id @default(cuid())
+  language  String
+  content   String
+  comments  Json?
+  glossary  Json?
+  chapterId String
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([chapterId])
+}
+
+model UsageRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String   // "review", "dna_profile", "develop", "brainstorm", "translate"
+  wordCount     Int
+  cost          Float    // cost in SEK
+  apiTokensUsed Int?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model PlanConfig {
+  id                  String @id @default(cuid())
+  plan                Plan   @unique
+  displayName         String
+  priceMonthly        Int    // SEK, 0 for free
+  maxChaptersPerMonth Int?   // null = unlimited
+  maxWordsPerReview   Int?   // null = unlimited
+  includedReviews     Int    @default(0)
+  includedWords       Int    @default(0)
+  features            Json   @default("{}")
+}
