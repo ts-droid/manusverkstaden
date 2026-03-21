@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { parseManuscript, splitIntoParagraphs, countWords } from "./lib/manuscript-parser";
 import { sendMessage, extractText, parseJsonResponse } from "./lib/ai-client";
 import { buildPrompt, buildReviewRequest } from "./lib/prompt-builder";
+import { saveProject, loadProject, clearProject, hasSavedProject } from "./lib/storage";
+import { exportToDocx, downloadBlob } from "./lib/export";
 
 // ─── DATA ───
 const GENRES = [
@@ -1002,6 +1004,194 @@ function PricingPage({ onBack }) {
   );
 }
 
+// ─── EXPORT MODAL ───
+function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileName, onClose }) {
+  const [exportFont, setExportFont] = useState("Times New Roman");
+  const [exportSize, setExportSize] = useState(12);
+  const [exportSpacing, setExportSpacing] = useState(1.5);
+  const [exportMargins, setExportMargins] = useState("normal");
+  const [exportTitleStyle, setExportTitleStyle] = useState("both");
+  const [exportPageNumbers, setExportPageNumbers] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  const fonts = ["Times New Roman", "Garamond", "Georgia", "Palatino", "Libre Baskerville"];
+  const sizes = [11, 12, 13];
+  const spacings = [{ v: 1.0, l: "Enkelt" }, { v: 1.15, l: "1.15" }, { v: 1.5, l: "1.5" }, { v: 2.0, l: "Dubbelt" }];
+  const marginOptions = [{ v: "narrow", l: "Smal (1.9cm)" }, { v: "normal", l: "Normal (2.5cm)" }, { v: "wide", l: "Bred (3.2cm)" }];
+  const titleStyles = [{ v: "uppercase", l: "VERSALER" }, { v: "bold", l: "Fetstil" }, { v: "both", l: "VERSALER + FET" }];
+
+  const totalWords = chapters.reduce((s, c) => s + c.wordCount, 0);
+  const acceptedCount = [...accepted].filter(id => chapters.some(ch => {
+    const paras = paragraphsByChapter[ch.id] || [];
+    return paras.some(p => p.suggestions?.some(s => s.id === id));
+  })).length;
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const blob = await exportToDocx({
+        title: fileName,
+        chapters,
+        paragraphsByChapter,
+        accepted,
+        rejected,
+        options: {
+          font: exportFont,
+          fontSize: exportSize,
+          lineSpacing: exportSpacing,
+          margins: exportMargins,
+          chapterTitleStyle: exportTitleStyle,
+          pageNumbers: exportPageNumbers,
+        },
+      });
+      downloadBlob(blob, `${fileName} – Tryckfärdig.docx`);
+      onClose();
+    } catch (err) {
+      console.error("Export failed:", err);
+      alert("Export misslyckades: " + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const OptionGroup = ({ label, children }) => (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>{label}</div>
+      {children}
+    </div>
+  );
+
+  const Chip = ({ active, onClick, children }) => (
+    <button onClick={onClick} style={{
+      padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontFamily: uiFont, fontSize: 11.5,
+      border: active ? `2px solid ${accent}` : `1px solid ${border}`,
+      background: active ? accentLight : surface, color: active ? accent : ink,
+      fontWeight: active ? 600 : 400, transition: "all 0.12s",
+    }}>{children}</button>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
+      <div style={{ position: "relative", background: surface, borderRadius: 16, width: 580, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.18)", padding: "28px 32px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h2 style={{ fontFamily: font, fontSize: 22, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Exportera manus</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
+        </div>
+        <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 24px" }}>
+          {fileName} · {chapters.length} kapitel · {totalWords.toLocaleString()} ord · {acceptedCount} godkända ändringar appliceras
+        </p>
+
+        <OptionGroup label="Typsnitt">
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {fonts.map(f => (
+              <Chip key={f} active={exportFont === f} onClick={() => setExportFont(f)}>
+                <span style={{ fontFamily: f === "Libre Baskerville" ? "Georgia" : f }}>{f}</span>
+              </Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Teckenstorlek">
+          <div style={{ display: "flex", gap: 6 }}>
+            {sizes.map(s => (
+              <Chip key={s} active={exportSize === s} onClick={() => setExportSize(s)}>{s} pt</Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Radavstånd">
+          <div style={{ display: "flex", gap: 6 }}>
+            {spacings.map(s => (
+              <Chip key={s.v} active={exportSpacing === s.v} onClick={() => setExportSpacing(s.v)}>{s.l}</Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Marginaler">
+          <div style={{ display: "flex", gap: 6 }}>
+            {marginOptions.map(m => (
+              <Chip key={m.v} active={exportMargins === m.v} onClick={() => setExportMargins(m.v)}>{m.l}</Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Kapitelrubriker">
+          <div style={{ display: "flex", gap: 6 }}>
+            {titleStyles.map(t => (
+              <Chip key={t.v} active={exportTitleStyle === t.v} onClick={() => setExportTitleStyle(t.v)}>{t.l}</Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Sidnumrering">
+          <div style={{ display: "flex", gap: 6 }}>
+            <Chip active={exportPageNumbers} onClick={() => setExportPageNumbers(true)}>Ja</Chip>
+            <Chip active={!exportPageNumbers} onClick={() => setExportPageNumbers(false)}>Nej</Chip>
+          </div>
+        </OptionGroup>
+
+        {/* Preview strip */}
+        <div style={{ padding: "16px 20px", background: bg, borderRadius: 10, marginBottom: 20, border: `1px solid ${border}` }}>
+          <div style={{ fontFamily: uiFont, fontSize: 9, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Förhandsvisning</div>
+          <div style={{
+            fontFamily: exportFont === "Libre Baskerville" ? "Georgia" : exportFont,
+            fontSize: exportSize, lineHeight: exportSpacing, color: ink,
+          }}>
+            <div style={{
+              textAlign: "center", marginBottom: 12,
+              fontWeight: exportTitleStyle === "bold" || exportTitleStyle === "both" ? 700 : 400,
+              fontSize: exportSize + 4,
+              textTransform: exportTitleStyle === "uppercase" || exportTitleStyle === "both" ? "uppercase" : "none",
+            }}>
+              Kapitel 1
+            </div>
+            <div style={{ textIndent: "1.27cm" }}>
+              Sommaren närmade sig, det var slutet av 80-talet. Det är svårt att föreställa sig att livet kunde erbjuda något bättre.
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          style={{
+            width: "100%", padding: "14px 0", borderRadius: 9, border: "none",
+            background: exporting ? "#d4c8bb" : accent, color: "#fff", fontSize: 14,
+            fontWeight: 600, cursor: exporting ? "default" : "pointer", fontFamily: uiFont,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}
+        >
+          {exporting ? "Exporterar..." : "Ladda ner .docx"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── RESTORE PROMPT ───
+function RestorePrompt({ timestamp, onRestore, onDiscard }) {
+  const timeAgo = ((Date.now() - timestamp) / 60000).toFixed(0);
+  const timeStr = timeAgo < 60 ? `${timeAgo} min sedan` : timeAgo < 1440 ? `${Math.round(timeAgo / 60)} timmar sedan` : `${Math.round(timeAgo / 1440)} dagar sedan`;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.5)", backdropFilter: "blur(6px)" }} />
+      <div style={{ position: "relative", background: surface, borderRadius: 16, padding: "32px 36px", maxWidth: 440, width: "100%", boxShadow: "0 24px 80px rgba(0,0,0,0.2)", textAlign: "center" }}>
+        <div style={{ width: 52, height: 52, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 24 }}>📄</div>
+        <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 700, color: ink, margin: "0 0 8px", letterSpacing: "-0.02em" }}>Återuppta arbete?</h3>
+        <p style={{ fontFamily: uiFont, fontSize: 12.5, color: muted, margin: "0 0 24px", lineHeight: 1.5 }}>
+          Du har osparat arbete från {timeStr}.<br />Vill du fortsätta där du slutade?
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onDiscard} style={{ flex: 1, padding: "12px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: muted, fontSize: 13, cursor: "pointer", fontFamily: uiFont, fontWeight: 500 }}>Börja om</button>
+          <button onClick={onRestore} style={{ flex: 1, padding: "12px 0", borderRadius: 8, border: "none", background: accent, color: "#fff", fontSize: 13, cursor: "pointer", fontFamily: uiFont, fontWeight: 600 }}>Återuppta</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═══ MAIN APP ═══
 export default function App() {
   // Flow: "upload" → "settings" → "processing" → "editor"
@@ -1021,9 +1211,76 @@ export default function App() {
   const [rightPanel, setRightPanel] = useState("suggestions");
   const [processingStatus, setProcessingStatus] = useState("");
   const [dnaProfile, setDnaProfile] = useState(null);
-  const [selectionToolbar, setSelectionToolbar] = useState(null); // { x, y, text, paraId }
-  const [editModal, setEditModal] = useState(null); // { text, paraId, chapterTitle }
+  const [selectionToolbar, setSelectionToolbar] = useState(null);
+  const [editModal, setEditModal] = useState(null);
+  const [showExport, setShowExport] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
+  const [restorePrompt, setRestorePrompt] = useState(null); // { timestamp }
   const mainRef = useRef(null);
+  const saveTimerRef = useRef(null);
+  const saveIndicatorRef = useRef(null);
+
+  // ─── AUTO-SAVE ───
+  useEffect(() => {
+    if (view !== "editor" || chapters.length === 0) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      setSaveStatus("saving");
+      await saveProject({
+        chapters,
+        paragraphsByChapter,
+        accepted,
+        rejected,
+        dnaProfile,
+        genres,
+        modules,
+        transLangs,
+        activeChapter,
+        fileName: uploadedFile?.name || "Manus",
+        view,
+      });
+      setSaveStatus("saved");
+      if (saveIndicatorRef.current) clearTimeout(saveIndicatorRef.current);
+      saveIndicatorRef.current = setTimeout(() => setSaveStatus(null), 2500);
+    }, 800);
+
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [chapters, paragraphsByChapter, accepted, rejected, dnaProfile, genres, modules, transLangs, activeChapter, view]);
+
+  // ─── RESTORE ON MOUNT ───
+  useEffect(() => {
+    (async () => {
+      const hasData = await hasSavedProject();
+      if (hasData) {
+        const saved = await loadProject();
+        if (saved?.chapters?.length > 0) {
+          setRestorePrompt({ timestamp: saved.timestamp, data: saved });
+        }
+      }
+    })();
+  }, []);
+
+  const handleRestore = () => {
+    const d = restorePrompt.data;
+    setChapters(d.chapters || []);
+    setParagraphsByChapter(d.paragraphsByChapter || {});
+    setAccepted(d.accepted instanceof Set ? d.accepted : new Set(d.accepted || []));
+    setRejected(d.rejected instanceof Set ? d.rejected : new Set(d.rejected || []));
+    setDnaProfile(d.dnaProfile || null);
+    setGenres(d.genres || []);
+    setModules(d.modules || []);
+    setTransLangs(d.transLangs || ["en"]);
+    setActiveChapter(d.activeChapter || d.chapters?.[0]?.id);
+    setUploadedFile({ name: d.fileName || "Manus" });
+    setView("editor");
+    setRestorePrompt(null);
+  };
+
+  const handleDiscardRestore = async () => {
+    await clearProject();
+    setRestorePrompt(null);
+  };
 
   // Step 1 → Step 2
   const handleUploadNext = (file, parsedChapters) => {
@@ -1373,6 +1630,13 @@ export default function App() {
               background: rightPanel === "translate" ? accentLight : surface, color: rightPanel === "translate" ? accent : ink, cursor: "pointer", fontWeight: 500,
             }}>Översätt</button>
           )}
+          {/* Save indicator */}
+          {saveStatus && (
+            <span style={{ fontFamily: uiFont, fontSize: 10, color: saveStatus === "saving" ? muted : "#27864a", transition: "opacity 0.3s", opacity: saveStatus ? 1 : 0 }}>
+              {saveStatus === "saving" ? "Sparar..." : "✓ Sparat"}
+            </span>
+          )}
+          <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
           <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>Inställningar</button>
           <button onClick={() => setView("pricing")} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>Priser</button>
         </div>
@@ -1508,12 +1772,33 @@ export default function App() {
         />
       )}
 
+      {/* EXPORT MODAL */}
+      {showExport && (
+        <ExportModal
+          chapters={chapters}
+          paragraphsByChapter={paragraphsByChapter}
+          accepted={accepted}
+          rejected={rejected}
+          fileName={uploadedFile?.name?.replace(/\.[^.]+$/, '') || "Manus"}
+          onClose={() => setShowExport(false)}
+        />
+      )}
+
       {/* SETTINGS MODAL */}
       {showSettings && (
         <SettingsModal onClose={() => setShowSettings(false)}
           genres={genres} setGenres={setGenres}
           modules={modules} setModules={setModules}
           transLangs={transLangs} setTransLangs={setTransLangs}
+        />
+      )}
+
+      {/* RESTORE PROMPT */}
+      {restorePrompt && (
+        <RestorePrompt
+          timestamp={restorePrompt.timestamp}
+          onRestore={handleRestore}
+          onDiscard={handleDiscardRestore}
         />
       )}
     </div>
