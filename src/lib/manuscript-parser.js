@@ -4,8 +4,7 @@
  * Parses uploaded manuscript files (docx, txt) into structured
  * chapter data for the application.
  *
- * TODO: Implement actual docx parsing with mammoth.js
- * TODO: Add support for .odt, .rtf formats
+ * Supports .txt, .docx, and .pdf formats
  */
 
 /**
@@ -21,8 +20,10 @@ export async function parseManuscript(file) {
       return parseTxtFile(file);
     case 'docx':
       return parseDocxFile(file);
+    case 'pdf':
+      return parsePdfFile(file);
     default:
-      throw new Error(`Filformat "${extension}" stöds inte. Använd .docx eller .txt.`);
+      throw new Error(`Filformat "${extension}" stöds inte. Använd .docx, .pdf eller .txt.`);
   }
 }
 
@@ -49,6 +50,30 @@ async function parseDocxFile(file) {
   } catch (error) {
     console.error('Docx parsing failed:', error);
     throw new Error('Kunde inte läsa .docx-filen. Kontrollera att filen inte är skadad.');
+  }
+}
+
+/**
+ * Parse a .pdf file using pdf.js.
+ * Extracts text from all pages.
+ */
+async function parsePdfFile(file) {
+  try {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n\n';
+    }
+    return splitIntoChapters(fullText);
+  } catch (error) {
+    console.error('PDF parsing failed:', error);
+    throw new Error('Kunde inte läsa PDF-filen. Kontrollera att filen inte är skadad.');
   }
 }
 
