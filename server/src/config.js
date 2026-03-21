@@ -1,5 +1,10 @@
 import 'dotenv/config';
 
+// Railway uses DATABASE_PUBLIC_URL, Prisma expects DATABASE_URL
+if (process.env.DATABASE_PUBLIC_URL && !process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.DATABASE_PUBLIC_URL;
+}
+
 export const config = {
   port: process.env.PORT || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
