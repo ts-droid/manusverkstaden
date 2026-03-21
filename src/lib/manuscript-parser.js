@@ -82,11 +82,17 @@ async function parsePdfFile(file) {
  * Detects: "Kapitel X", "Chapter X", numbered chapters, etc.
  */
 function splitIntoChapters(text) {
-  // Common chapter heading patterns
+  // Normalize line breaks and clean up whitespace
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Common chapter heading patterns - order matters, most specific first
+  // The key fix: match KAPITEL/Chapter headings even if not at absolute line start
+  // (mammoth/pdf extractors may add spaces or merge lines)
   const chapterPatterns = [
-    /^(Kapitel\s+\d+[^\n]*)/gim,
-    /^(Chapter\s+\d+[^\n]*)/gim,
-    /^(\d+\.\s+[A-ZÅÄÖ][^\n]*)/gm,
+    /(?:^|\n)\s*(KAPITEL\s+\d+[^\n]*)/gi,
+    /(?:^|\n)\s*(Kapitel\s+\d+[^\n]*)/g,
+    /(?:^|\n)\s*(Chapter\s+\d+[^\n]*)/gi,
+    /(?:^|\n)\s*(\d+\.\s+[A-ZÅÄÖ][^\n]*)/g,
     /^(#{1,2}\s+[^\n]+)/gm, // Markdown headings
   ];
 
@@ -94,7 +100,8 @@ function splitIntoChapters(text) {
   let bestPattern = null;
 
   for (const pattern of chapterPatterns) {
-    const matches = [...text.matchAll(pattern)];
+    pattern.lastIndex = 0; // Reset regex state
+    const matches = [...normalized.matchAll(pattern)];
     if (matches.length > 1 && (!bestSplits || matches.length > bestSplits.length)) {
       bestSplits = matches;
       bestPattern = pattern;
@@ -103,14 +110,19 @@ function splitIntoChapters(text) {
 
   if (!bestSplits || bestSplits.length < 2) {
     // No chapter markers found - treat as single chapter or split by size
-    return splitByWordCount(text, 5000);
+    return splitByWordCount(normalized, 5000);
   }
 
   const chapters = [];
   for (let i = 0; i < bestSplits.length; i++) {
-    const start = bestSplits[i].index;
-    const end = i + 1 < bestSplits.length ? bestSplits[i + 1].index : text.length;
-    const content = text.slice(start, end).trim();
+    // Use the index of the actual chapter title (capture group 1), not the newline prefix
+    const matchStr = bestSplits[i][0];
+    const captureStart = bestSplits[i].index + matchStr.indexOf(bestSplits[i][1]);
+    const start = captureStart;
+    const end = i + 1 < bestSplits.length
+      ? bestSplits[i + 1].index + bestSplits[i + 1][0].indexOf(bestSplits[i + 1][1])
+      : normalized.length;
+    const content = normalized.slice(start, end).trim();
     const title = bestSplits[i][1].trim();
 
     chapters.push({

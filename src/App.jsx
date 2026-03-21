@@ -357,8 +357,15 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter }) 
                   <span
                     onClick={(e) => { e.stopPropagation(); setSplitTarget(splitTarget === ch.id ? null : ch.id); }}
                     title="Dela kapitel"
-                    style={{ fontSize: 12, color: muted, cursor: "pointer", padding: "0 2px", flexShrink: 0, lineHeight: 1 }}
-                  >&#9986;</span>
+                    style={{
+                      fontSize: 15, color: splitTarget === ch.id ? accent : muted, cursor: "pointer",
+                      padding: "2px 6px", flexShrink: 0, lineHeight: 1, borderRadius: 4,
+                      background: splitTarget === ch.id ? accentLight : "transparent",
+                      transition: "all 0.15s", display: "flex", alignItems: "center",
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = accent}
+                    onMouseLeave={(e) => { if (splitTarget !== ch.id) e.currentTarget.style.color = muted; }}
+                  >✂</span>
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: uiFont, fontSize: 10, color: muted }}>
@@ -781,6 +788,7 @@ function PricingPage({ onBack }) {
     { name: "Hobbyförfattare", usage: "1 manus/mån (60k ord), full granskning", cost: "~175 kr", trad: "~18 000 kr" },
     { name: "Aktiv författare", usage: "2 manus/mån (80k ord), granskning + utveckling", cost: "~620 kr", trad: "~48 000 kr" },
     { name: "Internationell", usage: "1 manus (80k ord) + 4 språk", cost: "~1 280 kr", trad: "~160 000+ kr" },
+    { name: "Litet förlag", usage: "5 manus/mån, granskning + 2 språk", cost: "~3 400 kr", trad: "~250 000+ kr" },
   ];
 
   return (
