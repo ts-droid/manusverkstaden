@@ -338,8 +338,13 @@ function ProcessingView({ chapters, statusText }) {
 
 // ─── EDITOR COMPONENTS ───
 
-function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter }) {
+function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, onReanalyze, paragraphsByChapter }) {
   const [splitTarget, setSplitTarget] = useState(null);
+
+  const chapterHasSuggestions = (chId) => {
+    const paras = paragraphsByChapter?.[chId] || [];
+    return paras.some(p => p.suggestions?.length > 0);
+  };
 
   return (
     <aside style={{ width: 232, borderRight: `1px solid ${border}`, background: surface, display: "flex", flexDirection: "column", flexShrink: 0 }}>
@@ -355,24 +360,42 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter }) 
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35, flex: 1 }}>{ch.title}</div>
-                {activeChapter === ch.id && onSplitChapter && (
-                  <span
-                    onClick={(e) => { e.stopPropagation(); setSplitTarget(splitTarget === ch.id ? null : ch.id); }}
-                    title="Dela kapitel"
-                    style={{
-                      fontSize: 15, color: splitTarget === ch.id ? accent : muted, cursor: "pointer",
-                      padding: "2px 6px", flexShrink: 0, lineHeight: 1, borderRadius: 4,
-                      background: splitTarget === ch.id ? accentLight : "transparent",
-                      transition: "all 0.15s", display: "flex", alignItems: "center",
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = accent}
-                    onMouseLeave={(e) => { if (splitTarget !== ch.id) e.currentTarget.style.color = muted; }}
-                  >✂</span>
-                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                  {activeChapter === ch.id && onReanalyze && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); onReanalyze(ch.id); }}
+                      title={chapterHasSuggestions(ch.id) ? "Analysera om" : "Analysera"}
+                      style={{
+                        fontSize: 12, color: muted, cursor: "pointer",
+                        padding: "2px 5px", lineHeight: 1, borderRadius: 4,
+                        background: "transparent", transition: "all 0.15s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = accent; e.currentTarget.style.background = accentLight; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = muted; e.currentTarget.style.background = "transparent"; }}
+                    >🔄</span>
+                  )}
+                  {activeChapter === ch.id && onSplitChapter && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); setSplitTarget(splitTarget === ch.id ? null : ch.id); }}
+                      title="Dela kapitel"
+                      style={{
+                        fontSize: 15, color: splitTarget === ch.id ? accent : muted, cursor: "pointer",
+                        padding: "2px 6px", flexShrink: 0, lineHeight: 1, borderRadius: 4,
+                        background: splitTarget === ch.id ? accentLight : "transparent",
+                        transition: "all 0.15s", display: "flex", alignItems: "center",
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = accent}
+                      onMouseLeave={(e) => { if (splitTarget !== ch.id) e.currentTarget.style.color = muted; }}
+                    >✂</span>
+                  )}
+                </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: uiFont, fontSize: 10, color: muted }}>
                 <span>{ch.wordCount.toLocaleString()} ord</span>
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: ch.status === "done" ? "#27864a" : ch.status === "active" ? "#b8860b" : "#d4c8bb" }} />
+                {!chapterHasSuggestions(ch.id) && ch.status !== "active" && (
+                  <span style={{ fontSize: 9, color: "#b8860b" }}>ej analyserad</span>
+                )}
+                <span style={{ width: 5, height: 5, borderRadius: "50%", marginLeft: "auto", background: ch.status === "active" ? "#b8860b" : chapterHasSuggestions(ch.id) ? "#27864a" : "#d4c8bb" }} />
               </div>
             </button>
             {splitTarget === ch.id && (
@@ -1406,10 +1429,23 @@ export default function App() {
     const updatedChapters = [...chaps];
     const updatedParas = { ...parasMap };
 
+    let skipped = 0;
     for (let i = 0; i < updatedChapters.length; i++) {
+      // Skip chapters that already have suggestions
+      const existingParas = updatedParas[updatedChapters[i].id] || [];
+      const hasSuggestions = existingParas.some(p => p.suggestions?.length > 0);
+      if (hasSuggestions) {
+        updatedChapters[i] = { ...updatedChapters[i], status: "done" };
+        setChapters([...updatedChapters]);
+        setProcessingStatus(`${updatedChapters[i].title} redan analyserad – hoppar över...`);
+        skipped++;
+        await new Promise(r => setTimeout(r, 300));
+        continue;
+      }
+
       updatedChapters[i] = { ...updatedChapters[i], status: "active" };
       setChapters([...updatedChapters]);
-      setProcessingStatus(`Analyserar ${updatedChapters[i].title} (${i + 1}/${updatedChapters.length})...`);
+      setProcessingStatus(`Analyserar ${updatedChapters[i].title} (${i + 1 - skipped}/${updatedChapters.length - skipped})...`);
 
       let success = false;
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
@@ -1500,6 +1536,52 @@ export default function App() {
     setProcessingStatus("Klart!");
     await new Promise(r => setTimeout(r, 600));
     setView("editor");
+  };
+
+  // Re-analyze a single chapter
+  const [reanalyzingChapter, setReanalyzingChapter] = useState(null);
+  const handleReanalyzeChapter = async (chapterId) => {
+    const chapter = chapters.find(c => c.id === chapterId);
+    if (!chapter || reanalyzingChapter) return;
+
+    setReanalyzingChapter(chapterId);
+
+    // Clear existing suggestions for this chapter
+    const freshParas = splitIntoParagraphs(chapter.content);
+    setParagraphsByChapter(prev => ({ ...prev, [chapterId]: freshParas }));
+
+    // Mark as active
+    setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "active" } : c));
+
+    const systemPrompt = buildPrompt({
+      project: { title: uploadedFile?.name?.replace(/\.[^.]+$/, '') },
+      genres,
+      modules: { develop: modules.includes("develop"), translate: modules.includes("translate") },
+      translationLanguages: transLangs,
+    });
+
+    let success = false;
+    for (let attempt = 0; attempt < 3 && !success; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
+        const request = buildReviewRequest(systemPrompt, chapter.content);
+        const response = await sendMessage(request);
+        if (response) {
+          const text = extractText(response);
+          const parsed = parseJsonResponse(text);
+          if (parsed?.suggestions?.length) {
+            const enrichedParas = attachSuggestionsToParagraphs(freshParas, parsed.suggestions, chapterId);
+            setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enrichedParas }));
+          }
+        }
+        success = true;
+      } catch (err) {
+        console.error(`Re-analyze failed for chapter (attempt ${attempt + 1}):`, err);
+      }
+    }
+
+    setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "done" } : c));
+    setReanalyzingChapter(null);
   };
 
   // Split chapter at a paragraph boundary
@@ -1781,7 +1863,7 @@ export default function App() {
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* LEFT SIDEBAR */}
-        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} onSplitChapter={handleSplitChapter} />
+        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} onSplitChapter={handleSplitChapter} onReanalyze={handleReanalyzeChapter} paragraphsByChapter={paragraphsByChapter} />
 
         {/* MAIN TEXT */}
         <main ref={mainRef} onMouseUp={handleTextSelection} style={{ flex: 1, overflowY: "auto", padding: "36px 52px", maxWidth: 680, margin: "0 auto", position: "relative" }}>
