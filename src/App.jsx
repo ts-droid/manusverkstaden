@@ -1683,17 +1683,21 @@ export default function App() {
       const isAcc = accepted.has(s.id), isRej = rejected.has(s.id), isAct = activeSuggestion === s.id;
       const p = PRIORITY[s.priority];
       if (p) {
-        parts.push(
-          <span key={`s${s.id}`} data-suggestion-id={s.id} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
-            background: isAcc ? "#dcfce7" : isRej ? "transparent" : isAct ? `${p.color}30` : `${p.color}0c`,
-            borderBottom: isAcc ? "none" : `2px solid ${isRej ? "#ccc" : p.color}`,
-            padding: "1px 2px", borderRadius: 3, cursor: "pointer",
-            textDecoration: isRej ? "line-through" : "none", opacity: isRej ? 0.45 : 1,
-            transition: "all 0.3s", outline: isAct ? `2px solid ${p.color}50` : "none", outlineOffset: 1,
-          }}>
-            {isAcc && s.replacement ? s.replacement : s.original}
-          </span>
-        );
+        // Rejected suggestions: show original text with NO styling (as if no suggestion exists)
+        if (isRej) {
+          parts.push(<span key={`s${s.id}`}>{s.original}</span>);
+        } else {
+          parts.push(
+            <span key={`s${s.id}`} data-suggestion-id={s.id} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
+              background: isAcc ? "#dcfce7" : isAct ? `${p.color}30` : `${p.color}0c`,
+              borderBottom: isAcc ? "none" : `2px solid ${p.color}`,
+              padding: "1px 2px", borderRadius: 3, cursor: "pointer",
+              transition: "all 0.3s", outline: isAct ? `2px solid ${p.color}50` : "none", outlineOffset: 1,
+            }}>
+              {isAcc && s.replacement ? s.replacement : s.original}
+            </span>
+          );
+        }
       }
       last = idx + s.original.length;
     }
