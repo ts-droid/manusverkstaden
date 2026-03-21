@@ -1,0 +1,62 @@
+:root {
+  /* ─── Colors ─── */
+  --color-ink: #1a1410;
+  --color-ink-light: #3d2e23;
+  --color-muted: #8c7e6f;
+  --color-subtle: #a89880;
+  --color-bg: #f7f4ef;
+  --color-surface: #ffffff;
+  --color-border: #e6ddd2;
+  --color-border-light: #f0ebe4;
+
+  --color-accent: #a0522d;
+  --color-accent-light: rgba(160, 82, 45, 0.09);
+  --color-accent-hover: #8b4726;
+
+  --color-red: #c0392b;
+  --color-red-bg: #fdf0ef;
+  --color-yellow: #b8860b;
+  --color-yellow-bg: #fdf8ef;
+  --color-green: #27864a;
+  --color-green-bg: #f0faf3;
+
+  /* ─── Typography ─── */
+  --font-serif: 'Newsreader', 'Georgia', serif;
+  --font-sans: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+
+  --fs-xs: 10px;
+  --fs-sm: 11.5px;
+  --fs-base: 13px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+  --fs-2xl: 26px;
+  --fs-3xl: 32px;
+
+  /* ─── Spacing ─── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* ─── Radii ─── */
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ─── Shadows ─── */
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
+  --shadow-overlay: 0 24px 80px rgba(0, 0, 0, 0.18);
+
+  /* ─── Layout ─── */
+  --sidebar-width: 232px;
+  --panel-width: 320px;
+  --header-height: 50px;
+}
