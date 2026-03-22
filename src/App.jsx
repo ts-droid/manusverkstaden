@@ -2827,10 +2827,9 @@ export default function App() {
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            const wait = Math.pow(2, attempt) * 2000; // 4s, 8s
-            setProcessingStatus(`Rate limit – väntar ${wait / 1000}s innan retry... (${updatedChapters[i].title})`);
+            const wait = Math.pow(2, attempt) * 5000; // 10s, 20s
+            setProcessingStatus(`Bearbetar ${updatedChapters[i].title}... (försök ${attempt + 1})`);
             await new Promise(r => setTimeout(r, wait));
-            setProcessingStatus(`Analyserar ${updatedChapters[i].title} (${i + 1}/${updatedChapters.length}) – retry ${attempt}...`);
           }
 
           const request = buildReviewRequest(systemPrompt, updatedChapters[i].content, level);
@@ -2850,7 +2849,7 @@ export default function App() {
         } catch (err) {
           console.error(`Review failed for chapter ${i + 1} (attempt ${attempt + 1}):`, err);
           if (attempt === 2) {
-            setProcessingStatus(`⚠ ${updatedChapters[i].title} kunde inte analyseras – fortsätter...`);
+            setProcessingStatus(`${updatedChapters[i].title} hoppades över – analyseras vid nästa genomgång`);
             await new Promise(r => setTimeout(r, 1500));
           }
         }
@@ -2862,7 +2861,7 @@ export default function App() {
       // Longer pause between chapters to avoid rate limiting (API allows ~5 req/min)
       if (i < updatedChapters.length - 1) {
         const pauseMs = 8000; // 8 seconds between chapters
-        setProcessingStatus(`Paus innan nästa kapitel... (${i + 2 - skipped}/${updatedChapters.length - skipped})`);
+        setProcessingStatus(`Förbereder nästa kapitel... (${i + 2 - skipped}/${updatedChapters.length - skipped})`);
         await new Promise(r => setTimeout(r, pauseMs));
       }
     }
@@ -3063,8 +3062,8 @@ export default function App() {
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            const wait = Math.pow(2, attempt) * 3000;
-            setProcessingStatus(`Retry ${attempt} för ${ch.title} – väntar ${wait / 1000}s...`);
+            const wait = Math.pow(2, attempt) * 5000;
+            setProcessingStatus(`Bearbetar ${ch.title}... (försök ${attempt + 1})`);
             await new Promise(r => setTimeout(r, wait));
           }
 
@@ -3083,7 +3082,7 @@ export default function App() {
         } catch (err) {
           console.error(`Batch review failed for ${ch.title} (attempt ${attempt + 1}):`, err);
           if (attempt === 2) {
-            setProcessingStatus(`⚠ ${ch.title} kunde inte analyseras`);
+            setProcessingStatus(`${ch.title} hoppades över – analyseras vid nästa genomgång`);
             await new Promise(r => setTimeout(r, 1500));
           }
         }
@@ -3172,7 +3171,8 @@ export default function App() {
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 3000));
+            setProcessingStatus(`Bearbetar ${ch.title}... (försök ${attempt + 1})`);
+            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
           const request = buildReviewRequest(systemPrompt, ch.content);
@@ -3191,11 +3191,15 @@ export default function App() {
           success = true;
         } catch (err) {
           console.error(`Re-review failed for ${ch.title}:`, err);
+          if (attempt === 2) {
+            setProcessingStatus(`${ch.title} hoppades över – analyseras vid nästa genomgång`);
+            await new Promise(r => setTimeout(r, 1500));
+          }
         }
       }
 
       if (i < chapters.length - 1) {
-        setProcessingStatus(`Paus innan ${chapters[i + 1].title}...`);
+        setProcessingStatus(`Förbereder nästa kapitel...`);
         await new Promise(r => setTimeout(r, 10000));
       }
     }
