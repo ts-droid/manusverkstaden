@@ -3139,18 +3139,14 @@ export default function App() {
 
   // ─── RE-REVIEW: New analysis pass on updated text ───
   const [reReviewing, setReReviewing] = useState(false);
-  const handleReReview = async () => {
+  const [showReReviewModal, setShowReReviewModal] = useState(false);
+  const [reReviewLevel, setReReviewLevel] = useState(analysisLevel || "standard");
+
+  const handleReReview = async (level) => {
     if (reReviewing || batchAnalyzing) return;
-
-    const confirmed = window.confirm(
-      "Kör ny granskning av alla kapitel?\n\n" +
-      "Befintliga förslag arkiveras i historiken.\n" +
-      "Godkända ändringar behålls i texten.\n" +
-      "Nya förslag genereras baserat på uppdaterad text."
-    );
-    if (!confirmed) return;
-
+    setShowReReviewModal(false);
     setReReviewing(true);
+    const useLevel = level || reReviewLevel;
 
     // Archive current review round
     const currentRoundSuggestions = [];
@@ -3211,7 +3207,7 @@ export default function App() {
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
-          const request = buildReviewRequest(systemPrompt, ch.content);
+          const request = buildReviewRequest(systemPrompt, ch.content, useLevel);
           const response = await sendMessage(request);
 
           if (response) {
@@ -3593,7 +3589,7 @@ export default function App() {
           })()}
           {/* Re-review button */}
           <button
-            onClick={handleReReview}
+            onClick={() => reReviewing ? null : setShowReReviewModal(true)}
             disabled={reReviewing}
             style={{
               fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: reReviewing ? "default" : "pointer",
@@ -3859,6 +3855,53 @@ export default function App() {
           fileName={uploadedFile?.name?.replace(/\.[^.]+$/, '') || "Manus"}
           onClose={() => setShowExport(false)}
         />
+      )}
+
+      {/* RE-REVIEW MODAL */}
+      {showReReviewModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={() => setShowReReviewModal(false)} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
+          <div style={{ position: "relative", background: surface, borderRadius: 16, width: 480, boxShadow: "0 24px 80px rgba(0,0,0,0.18)", padding: "28px 32px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Ny granskning</h3>
+              <button onClick={() => setShowReReviewModal(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
+            </div>
+            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 20px", lineHeight: 1.5 }}>
+              Befintliga förslag arkiveras. Godkända ändringar behålls i texten. Välj analysnivå:
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+              {Object.values(ANALYSIS_LEVELS).map(lvl => {
+                const active = reReviewLevel === lvl.id;
+                const words = chapters.reduce((s, c) => s + c.wordCount, 0);
+                const estMinutes = Math.ceil(chapters.length * lvl.estimatePerChapter / 60);
+                const estCost = (words / 1000 * lvl.costPer1kWords).toFixed(0);
+                return (
+                  <button key={lvl.id} onClick={() => setReReviewLevel(lvl.id)} style={{
+                    padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                    border: active ? `2px solid ${accent}` : `1px solid ${border}`,
+                    background: active ? accentLight : surface, display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
+                  }}>
+                    <span style={{ fontSize: 20 }}>{lvl.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>{lvl.label}</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>{lvl.description}</div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>ca {estCost} kr</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => handleReReview(reReviewLevel)}
+              style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
+            >
+              Starta {ANALYSIS_LEVELS[reReviewLevel].label.toLowerCase()}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* SETTINGS MODAL */}
