@@ -445,7 +445,14 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
                 {!chapterHasSuggestions(ch.id) && ch.status !== "active" && (
                   <span style={{ fontSize: 9, color: "#b8860b" }}>ej analyserad</span>
                 )}
-                <span style={{ width: 5, height: 5, borderRadius: "50%", marginLeft: "auto", background: ch.status === "active" ? "#b8860b" : chapterHasSuggestions(ch.id) ? "#27864a" : "#d4c8bb" }} />
+                <span style={{
+                  width: ch.status === "active" ? 8 : 5,
+                  height: ch.status === "active" ? 8 : 5,
+                  borderRadius: "50%", marginLeft: "auto",
+                  background: ch.status === "active" ? "#b8860b" : chapterHasSuggestions(ch.id) ? "#27864a" : "#d4c8bb",
+                  animation: ch.status === "active" ? "pulse 1.5s ease-in-out infinite" : "none",
+                  boxShadow: ch.status === "active" ? "0 0 6px rgba(184,134,11,0.5)" : "none",
+                }} />
               </div>
             </button>
             {splitTarget === ch.id && (
@@ -3729,7 +3736,19 @@ export default function App() {
                 {/* Suggestion cards – primary content */}
                 {filtered.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "36px 16px", fontFamily: uiFont, fontSize: 12, color: muted }}>
-                    {allSuggestions.length === 0 ? "Inga förslag för detta kapitel än." : "Inga förslag matchar filtret."}
+                    {(reanalyzingChapter === activeChapter || currentChapter?.status === "active") ? (
+                      <div>
+                        <div style={{
+                          width: 24, height: 24, border: `3px solid ${border}`, borderTopColor: accent,
+                          borderRadius: "50%", animation: "spin 0.8s linear infinite",
+                          margin: "0 auto 12px",
+                        }} />
+                        <div style={{ color: ink, fontWeight: 500 }}>Analyserar kapitlet...</div>
+                        <div style={{ fontSize: 11, marginTop: 4, color: muted }}>Förslag visas här när analysen är klar</div>
+                      </div>
+                    ) : (
+                      allSuggestions.length === 0 ? "Inga förslag för detta kapitel än." : "Inga förslag matchar filtret."
+                    )}
                   </div>
                 ) : (
                   <>
