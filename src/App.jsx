@@ -3481,7 +3481,7 @@ export default function App() {
       {/* HEADER */}
       <header style={{ height: 50, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: surface, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div onClick={() => setView("dashboard")} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} title="Tillbaka till dashboard">
             <div style={{ width: 26, height: 26, background: ink, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 13, fontWeight: 700 }}>M</div>
             <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
           </div>
@@ -3552,7 +3552,6 @@ export default function App() {
           </button>
           <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
           <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>Inställningar</button>
-          <button onClick={() => setView("pricing")} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>Priser</button>
         </div>
       </header>
 
