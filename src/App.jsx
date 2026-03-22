@@ -2998,26 +2998,55 @@ export default function App() {
     });
 
     let success = false;
-    for (let attempt = 0; attempt < 3 && !success; attempt++) {
-      try {
-        if (attempt > 0) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
-        const request = buildReviewRequest(systemPrompt, chapter.content, useLevel);
-        const response = await sendMessage(request);
-        if (response) {
+    let lastError = null;
+    // Try with selected level first, then fall back to standard if model unavailable
+    const levelsToTry = useLevel === "deep" ? ["deep", "standard"] : [useLevel];
+
+    for (const tryLevel of levelsToTry) {
+      if (success) break;
+      for (let attempt = 0; attempt < 3 && !success; attempt++) {
+        try {
+          if (attempt > 0) {
+            setProcessingStatus(`Bearbetar ${chapter.title}... (försök ${attempt + 1})`);
+            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
+          }
+          const request = buildReviewRequest(systemPrompt, chapter.content, tryLevel);
+          const response = await sendMessage(request);
+          if (!response) {
+            lastError = "Ingen API-nyckel konfigurerad";
+            break;
+          }
           const text = extractText(response);
           const parsed = parseJsonResponse(text);
           if (parsed?.suggestions?.length) {
             const enrichedParas = attachSuggestionsToParagraphs(freshParas, parsed.suggestions, chapterId);
             setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enrichedParas }));
+          } else {
+            console.warn("No suggestions in response:", text?.slice(0, 200));
+          }
+          success = true;
+          if (tryLevel !== useLevel) {
+            setProcessingStatus(`${chapter.title} analyserad (standardnivå användes)`);
+          }
+        } catch (err) {
+          lastError = err.message;
+          console.error(`Re-analyze failed (${tryLevel}, attempt ${attempt + 1}):`, err);
+          // If model not available (403), skip to fallback
+          if (err.message?.includes("403") || err.message?.includes("not available") || err.message?.includes("does not exist")) {
+            setProcessingStatus(`${ANALYSIS_LEVELS[tryLevel]?.label} ej tillgänglig, försöker annan nivå...`);
+            break;
           }
         }
-        success = true;
-      } catch (err) {
-        console.error(`Re-analyze failed for chapter (attempt ${attempt + 1}):`, err);
       }
     }
 
+    if (!success && lastError) {
+      setProcessingStatus(`${chapter.title}: Analysen misslyckades`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
     setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "done" } : c));
+    setProcessingStatus("");
     setReanalyzingChapter(null);
   };
 
