@@ -43,6 +43,26 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ─── DEV ACCOUNT SETUP (runs once at startup) ───
+import { PrismaClient } from '@prisma/client';
+const prismaSetup = new PrismaClient();
+(async () => {
+  try {
+    const devEmails = ['cecilia.svardsen@gmail.com'];
+    for (const email of devEmails) {
+      const user = await prismaSetup.user.findUnique({ where: { email } });
+      if (user && user.plan !== 'FORLAG') {
+        await prismaSetup.user.update({ where: { id: user.id }, data: { plan: 'FORLAG' } });
+        console.log(`[setup] ${email} upgraded to FORLAG (dev account)`);
+      }
+    }
+  } catch (err) {
+    // Ignore - might not have DB yet
+  } finally {
+    await prismaSetup.$disconnect();
+  }
+})();
+
 // ─── SERVE FRONTEND IN PRODUCTION ───
 
 if (!config.isDev) {
