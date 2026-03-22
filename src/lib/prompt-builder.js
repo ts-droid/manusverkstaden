@@ -63,10 +63,11 @@ Du MÅSTE vara systematisk och INTE missa problem. Gå igenom texten mening för
    - Tempoproblem (för hastigt eller för utdraget)
    - Svag scenöppning eller -avslutning
 
-3. TREDJE PASS – 🟢 Smaksaker:
+3. TREDJE PASS – 🟢 Smaksaker (MAX 5 per kapitel, välj de viktigaste):
    - Alternativa formuleringar som ger bättre rytm
    - Finslipning av ordval
    - Stilistiska alternativ
+   OBS: Begränsa gröna förslag till max 5 – prioritera de som gör störst skillnad.
 
 VIKTIGT: Var hellre för noggrann än för mild. Det är bättre att flagga något som visar sig vara OK, än att missa ett faktiskt problem. Författaren kan alltid avvisa förslaget.
 
@@ -260,7 +261,7 @@ Om texten blandar konventioner inkonsekvent, prioritera detta som 🔴 (måste �
 export function buildReviewRequest(systemPrompt, chapterText) {
   return {
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: systemPrompt,
     messages: [
       {
