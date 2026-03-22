@@ -2694,6 +2694,53 @@ export default function App() {
 
   // Step 2 → Processing
   const [analysisLevel, setAnalysisLevel] = useState("standard");
+  const [serverProjectId, setServerProjectId] = useState(null);
+
+  // ─── LOAD PROJECT FROM SERVER ───
+  const handleOpenProject = async (project) => {
+    try {
+      const result = await apiClient.getProject(project.id);
+      const data = result?.project || result;
+      if (!data) return;
+
+      setServerProjectId(data.id);
+      setUploadedFile({ name: data.title });
+      setGenres(data.genres || []);
+      setModules(data.modules || []);
+      setTransLangs(data.transLanguages || ["en"]);
+      setDnaProfile(data.dnaProfile || null);
+
+      const loadedChapters = (data.chapters || []).map(ch => ({
+        id: ch.id,
+        number: ch.number,
+        title: ch.title,
+        content: ch.content,
+        wordCount: ch.wordCount,
+        status: "done",
+      }));
+      setChapters(loadedChapters);
+
+      // Build paragraphs with suggestions
+      const parasMap = {};
+      for (const ch of data.chapters || []) {
+        const paras = splitIntoParagraphs(ch.content);
+        if (ch.suggestions?.length) {
+          const enriched = attachSuggestionsToParagraphs(paras, ch.suggestions, ch.id);
+          parasMap[ch.id] = enriched;
+        } else {
+          parasMap[ch.id] = paras;
+        }
+      }
+      setParagraphsByChapter(parasMap);
+      setActiveChapter(loadedChapters[0]?.id);
+      setAccepted(new Set());
+      setRejected(new Set());
+      setView("editor");
+    } catch (err) {
+      console.error("Failed to load project:", err);
+      alert("Kunde inte öppna projektet: " + err.message);
+    }
+  };
 
   const handleStartProcessing = (settings) => {
     setGenres(settings.genres);
@@ -2863,6 +2910,33 @@ export default function App() {
     }
 
     setActiveChapter(updatedChapters[0]?.id);
+
+    // Save project to server if authenticated
+    if (isAuthenticated) {
+      setProcessingStatus("Sparar projekt...");
+      try {
+        const projectData = await apiClient.createProject({
+          title: uploadedFile?.name?.replace(/\.[^.]+$/, '') || "Manus",
+          genres: settings.genres || genres,
+          modules: settings.modules || modules,
+          transLanguages: settings.transLangs || transLangs,
+          dnaProfile: dnaProfile,
+          chapters: updatedChapters.map((ch, idx) => ({
+            number: idx + 1,
+            title: ch.title,
+            content: ch.content,
+            wordCount: ch.wordCount,
+          })),
+        });
+        if (projectData?.id) {
+          setServerProjectId(projectData.id);
+        }
+      } catch (err) {
+        console.error("Failed to save project to server:", err);
+        // Continue to editor anyway – data is in local state
+      }
+    }
+
     setProcessingStatus("Klart!");
     await new Promise(r => setTimeout(r, 600));
     setView("editor");
@@ -3290,10 +3364,7 @@ export default function App() {
   if (view === "dashboard" || (view === "loading" && isAuthenticated)) return (
     <DashboardView
       user={user}
-      onOpenProject={(project) => {
-        // TODO: load project data into editor state
-        setView("upload");
-      }}
+      onOpenProject={handleOpenProject}
       onNewProject={() => setView("upload")}
       onLogout={async () => { await logout(); setView("loading"); }}
       onProfile={() => setView("profile")}

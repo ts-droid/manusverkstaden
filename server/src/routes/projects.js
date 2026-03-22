@@ -39,20 +39,32 @@ router.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── CREATE PROJECT ───
+// ─── CREATE PROJECT (optionally with chapters) ───
 router.post('/', async (req, res, next) => {
   try {
-    const { title, genres, modules, transLanguages } = req.body;
+    const { title, genres, modules, transLanguages, dnaProfile, chapters } = req.body;
     const project = await prisma.project.create({
       data: {
         title: title || 'Nytt projekt',
         genres: genres || [],
         modules: modules || [],
         transLanguages: transLanguages || [],
+        dnaProfile: dnaProfile || undefined,
         userId: req.user.id,
+        ...(chapters?.length ? {
+          chapters: {
+            create: chapters.map((ch, i) => ({
+              number: ch.number || i + 1,
+              title: ch.title || `Kapitel ${i + 1}`,
+              content: ch.content || '',
+              wordCount: ch.wordCount || 0,
+            })),
+          },
+        } : {}),
       },
+      include: { chapters: { orderBy: { number: 'asc' } } },
     });
-    res.status(201).json({ project });
+    res.status(201).json({ id: project.id, project });
   } catch (err) { next(err); }
 });
 
