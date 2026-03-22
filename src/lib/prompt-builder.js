@@ -166,7 +166,7 @@ Principer:
 
 // ─── Builder ───
 
-export function buildPrompt({ project, genres = [], modules = {}, translationLanguages = [] }) {
+export function buildPrompt({ project, genres = [], modules = {}, translationLanguages = [], conventions = {} }) {
   const parts = [BASE_PROMPT];
 
   // Project description
@@ -180,6 +180,31 @@ Tidsperiod: ${project.timePeriod || '[ej angiven]'}
 Perspektiv: ${project.perspective || '[ej angivet]'}
 Tempus: ${project.tense || '[ej angivet]'}
 Tonalitet: ${project.tonality || '[ej angiven]'}`);
+  }
+
+  // Text conventions
+  if (conventions && Object.keys(conventions).length > 0) {
+    const dialogDesc = conventions.dialogMark === 'dash'
+      ? 'Tankstreck (–) utan citattecken, t.ex: – Hej, sa hon.'
+      : 'Citattecken, t.ex: "Hej", sa hon.';
+    const titleDesc = conventions.titleStyle === 'italic'
+      ? 'Kursiv stil (markera med *kursiv*)'
+      : 'Citattecken, t.ex: "Borta med vinden"';
+    const thoughtDesc = conventions.innerThought === 'italic'
+      ? 'Kursiv stil för inre tankar'
+      : 'Ingen särskild markering';
+    const ellipsisDesc = conventions.ellipsis === 'three'
+      ? 'Tre separata punkter (...)'
+      : 'Unicode-ellipsis (…)';
+
+    parts.push(`\nTEXTKONVENTIONER (författarens val – granska konsekvent):
+- Dialog: ${dialogDesc}
+- Bok/film-titlar: ${titleDesc}
+- Inre tankar: ${thoughtDesc}
+- Ellipsis: ${ellipsisDesc}
+
+Flagga ALLA avvikelser från dessa konventioner som korrekturförslag (nivå 4).
+Om texten blandar konventioner inkonsekvent, prioritera detta som 🔴 (måste åtgärdas).`);
   }
 
   // Genre add-ons

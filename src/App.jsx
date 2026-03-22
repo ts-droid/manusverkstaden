@@ -767,8 +767,28 @@ function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onU
 }
 
 // ─── SETTINGS MODAL (for editor) ───
-function SettingsModal({ onClose, genres, setGenres, modules, setModules, transLangs, setTransLangs }) {
+function SettingsModal({ onClose, genres, setGenres, modules, setModules, transLangs, setTransLangs, conventions, setConventions }) {
   const toggle = (arr, setArr, id) => setArr(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const setConv = (key, val) => setConventions(prev => ({ ...prev, [key]: val }));
+
+  const ConvOption = ({ label, options, value, onChange, preview }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontFamily: uiFont, fontSize: 12, fontWeight: 500, color: ink, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {options.map(o => (
+          <button key={o.value} onClick={() => onChange(o.value)} style={{
+            flex: 1, padding: "8px 10px", borderRadius: 7, cursor: "pointer", fontFamily: uiFont, fontSize: 11.5, textAlign: "left",
+            border: value === o.value ? `2px solid ${accent}` : `1px solid ${border}`,
+            background: value === o.value ? accentLight : surface, color: value === o.value ? accent : ink,
+            fontWeight: value === o.value ? 600 : 400, transition: "all 0.12s",
+          }}>
+            <div>{o.label}</div>
+            <div style={{ fontFamily: font, fontSize: 12, color: muted, marginTop: 3, fontStyle: o.italic ? "italic" : "normal" }}>{o.example}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -853,6 +873,53 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
             </div>
           </section>
         )}
+
+        <section style={{ marginBottom: 28 }}>
+          <h3 style={{ fontFamily: uiFont, fontSize: 12, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 4px" }}>Textkonventioner</h3>
+          <p style={{ fontFamily: uiFont, fontSize: 11, color: muted, margin: "0 0 14px", lineHeight: 1.4 }}>
+            Välj standarder för ditt manus. AI:n kommer att granska och föreslå ändringar baserat på dessa val.
+          </p>
+
+          <ConvOption
+            label="Dialog"
+            value={conventions.dialogMark}
+            onChange={v => setConv("dialogMark", v)}
+            options={[
+              { value: "dash", label: "Tankstreck", example: "– Hej, sa hon." },
+              { value: "quotes", label: "Citattecken", example: '"Hej", sa hon.' },
+            ]}
+          />
+
+          <ConvOption
+            label="Bok- och filmtitlar"
+            value={conventions.titleStyle}
+            onChange={v => setConv("titleStyle", v)}
+            options={[
+              { value: "italic", label: "Kursiv", example: "Hon läste Borta med vinden.", italic: true },
+              { value: "quotes", label: "Citattecken", example: 'Hon läste "Borta med vinden".' },
+            ]}
+          />
+
+          <ConvOption
+            label="Inre tankar"
+            value={conventions.innerThought}
+            onChange={v => setConv("innerThought", v)}
+            options={[
+              { value: "italic", label: "Kursiv", example: "Varför sa han så? tänkte hon.", italic: true },
+              { value: "none", label: "Ingen markering", example: "Varför sa han så, tänkte hon." },
+            ]}
+          />
+
+          <ConvOption
+            label="Ellipsis"
+            value={conventions.ellipsis}
+            onChange={v => setConv("ellipsis", v)}
+            options={[
+              { value: "three", label: "Tre punkter", example: "Hon tvekade..." },
+              { value: "unicode", label: "Ellipsis-tecken", example: "Hon tvekade\u2026" },
+            ]}
+          />
+        </section>
 
         <button onClick={onClose} style={{ width: "100%", padding: "12px 0", borderRadius: 8, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}>
           Spara inställningar
@@ -2045,6 +2112,12 @@ export default function App() {
   const [genres, setGenres] = useState([]);
   const [modules, setModules] = useState([]);
   const [transLangs, setTransLangs] = useState(["en"]);
+  const [conventions, setConventions] = useState({
+    dialogMark: "dash",     // "dash" (tankstreck –) | "quotes" (citattecken "")
+    titleStyle: "italic",   // "italic" (*kursiv*) | "quotes" (citattecken "")
+    innerThought: "italic", // "italic" | "none" (ingen markering)
+    ellipsis: "three",      // "three" (tre punkter ...) | "unicode" (…)
+  });
   const [rightPanel, setRightPanel] = useState("suggestions");
   const [processingStatus, setProcessingStatus] = useState("");
   const [dnaProfile, setDnaProfile] = useState(null);
@@ -2173,6 +2246,7 @@ export default function App() {
         translate: settings.modules.includes("translate"),
       },
       translationLanguages: settings.transLangs,
+      conventions,
     });
 
     const updatedChapters = [...chaps];
@@ -2961,6 +3035,7 @@ export default function App() {
           genres={genres} setGenres={setGenres}
           modules={modules} setModules={setModules}
           transLangs={transLangs} setTransLangs={setTransLangs}
+          conventions={conventions} setConventions={setConventions}
         />
       )}
 
