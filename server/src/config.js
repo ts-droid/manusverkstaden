@@ -5,6 +5,14 @@ if (process.env.DATABASE_PUBLIC_URL && !process.env.DATABASE_URL) {
   process.env.DATABASE_URL = process.env.DATABASE_PUBLIC_URL;
 }
 
+// Log startup config (no secrets)
+if (process.env.NODE_ENV === 'production') {
+  console.log('[config] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'MISSING');
+  console.log('[config] JWT_SECRET:', process.env.JWT_SECRET ? 'SET' : 'MISSING (using default)');
+  console.log('[config] ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'SET' : 'MISSING');
+  console.log('[config] STRIPE_SECRET_KEY:', process.env.STRIPE_SECRET_KEY ? 'SET' : 'MISSING');
+}
+
 export const config = {
   port: process.env.PORT || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
