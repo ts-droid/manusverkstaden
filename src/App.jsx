@@ -1959,7 +1959,20 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
   const formatDate = (d) => {
     if (!d) return "";
     const date = new Date(d);
-    return date.toLocaleDateString("sv-SE", { day: "numeric", month: "short", year: "numeric" });
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    // If within 24 hours, show relative time
+    if (diffHours < 1) return `${Math.max(1, Math.round(diffMs / 60000))} min sedan`;
+    if (diffHours < 24) return `${Math.round(diffHours)} tim sedan`;
+
+    // Otherwise show date + time
+    const dateStr = date.toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
+    const timeStr = date.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+    // If same year, skip year
+    if (date.getFullYear() === now.getFullYear()) return `${dateStr}, ${timeStr}`;
+    return `${dateStr} ${date.getFullYear()}, ${timeStr}`;
   };
 
   return (
