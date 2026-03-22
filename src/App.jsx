@@ -2118,9 +2118,11 @@ function ProfileView({ user, onBack }) {
     }
   };
 
-  const planLabels = { trial: "PROVA", basic: "GRUND", publisher: "FÖRLAG" };
-  const planColors = { trial: muted, basic: accent, publisher: "#27864a" };
-  const currentPlan = user?.plan || "trial";
+  const planLabels = { trial: "PROVA", PROVA: "PROVA", basic: "GRUND", GRUND: "GRUND", publisher: "FÖRLAG", FORLAG: "FÖRLAG" };
+  const planColors = { trial: muted, PROVA: muted, basic: accent, GRUND: accent, publisher: "#27864a", FORLAG: "#27864a" };
+  const currentPlan = user?.plan || "PROVA";
+  const isAdmin = user?.role === "SUPER_ADMIN";
+  const isDev = user?.isDevAccount;
 
   const sectionStyle = { background: surface, borderRadius: 14, padding: "24px 28px", border: `1px solid ${border}`, marginBottom: 20 };
   const sectionTitle = { fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 16px" };
@@ -2153,10 +2155,19 @@ function ProfileView({ user, onBack }) {
           </div>
           <div style={{ ...statRow, borderBottom: "none" }}>
             <span style={{ color: muted }}>Plan</span>
-            <span style={{
-              fontFamily: uiFont, fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 6,
-              background: `${planColors[currentPlan]}18`, color: planColors[currentPlan],
-            }}>{planLabels[currentPlan] || currentPlan}</span>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              {isDev && (
+                <span style={{ fontFamily: uiFont, fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#27864a18", color: "#27864a" }}>DEV</span>
+              )}
+              {isAdmin && (
+                <span style={{ fontFamily: uiFont, fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#7c3aed18", color: "#7c3aed" }}>ADMIN</span>
+              )}
+              <span style={{
+                fontFamily: uiFont, fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 6,
+                background: isDev ? "#27864a18" : `${planColors[currentPlan] || muted}18`,
+                color: isDev ? "#27864a" : (planColors[currentPlan] || muted),
+              }}>{isDev ? "OBEGRÄNSAD" : (planLabels[currentPlan] || currentPlan)}</span>
+            </div>
           </div>
         </div>
 
@@ -2230,12 +2241,14 @@ function ProfileView({ user, onBack }) {
           </div>
         </div>
 
-        {/* Upgrade button */}
-        <button onClick={handleUpgrade} disabled={upgrading} style={{
-          width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
-          background: upgrading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
-          cursor: upgrading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
-        }}>{upgrading ? "Laddar..." : "Uppgradera plan"}</button>
+        {/* Upgrade button - hidden for dev accounts */}
+        {!isDev && (
+          <button onClick={handleUpgrade} disabled={upgrading} style={{
+            width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
+            background: upgrading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
+            cursor: upgrading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
+          }}>{upgrading ? "Laddar..." : "Uppgradera plan"}</button>
+        )}
       </div>
     </div>
   );
