@@ -930,7 +930,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
 }
 
 // ─── DEVELOP PANEL ───
-function DevelopPanel({ dnaProfile, chapterContent, chapterTitle, onResult }) {
+function DevelopPanel({ dnaProfile, emotionMap, chapterContent, chapterTitle, onResult }) {
   const [tab, setTab] = useState("dna");
   const tabs = [
     { id: "dna", label: "Språklig DNA" },
@@ -951,8 +951,8 @@ function DevelopPanel({ dnaProfile, chapterContent, chapterTitle, onResult }) {
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
         {tab === "dna" && <DNAView profile={dnaProfile} />}
-        {tab === "emotion" && <EmotionView />}
-        {tab === "develop" && <DevelopView dnaProfile={dnaProfile} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} />}
+        {tab === "emotion" && <EmotionView emotionMap={emotionMap} />}
+        {tab === "develop" && <DevelopView dnaProfile={dnaProfile} emotionMap={emotionMap} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} />}
         {tab === "brainstorm" && <BrainstormView />}
       </div>
     </div>
@@ -1006,18 +1006,88 @@ function DNAView({ profile }) {
   );
 }
 
-function EmotionView() {
+function EmotionView({ emotionMap }) {
+  if (!emotionMap) {
+    return (
+      <div style={{ fontFamily: uiFont, fontSize: 12, padding: "20px 4px", textAlign: "center" }}>
+        <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.5 }}>📊</div>
+        <p style={{ color: muted, fontSize: 12 }}>Emotionell karta genereras vid bearbetning av kapitlet.</p>
+      </div>
+    );
+  }
+
+  const e = emotionMap;
+  const emotionColors = { glädje: "#f59e0b", sorg: "#3b82f6", rädsla: "#8b5cf6", ilska: "#ef4444", kärlek: "#ec4899", hopp: "#10b981", ångest: "#6366f1", lugn: "#14b8a6" };
+
   return (
-    <div style={{ fontFamily: uiFont, fontSize: 12, padding: "20px 4px", textAlign: "center" }}>
-      <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.5 }}>📊</div>
-      <p style={{ color: muted, fontSize: 12 }}>Emotionell kartläggning genereras efter bearbetning av alla kapitel.</p>
+    <div style={{ fontFamily: uiFont, fontSize: 12 }}>
+      {/* Dominant emotion */}
+      {e.dominantEmotion && (
+        <div style={{ padding: "12px 14px", background: bg, borderRadius: 9, marginBottom: 10 }}>
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Dominant känsla</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: ink }}>{e.dominantEmotion}</div>
+        </div>
+      )}
+
+      {/* Emotion distribution */}
+      {e.emotions && (
+        <div style={{ padding: "12px 14px", background: bg, borderRadius: 9, marginBottom: 10 }}>
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Känslofördelning</div>
+          {Object.entries(e.emotions).sort((a, b) => b[1] - a[1]).map(([emotion, intensity]) => (
+            <div key={emotion} style={{ marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 2 }}>
+                <span style={{ color: ink, fontWeight: 500 }}>{emotion}</span>
+                <span style={{ color: muted }}>{Math.round(intensity * 100)}%</span>
+              </div>
+              <div style={{ height: 4, borderRadius: 2, background: border }}>
+                <div style={{ height: 4, borderRadius: 2, background: emotionColors[emotion.toLowerCase()] || accent, width: `${intensity * 100}%`, transition: "width 0.3s" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Emotional arc */}
+      {e.arc && (
+        <div style={{ padding: "12px 14px", background: bg, borderRadius: 9, marginBottom: 10 }}>
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Emotionell båge</div>
+          <p style={{ fontSize: 11.5, color: ink, lineHeight: 1.5, margin: 0 }}>{e.arc}</p>
+        </div>
+      )}
+
+      {/* Character states */}
+      {e.characterStates && e.characterStates.length > 0 && (
+        <div style={{ padding: "12px 14px", background: bg, borderRadius: 9, marginBottom: 10 }}>
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Karaktärernas känslotillstånd</div>
+          {e.characterStates.map((cs, i) => (
+            <div key={i} style={{ marginBottom: 8, padding: "6px 8px", background: surface, borderRadius: 6 }}>
+              <div style={{ fontWeight: 600, color: ink, fontSize: 11.5 }}>{cs.character}</div>
+              <div style={{ color: muted, fontSize: 10.5, marginTop: 2 }}>{cs.state}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tension level */}
+      {e.tension !== undefined && (
+        <div style={{ padding: "12px 14px", background: bg, borderRadius: 9 }}>
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Spänningsnivå</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1, height: 6, borderRadius: 3, background: border }}>
+              <div style={{ height: 6, borderRadius: 3, background: e.tension > 0.7 ? "#ef4444" : e.tension > 0.4 ? "#f59e0b" : "#10b981", width: `${e.tension * 100}%`, transition: "width 0.3s" }} />
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 600, color: ink }}>{Math.round(e.tension * 100)}%</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, onResult }) {
+function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult }) {
   const [mode, setMode] = useState(null);
   const [userText, setUserText] = useState(inputText || "");
+  const [userInstruction, setUserInstruction] = useState("");
   const [rewriteFocus, setRewriteFocus] = useState([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
@@ -1040,18 +1110,22 @@ function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, onRe
 
     const dnaStr = dnaProfile ? `\nFörfattarens DNA-profil: Perspektiv: ${dnaProfile.perspective}, Tempus: ${dnaProfile.tense}, Tonalitet: ${dnaProfile.tonality}, Meningslängd: ${dnaProfile.avgSentenceLen}, Dialogstil: ${dnaProfile.dialogStyle}, Bildspråk: ${dnaProfile.dominantImagery}` : "";
 
+    const emotionStr = emotionMap ? `\nKapitlets emotionella karta: Dominant känsla: ${emotionMap.dominantEmotion}, Spänningsnivå: ${Math.round((emotionMap.tension || 0) * 100)}%, Emotionell båge: ${emotionMap.arc || "okänd"}${emotionMap.characterStates?.length ? ", Karaktärer: " + emotionMap.characterStates.map(cs => `${cs.character} (${cs.state})`).join(", ") : ""}` : "";
+
     const contextSnippet = chapterContent ? chapterContent.slice(0, 6000) : "";
 
-    let systemMsg = `Du är en kreativ skrivassistent för svenska manus. Du matchar alltid författarens stil, ton och röst.${dnaStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara ALLTID med JSON i detta format:\n{\n  "developedText": "<den utvecklade texten>",\n  "reasoning": "<1-3 meningar som förklarar ditt resonemang och hur texten passar in i berättelsen>"\n}`;
+    let systemMsg = `Du är en kreativ skrivassistent för svenska manus. Du matchar alltid författarens stil, ton och röst.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara ALLTID med JSON i detta format:\n{\n  "developedText": "<den utvecklade texten>",\n  "reasoning": "<1-3 meningar som förklarar ditt resonemang och hur texten passar in i berättelsen>"\n}`;
+
+    const instructionStr = userInstruction.trim() ? `\n\nFörfattarens instruktioner: ${userInstruction}` : "";
 
     let userMsg = "";
     if (mode === "expand") {
-      userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst:\n\n${userText}`;
+      userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst.${instructionStr}\n\n${userText}`;
     } else if (mode === "rewrite") {
       const focus = rewriteFocus.length > 0 ? `\nFokus: ${rewriteFocus.join(", ")}` : "";
-      userMsg = `Skriv om denna passage.${focus}\n\n${userText}`;
+      userMsg = `Skriv om denna passage.${focus}${instructionStr}\n\n${userText}`;
     } else if (mode === "newscene") {
-      userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil:\n\n${userText}`;
+      userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil.${instructionStr}\n\n${userText}`;
     }
 
     try {
@@ -1140,6 +1214,20 @@ function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, onRe
                 })}
               </div>
             )}
+            {/* User instruction */}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 600, color: ink, marginBottom: 4 }}>Din instruktion <span style={{ fontWeight: 400, color: muted }}>(valfritt)</span></div>
+              <textarea
+                value={userInstruction}
+                onChange={e => setUserInstruction(e.target.value)}
+                placeholder="T.ex: Vi behöver mer innehåll för morgonen, fördjupa Claras tvivel, lägg till en dialog med Tim..."
+                style={{
+                  width: "100%", minHeight: 45, padding: 8, borderRadius: 6, border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 11,
+                  resize: "vertical", background: surface, color: ink, outline: "none", boxSizing: "border-box",
+                }}
+              />
+            </div>
+            <div style={{ fontSize: 10.5, fontWeight: 600, color: ink, marginBottom: 4 }}>Text att bearbeta</div>
             <textarea
               value={userText}
               onChange={e => setUserText(e.target.value)}
@@ -2121,6 +2209,7 @@ export default function App() {
   const [rightPanel, setRightPanel] = useState("suggestions");
   const [processingStatus, setProcessingStatus] = useState("");
   const [dnaProfile, setDnaProfile] = useState(null);
+  const [emotionMaps, setEmotionMaps] = useState({}); // { chapterId: emotionMapData }
   const [selectionToolbar, setSelectionToolbar] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
@@ -2148,6 +2237,8 @@ export default function App() {
           setAccepted(saved.accepted instanceof Set ? saved.accepted : new Set(saved.accepted || []));
           setRejected(saved.rejected instanceof Set ? saved.rejected : new Set(saved.rejected || []));
           setDnaProfile(saved.dnaProfile || null);
+          setEmotionMaps(saved.emotionMaps || {});
+          if (saved.conventions) setConventions(saved.conventions);
           setGenres(saved.genres || []);
           setModules(saved.modules || []);
           setTransLangs(saved.transLangs || ["en"]);
@@ -2183,6 +2274,8 @@ export default function App() {
         accepted,
         rejected,
         dnaProfile,
+        emotionMaps,
+        conventions,
         genres,
         modules,
         transLangs,
@@ -2196,7 +2289,7 @@ export default function App() {
     }, 800);
 
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [chapters, paragraphsByChapter, accepted, rejected, dnaProfile, genres, modules, transLangs, activeChapter, view]);
+  }, [chapters, paragraphsByChapter, accepted, rejected, dnaProfile, emotionMaps, conventions, genres, modules, transLangs, activeChapter, view]);
 
   // ─── START FRESH (clear saved data) ───
   const handleStartFresh = async () => {
@@ -2313,6 +2406,36 @@ export default function App() {
         await new Promise(r => setTimeout(r, pauseMs));
       }
     }
+
+    // Emotional maps per chapter
+    const newEmotionMaps = {};
+    for (let i = 0; i < updatedChapters.length; i++) {
+      const ch = updatedChapters[i];
+      setProcessingStatus(`Skapar emotionell karta: ${ch.title} (${i + 1}/${updatedChapters.length})...`);
+      try {
+        const emRes = await sendMessage({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1500,
+          system: `Du är en litterär analytiker. Analysera den emotionella strukturen i detta kapitel. Returnera JSON:
+{
+  "dominantEmotion": "<sträng: den dominerande känslan>",
+  "emotions": { "<känsla>": <0.0-1.0 intensitet>, ... },
+  "arc": "<1-2 meningar: kapitlets emotionella båge>",
+  "characterStates": [{ "character": "<namn>", "state": "<kort emotionellt tillstånd>" }],
+  "tension": <0.0-1.0 spänningsnivå>
+}`,
+          messages: [{ role: "user", content: ch.content.slice(0, 8000) }],
+        });
+        if (emRes) {
+          const parsed = parseJsonResponse(extractText(emRes));
+          if (parsed) newEmotionMaps[ch.id] = parsed;
+        }
+      } catch (err) {
+        console.error(`Emotion map failed for ${ch.title}:`, err);
+      }
+      if (i < updatedChapters.length - 1) await new Promise(r => setTimeout(r, 8000));
+    }
+    setEmotionMaps(prev => ({ ...prev, ...newEmotionMaps }));
 
     // DNA profile
     setProcessingStatus("Bygger språklig DNA-profil...");
@@ -2999,7 +3122,7 @@ export default function App() {
               </div>
             </>
           )}
-          {rightPanel === "develop" && <DevelopPanel dnaProfile={dnaProfile} chapterContent={currentChapter?.content} chapterTitle={currentChapter?.title} onResult={setDevelopResult} />}
+          {rightPanel === "develop" && <DevelopPanel dnaProfile={dnaProfile} emotionMap={emotionMaps[activeChapter]} chapterContent={currentChapter?.content} chapterTitle={currentChapter?.title} onResult={setDevelopResult} />}
           {rightPanel === "translate" && <TranslatePanel langs={transLangs} />}
         </aside>
       </div>
