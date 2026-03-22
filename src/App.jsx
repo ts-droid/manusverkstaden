@@ -2901,7 +2901,7 @@ export default function App() {
             <>
               <div style={{ padding: "12px 14px", borderBottom: `1px solid ${border}` }}>
                 <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Förslag</div>
-                <div style={{ display: "flex", gap: 4 }}>
+                <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
                   {["all", "red", "yellow", "green"].map(p => (
                     <button key={p} onClick={() => setFilterPriority(p)} style={{
                       fontFamily: uiFont, fontSize: 10, padding: "3px 9px", borderRadius: 10, cursor: "pointer",
@@ -2911,6 +2911,52 @@ export default function App() {
                     }}>{p === "all" ? "Alla" : PRIORITY[p].label}</button>
                   ))}
                 </div>
+                {/* Batch actions */}
+                {(() => {
+                  const pendingSuggestions = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id));
+                  const conventionSuggestions = pendingSuggestions.filter(s => s.level === 4 || s.type === "consistency");
+                  const filteredPending = pendingSuggestions.filter(s => filterPriority === "all" || s.priority === filterPriority);
+
+                  return (conventionSuggestions.length > 0 || filteredPending.length > 1) ? (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {conventionSuggestions.length > 0 && (
+                        <button onClick={() => {
+                          if (window.confirm(`Godkänn ${conventionSuggestions.length} konventionsförslag (nivå 4)?`)) {
+                            setAccepted(prev => {
+                              const n = new Set(prev);
+                              conventionSuggestions.forEach(s => n.add(s.id));
+                              return n;
+                            });
+                          }
+                        }} style={{
+                          fontFamily: uiFont, fontSize: 9.5, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+                          border: `1px solid #b8860b40`, background: "#fdf6e3", color: "#7a6520", fontWeight: 500,
+                          display: "flex", alignItems: "center", gap: 4,
+                        }}>
+                          ✓ Konventioner ({conventionSuggestions.length})
+                        </button>
+                      )}
+                      {filteredPending.length > 1 && (
+                        <button onClick={() => {
+                          const label = filterPriority === "all" ? "alla" : PRIORITY[filterPriority]?.label?.toLowerCase();
+                          if (window.confirm(`Godkänn ${filteredPending.length} ${label} förslag?`)) {
+                            setAccepted(prev => {
+                              const n = new Set(prev);
+                              filteredPending.forEach(s => n.add(s.id));
+                              return n;
+                            });
+                          }
+                        }} style={{
+                          fontFamily: uiFont, fontSize: 9.5, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+                          border: `1px solid #27864a40`, background: "#f0faf3", color: "#27864a", fontWeight: 500,
+                          display: "flex", alignItems: "center", gap: 4,
+                        }}>
+                          ✓ Godkänn {filterPriority === "all" ? "alla" : PRIORITY[filterPriority]?.label?.toLowerCase()} ({filteredPending.length})
+                        </button>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
                 {/* Suggestion cards – primary content */}
