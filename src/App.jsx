@@ -278,10 +278,15 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
         <section style={{ marginBottom: 28 }}>
           <h3 style={{ fontFamily: uiFont, fontSize: 12, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 12px" }}>Analysnivå</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <p style={{ fontFamily: uiFont, fontSize: 10, color: muted, margin: "0 0 8px", fontStyle: "italic" }}>
+              Ungefärlig tid och kostnad baserat på ditt manus ({(totalWords || 0).toLocaleString()} ord, {chapterCount || 0} kapitel)
+            </p>
             {Object.values(ANALYSIS_LEVELS).map(lvl => {
               const active = analysisLevel === lvl.id;
-              const estMinutes = Math.ceil((chapterCount || 20) * lvl.estimatePerChapter / 60);
-              const estCost = ((totalWords || 60000) / 1000 * lvl.costPer1kWords).toFixed(0);
+              const words = totalWords || 60000;
+              const chaps = chapterCount || 20;
+              const estMinutes = Math.ceil(chaps * lvl.estimatePerChapter / 60);
+              const estCost = (words / 1000 * lvl.costPer1kWords).toFixed(0);
               return (
                 <button key={lvl.id} onClick={() => setAnalysisLevel(lvl.id)} style={{
                   padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
@@ -294,8 +299,8 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
                     <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>{lvl.description}</div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontFamily: uiFont, fontSize: 11, color: ink, fontWeight: 500 }}>~{estMinutes} min</div>
-                    <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>~{estCost} kr</div>
+                    <div style={{ fontFamily: uiFont, fontSize: 11, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
+                    <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>ca {estCost} kr</div>
                   </div>
                 </button>
               );
