@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { parseManuscript, splitIntoParagraphs, countWords } from "./lib/manuscript-parser";
 import { sendMessage, extractText, parseJsonResponse } from "./lib/ai-client";
-import { buildPrompt, buildReviewRequest } from "./lib/prompt-builder";
+import { buildPrompt, buildReviewRequest, ANALYSIS_LEVELS } from "./lib/prompt-builder";
 import { saveProject, loadProject, clearProject, hasSavedProject } from "./lib/storage";
 import { exportToDocx, downloadBlob } from "./lib/export";
 import { useAuth } from "./contexts/AuthContext";
@@ -170,10 +170,11 @@ function OnboardingUpload({ onNext }) {
 }
 
 // ─── ONBOARDING: STEP 2 – SETTINGS ───
-function OnboardingSettings({ fileName, onStart, onBack }) {
+function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBack }) {
   const [genres, setGenres] = useState([]);
   const [modules, setModules] = useState([]);
   const [transLangs, setTransLangs] = useState(["en"]);
+  const [analysisLevel, setAnalysisLevel] = useState("standard");
 
   const toggle = (arr, setArr, id) => setArr(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
@@ -273,11 +274,40 @@ function OnboardingSettings({ fileName, onStart, onBack }) {
           </section>
         )}
 
+        {/* Analysis level */}
+        <section style={{ marginBottom: 28 }}>
+          <h3 style={{ fontFamily: uiFont, fontSize: 12, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 12px" }}>Analysnivå</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {Object.values(ANALYSIS_LEVELS).map(lvl => {
+              const active = analysisLevel === lvl.id;
+              const estMinutes = Math.ceil((chapterCount || 20) * lvl.estimatePerChapter / 60);
+              const estCost = ((totalWords || 60000) / 1000 * lvl.costPer1kWords).toFixed(0);
+              return (
+                <button key={lvl.id} onClick={() => setAnalysisLevel(lvl.id)} style={{
+                  padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                  border: active ? `2px solid ${accent}` : `1px solid ${border}`,
+                  background: active ? accentLight : surface, display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
+                }}>
+                  <span style={{ fontSize: 22 }}>{lvl.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{lvl.label}</div>
+                    <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>{lvl.description}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontFamily: uiFont, fontSize: 11, color: ink, fontWeight: 500 }}>~{estMinutes} min</div>
+                    <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>~{estCost} kr</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         <button
-          onClick={() => onStart({ genres, modules, transLangs })}
+          onClick={() => onStart({ genres, modules, transLangs, analysisLevel })}
           style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
         >
-          Starta bearbetning
+          Starta {ANALYSIS_LEVELS[analysisLevel].label.toLowerCase()}
         </button>
       </div>
     </div>
@@ -340,7 +370,7 @@ function ProcessingView({ chapters, statusText }) {
 
 // ─── EDITOR COMPONENTS ───
 
-function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, onReanalyze, paragraphsByChapter }) {
+function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, onReanalyze, onDeepAnalyze, paragraphsByChapter }) {
   const [splitTarget, setSplitTarget] = useState(null);
 
   const chapterHasSuggestions = (chId) => {
@@ -363,6 +393,19 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35, flex: 1 }}>{ch.title}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                  {activeChapter === ch.id && onDeepAnalyze && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); onDeepAnalyze(ch.id); }}
+                      title="Djupanalys (Opus)"
+                      style={{
+                        fontSize: 11, color: muted, cursor: "pointer",
+                        padding: "2px 5px", lineHeight: 1, borderRadius: 4,
+                        background: "transparent", transition: "all 0.15s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "#7a4700"; e.currentTarget.style.background = "#fdf6e3"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = muted; e.currentTarget.style.background = "transparent"; }}
+                    >🔍</span>
+                  )}
                   {activeChapter === ch.id && onReanalyze && (
                     <span
                       onClick={(e) => { e.stopPropagation(); onReanalyze(ch.id); }}
@@ -2650,10 +2693,13 @@ export default function App() {
   };
 
   // Step 2 → Processing
+  const [analysisLevel, setAnalysisLevel] = useState("standard");
+
   const handleStartProcessing = (settings) => {
     setGenres(settings.genres);
     setModules(settings.modules);
     setTransLangs(settings.transLangs);
+    if (settings.analysisLevel) setAnalysisLevel(settings.analysisLevel);
     setView("processing");
 
     // Build paragraphs from chapters
@@ -2663,10 +2709,10 @@ export default function App() {
     });
     setParagraphsByChapter(parasMap);
 
-    runProcessing(chapters, parasMap, settings);
+    runProcessing(chapters, parasMap, settings, settings.analysisLevel || "standard");
   };
 
-  const runProcessing = async (chaps, parasMap, settings) => {
+  const runProcessing = async (chaps, parasMap, settings, level = "standard") => {
     const systemPrompt = buildPrompt({
       project: { title: uploadedFile?.name?.replace(/\.[^.]+$/, '') },
       genres: settings.genres,
@@ -2709,7 +2755,7 @@ export default function App() {
             setProcessingStatus(`Analyserar ${updatedChapters[i].title} (${i + 1}/${updatedChapters.length}) – retry ${attempt}...`);
           }
 
-          const request = buildReviewRequest(systemPrompt, updatedChapters[i].content);
+          const request = buildReviewRequest(systemPrompt, updatedChapters[i].content, level);
           const response = await sendMessage(request);
 
           if (response) {
@@ -2824,11 +2870,13 @@ export default function App() {
 
   // Re-analyze a single chapter
   const [reanalyzingChapter, setReanalyzingChapter] = useState(null);
-  const handleReanalyzeChapter = async (chapterId) => {
+  const handleReanalyzeChapter = async (chapterId, level = null) => {
     const chapter = chapters.find(c => c.id === chapterId);
     if (!chapter || reanalyzingChapter) return;
 
+    const useLevel = level || analysisLevel || "standard";
     setReanalyzingChapter(chapterId);
+    setProcessingStatus(`${ANALYSIS_LEVELS[useLevel]?.icon || ''} ${ANALYSIS_LEVELS[useLevel]?.label || 'Analys'}: ${chapter.title}...`);
 
     // Clear existing suggestions for this chapter
     const freshParas = splitIntoParagraphs(chapter.content);
@@ -2842,13 +2890,14 @@ export default function App() {
       genres,
       modules: { develop: modules.includes("develop"), translate: modules.includes("translate") },
       translationLanguages: transLangs,
+      conventions,
     });
 
     let success = false;
     for (let attempt = 0; attempt < 3 && !success; attempt++) {
       try {
         if (attempt > 0) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
-        const request = buildReviewRequest(systemPrompt, chapter.content);
+        const request = buildReviewRequest(systemPrompt, chapter.content, useLevel);
         const response = await sendMessage(request);
         if (response) {
           const text = extractText(response);
@@ -3263,7 +3312,7 @@ export default function App() {
   );
 
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
-  if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} onStart={handleStartProcessing} onBack={() => setView("upload")} />;
+  if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} chapterCount={chapters.length} totalWords={chapters.reduce((s, c) => s + c.wordCount, 0)} onStart={handleStartProcessing} onBack={() => setView("upload")} />;
   if (view === "processing") return <ProcessingView chapters={chapters} statusText={processingStatus} />;
   if (view === "pricing") return <PricingPage onBack={() => setView("editor")} />;
 
@@ -3456,7 +3505,7 @@ export default function App() {
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* LEFT SIDEBAR */}
-        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} onSplitChapter={handleSplitChapter} onReanalyze={handleReanalyzeChapter} paragraphsByChapter={paragraphsByChapter} />
+        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} onSplitChapter={handleSplitChapter} onReanalyze={handleReanalyzeChapter} onDeepAnalyze={(id) => handleReanalyzeChapter(id, "deep")} paragraphsByChapter={paragraphsByChapter} />
 
         {/* MAIN TEXT */}
         <main ref={mainRef} onMouseUp={handleTextSelection} style={{ flex: 1, overflowY: "auto", padding: "36px 52px", maxWidth: 680, margin: "0 auto", position: "relative" }}>
