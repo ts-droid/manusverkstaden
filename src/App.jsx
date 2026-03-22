@@ -2195,6 +2195,8 @@ export default function App() {
   const [activeSuggestion, setActiveSuggestion] = useState(null);
   const [accepted, setAccepted] = useState(new Set());
   const [rejected, setRejected] = useState(new Set());
+  const [reviewHistory, setReviewHistory] = useState([]); // [{ date, chapterId, suggestionCount, accepted, rejected }]
+  const [activeReviewRound, setActiveReviewRound] = useState(1);
   const [filterPriority, setFilterPriority] = useState("all");
   const [showSettings, setShowSettings] = useState(false);
   const [genres, setGenres] = useState([]);
@@ -2239,6 +2241,8 @@ export default function App() {
           setDnaProfile(saved.dnaProfile || null);
           setEmotionMaps(saved.emotionMaps || {});
           if (saved.conventions) setConventions(saved.conventions);
+          setReviewHistory(saved.reviewHistory || []);
+          setActiveReviewRound(saved.activeReviewRound || 1);
           setGenres(saved.genres || []);
           setModules(saved.modules || []);
           setTransLangs(saved.transLangs || ["en"]);
@@ -2276,6 +2280,8 @@ export default function App() {
         dnaProfile,
         emotionMaps,
         conventions,
+        reviewHistory,
+        activeReviewRound,
         genres,
         modules,
         transLangs,
@@ -2610,6 +2616,108 @@ export default function App() {
 
     setProcessingStatus("");
     setBatchAnalyzing(false);
+  };
+
+  // ─── RE-REVIEW: New analysis pass on updated text ───
+  const [reReviewing, setReReviewing] = useState(false);
+  const handleReReview = async () => {
+    if (reReviewing || batchAnalyzing) return;
+
+    const confirmed = window.confirm(
+      "Kör ny granskning av alla kapitel?\n\n" +
+      "Befintliga förslag arkiveras i historiken.\n" +
+      "Godkända ändringar behålls i texten.\n" +
+      "Nya förslag genereras baserat på uppdaterad text."
+    );
+    if (!confirmed) return;
+
+    setReReviewing(true);
+
+    // Archive current review round
+    const currentRoundSuggestions = [];
+    for (const ch of chapters) {
+      const paras = paragraphsByChapter[ch.id] || [];
+      for (const p of paras) {
+        for (const s of (p.suggestions || [])) {
+          currentRoundSuggestions.push({
+            ...s,
+            chapterId: ch.id,
+            chapterTitle: ch.title,
+            status: accepted.has(s.id) ? "accepted" : rejected.has(s.id) ? "rejected" : "pending",
+          });
+        }
+      }
+    }
+
+    setReviewHistory(prev => [...prev, {
+      round: activeReviewRound,
+      date: new Date().toISOString(),
+      suggestions: currentRoundSuggestions,
+      totalCount: currentRoundSuggestions.length,
+      acceptedCount: currentRoundSuggestions.filter(s => s.status === "accepted").length,
+      rejectedCount: currentRoundSuggestions.filter(s => s.status === "rejected").length,
+    }]);
+
+    setActiveReviewRound(prev => prev + 1);
+
+    // Clear old suggestions but keep accepted changes applied to content
+    const clearedParas = {};
+    for (const ch of chapters) {
+      const paras = paragraphsByChapter[ch.id] || [];
+      clearedParas[ch.id] = paras.map(p => ({ ...p, suggestions: [] }));
+    }
+    setParagraphsByChapter(clearedParas);
+    setAccepted(new Set());
+    setRejected(new Set());
+    setActiveSuggestion(null);
+
+    // Re-run analysis on all chapters
+    const systemPrompt = buildPrompt({
+      project: { title: uploadedFile?.name?.replace(/\.[^.]+$/, '') },
+      genres,
+      modules: { develop: modules.includes("develop"), translate: modules.includes("translate") },
+      translationLanguages: transLangs,
+      conventions,
+    });
+
+    for (let i = 0; i < chapters.length; i++) {
+      const ch = chapters[i];
+      setProcessingStatus(`Granskning ${activeReviewRound + 1}: ${ch.title} (${i + 1}/${chapters.length})...`);
+
+      let success = false;
+      for (let attempt = 0; attempt < 3 && !success; attempt++) {
+        try {
+          if (attempt > 0) {
+            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 3000));
+          }
+
+          const request = buildReviewRequest(systemPrompt, ch.content);
+          const response = await sendMessage(request);
+
+          if (response) {
+            const text = extractText(response);
+            const parsed = parseJsonResponse(text);
+            if (parsed?.suggestions?.length) {
+              const paras = clearedParas[ch.id] || splitIntoParagraphs(ch.content);
+              const enriched = attachSuggestionsToParagraphs(paras, parsed.suggestions, ch.id);
+              clearedParas[ch.id] = enriched;
+              setParagraphsByChapter({ ...clearedParas });
+            }
+          }
+          success = true;
+        } catch (err) {
+          console.error(`Re-review failed for ${ch.title}:`, err);
+        }
+      }
+
+      if (i < chapters.length - 1) {
+        setProcessingStatus(`Paus innan ${chapters[i + 1].title}...`);
+        await new Promise(r => setTimeout(r, 10000));
+      }
+    }
+
+    setProcessingStatus("");
+    setReReviewing(false);
   };
 
   const handleSplitChapter = (chapterId, paragraphIndex) => {
@@ -2956,6 +3064,23 @@ export default function App() {
               </button>
             ) : null;
           })()}
+          {/* Re-review button */}
+          <button
+            onClick={handleReReview}
+            disabled={reReviewing}
+            style={{
+              fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: reReviewing ? "default" : "pointer",
+              border: `1px solid ${border}`, background: reReviewing ? "#e8ddd2" : surface, color: reReviewing ? muted : ink, fontWeight: 500,
+              display: "flex", alignItems: "center", gap: 4,
+            }}
+          >
+            {reReviewing ? "Granskar..." : `↻ Ny granskning`}
+            {reviewHistory.length > 0 && (
+              <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 8, background: accentLight, color: accent, fontWeight: 600 }}>
+                #{activeReviewRound}
+              </span>
+            )}
+          </button>
           <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
           <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>Inställningar</button>
           <button onClick={() => setView("pricing")} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>Priser</button>
