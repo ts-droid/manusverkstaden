@@ -1880,7 +1880,7 @@ function AuthPage({ onLogin, onRegister, error: externalError }) {
 }
 
 // ─── DASHBOARD VIEW ───
-function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile }) {
+function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile, onAdmin }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(null);
@@ -1931,6 +1931,9 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile 
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>{user?.name || user?.email}</span>
+          {user?.role === "SUPER_ADMIN" && (
+            <button onClick={onAdmin} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${accent}`, background: accentLight, color: accent, cursor: "pointer", fontWeight: 600 }}>Admin</button>
+          )}
           <button onClick={onProfile} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Profil</button>
           <button onClick={onLogout} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>Logga ut</button>
         </div>
@@ -2177,6 +2180,333 @@ function ProfileView({ user, onBack }) {
           background: upgrading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
           cursor: upgrading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
         }}>{upgrading ? "Laddar..." : "Uppgradera plan"}</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── SUPER ADMIN VIEW ───
+function SuperAdminView({ user, onBack }) {
+  const [tab, setTab] = useState("overview");
+  const [loading, setLoading] = useState(true);
+  const [overview, setOverview] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState("");
+  const [usage, setUsage] = useState(null);
+  const [prompts, setPrompts] = useState([]);
+  const [editedPrompts, setEditedPrompts] = useState({});
+  const [saving, setSaving] = useState(null);
+  const [updatingUser, setUpdatingUser] = useState(null);
+
+  const tabs = [
+    { id: "overview", label: "Överblick" },
+    { id: "users", label: "Användare" },
+    { id: "usage", label: "API-förbrukning" },
+    { id: "prompts", label: "Prompter" },
+  ];
+
+  // Fetch data when tab changes
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        if (tab === "overview") {
+          const data = await apiClient.getAdminOverview();
+          if (!cancelled) setOverview(data);
+        } else if (tab === "users") {
+          const data = await apiClient.getAdminUsers(userSearch);
+          if (!cancelled) setUsers(data.users || data || []);
+        } else if (tab === "usage") {
+          const data = await apiClient.getAdminUsage();
+          if (!cancelled) setUsage(data);
+        } else if (tab === "prompts") {
+          const data = await apiClient.getAdminPrompts();
+          if (!cancelled) {
+            const list = data.prompts || data || [];
+            setPrompts(list);
+            setEditedPrompts({});
+          }
+        }
+      } catch (err) {
+        console.error("Admin fetch failed:", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tab]);
+
+  // Refetch users on search change (debounced)
+  useEffect(() => {
+    if (tab !== "users") return;
+    const timer = setTimeout(async () => {
+      try {
+        const data = await apiClient.getAdminUsers(userSearch);
+        setUsers(data.users || data || []);
+      } catch (err) {
+        console.error("User search failed:", err);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [userSearch, tab]);
+
+  const handleUpdateUser = async (id, data) => {
+    setUpdatingUser(id);
+    try {
+      await apiClient.updateAdminUser(id, data);
+      setUsers(prev => prev.map(u => u.id === id ? { ...u, ...data } : u));
+    } catch (err) {
+      console.error("Update user failed:", err);
+    } finally {
+      setUpdatingUser(null);
+    }
+  };
+
+  const handleSavePrompt = async (key) => {
+    if (!editedPrompts[key] && editedPrompts[key] !== "") return;
+    setSaving(key);
+    try {
+      await apiClient.updateAdminPrompt(key, editedPrompts[key]);
+      setPrompts(prev => prev.map(p => p.key === key ? { ...p, content: editedPrompts[key], version: (p.version || 0) + 1 } : p));
+      setEditedPrompts(prev => { const n = { ...prev }; delete n[key]; return n; });
+    } catch (err) {
+      console.error("Save prompt failed:", err);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const statCard = (label, value, sub) => (
+    <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}`, flex: "1 1 160px", minWidth: 150 }}>
+      <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ fontFamily: font, fontSize: 28, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>{value ?? "—"}</div>
+      {sub && <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+
+  const spinner = (
+    <div style={{ textAlign: "center", padding: 60 }}>
+      <div style={{ width: 36, height: 36, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 14px" }} />
+      <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>Laddar...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight: "100vh", background: bg, fontFamily: font }}>
+      <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Header */}
+      <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: surface }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 30, height: 30, background: ink, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 15, fontWeight: 700 }}>M</div>
+          <span style={{ fontSize: 17, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
+          <span style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: accent, background: accentLight, padding: "2px 8px", borderRadius: 5, marginLeft: 6 }}>ADMIN</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>{user?.name || user?.email}</span>
+          <button onClick={onBack} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Tillbaka</button>
+        </div>
+      </header>
+
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: ink, margin: "0 0 24px", letterSpacing: "-0.02em" }}>Administration</h1>
+
+        {/* Tab bar */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 28, borderBottom: `1px solid ${border}`, paddingBottom: 0 }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              fontFamily: uiFont, fontSize: 12, fontWeight: tab === t.id ? 600 : 400,
+              padding: "8px 18px", border: "none", cursor: "pointer",
+              background: "transparent", color: tab === t.id ? accent : muted,
+              borderBottom: tab === t.id ? `2px solid ${accent}` : "2px solid transparent",
+              marginBottom: -1, transition: "all 0.15s",
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {/* ─── Tab: Överblick ─── */}
+        {tab === "overview" && (loading ? spinner : overview && (
+          <div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
+              {statCard("Totala användare", overview.totalUsers)}
+              {statCard("Aktiva (7d)", overview.activeUsers7d)}
+              {statCard("Projekt", overview.totalProjects)}
+              {statCard("Kapitel", overview.totalChapters)}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
+              {statCard("API-kostnad idag", overview.costToday != null ? `$${Number(overview.costToday).toFixed(2)}` : "—")}
+              {statCard("API-kostnad denna månad", overview.costThisMonth != null ? `$${Number(overview.costThisMonth).toFixed(2)}` : "—")}
+            </div>
+            {overview.usersByPlan && (
+              <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
+                <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.04em" }}>Användare per plan</div>
+                <div style={{ display: "flex", gap: 24 }}>
+                  {Object.entries(overview.usersByPlan).map(([plan, count]) => (
+                    <div key={plan} style={{ textAlign: "center" }}>
+                      <div style={{ fontFamily: font, fontSize: 22, fontWeight: 700, color: ink }}>{count}</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>{plan}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* ─── Tab: Användare ─── */}
+        {tab === "users" && (
+          <div>
+            <input
+              type="text"
+              placeholder="Sök på e-post eller namn..."
+              value={userSearch}
+              onChange={e => setUserSearch(e.target.value)}
+              style={{
+                width: "100%", maxWidth: 400, padding: "9px 14px", borderRadius: 8,
+                border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 13,
+                background: surface, color: ink, marginBottom: 20, outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+            {loading ? spinner : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: uiFont, fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${border}` }}>
+                      {["Email", "Namn", "Plan", "Dev-konto", "Förbrukning (mån)", "Senast aktiv", "Åtgärder"].map(h => (
+                        <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: muted, fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((u, i) => (
+                      <tr key={u.id} style={{ borderBottom: `1px solid ${border}`, background: i % 2 === 0 ? surface : bg }}>
+                        <td style={{ padding: "10px 12px", color: ink }}>{u.email}</td>
+                        <td style={{ padding: "10px 12px", color: ink }}>{u.name || "—"}</td>
+                        <td style={{ padding: "10px 12px" }}>
+                          <select
+                            value={u.plan || "PROVA"}
+                            onChange={e => handleUpdateUser(u.id, { plan: e.target.value })}
+                            disabled={updatingUser === u.id}
+                            style={{ fontFamily: uiFont, fontSize: 11, padding: "4px 8px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}
+                          >
+                            <option value="PROVA">PROVA</option>
+                            <option value="GRUND">GRUND</option>
+                            <option value="FÖRLAG">FÖRLAG</option>
+                          </select>
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!u.isDev}
+                            onChange={e => handleUpdateUser(u.id, { isDev: e.target.checked })}
+                            disabled={updatingUser === u.id}
+                            style={{ cursor: "pointer", accentColor: accent }}
+                          />
+                        </td>
+                        <td style={{ padding: "10px 12px", color: ink }}>{u.monthlyUsage != null ? `$${Number(u.monthlyUsage).toFixed(2)}` : "—"}</td>
+                        <td style={{ padding: "10px 12px", color: muted, whiteSpace: "nowrap" }}>{u.lastActive ? new Date(u.lastActive).toLocaleDateString("sv-SE") : "—"}</td>
+                        <td style={{ padding: "10px 12px" }}>
+                          {updatingUser === u.id && <span style={{ color: muted, fontSize: 11 }}>Sparar...</span>}
+                        </td>
+                      </tr>
+                    ))}
+                    {users.length === 0 && (
+                      <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: muted }}>Inga användare hittades.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── Tab: API-förbrukning ─── */}
+        {tab === "usage" && (loading ? spinner : usage && (
+          <div>
+            {/* Bar chart – daily costs */}
+            {usage.dailyCosts && usage.dailyCosts.length > 0 && (
+              <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}`, marginBottom: 24 }}>
+                <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.04em" }}>Daglig kostnad (senaste 30 dagar)</div>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 140 }}>
+                  {(() => {
+                    const maxCost = Math.max(...usage.dailyCosts.map(d => d.cost || 0), 0.01);
+                    return usage.dailyCosts.map((d, i) => (
+                      <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <div
+                          title={`${d.date}: $${Number(d.cost || 0).toFixed(2)}`}
+                          style={{
+                            width: "100%", maxWidth: 24, minWidth: 4,
+                            height: `${Math.max(((d.cost || 0) / maxCost) * 120, 2)}px`,
+                            background: accent, borderRadius: "3px 3px 0 0",
+                            transition: "height 0.3s",
+                          }}
+                        />
+                        {i % 5 === 0 && (
+                          <div style={{ fontFamily: uiFont, fontSize: 8, color: muted, marginTop: 4, whiteSpace: "nowrap", transform: "rotate(-45deg)", transformOrigin: "top left" }}>
+                            {d.date?.slice(5) || ""}
+                          </div>
+                        )}
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Breakdown by type */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
+              {usage.byType && Object.entries(usage.byType).map(([type, cost]) => (
+                statCard(type.replace(/_/g, " "), `$${Number(cost || 0).toFixed(2)}`)
+              ))}
+            </div>
+
+            {/* Total tokens */}
+            {statCard("Totala tokens", usage.totalTokens != null ? Number(usage.totalTokens).toLocaleString() : "—")}
+          </div>
+        ))}
+
+        {/* ─── Tab: Prompter ─── */}
+        {tab === "prompts" && (loading ? spinner : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {prompts.map(p => (
+              <div key={p.key} style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div>
+                    <span style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{p.key}</span>
+                    <span style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginLeft: 10 }}>v{p.version || 1}</span>
+                  </div>
+                  <button
+                    onClick={() => handleSavePrompt(p.key)}
+                    disabled={saving === p.key || editedPrompts[p.key] === undefined}
+                    style={{
+                      fontFamily: uiFont, fontSize: 11, padding: "5px 14px", borderRadius: 6,
+                      border: "none", cursor: editedPrompts[p.key] !== undefined ? "pointer" : "default",
+                      background: editedPrompts[p.key] !== undefined ? accent : border,
+                      color: editedPrompts[p.key] !== undefined ? "#fff" : muted,
+                      fontWeight: 600, transition: "all 0.15s",
+                    }}
+                  >{saving === p.key ? "Sparar..." : "Spara"}</button>
+                </div>
+                <textarea
+                  value={editedPrompts[p.key] !== undefined ? editedPrompts[p.key] : (p.content || "")}
+                  onChange={e => setEditedPrompts(prev => ({ ...prev, [p.key]: e.target.value }))}
+                  style={{
+                    width: "100%", minHeight: 140, padding: "12px 14px", borderRadius: 8,
+                    border: `1px solid ${border}`, fontFamily: "monospace", fontSize: 12,
+                    background: bg, color: ink, resize: "vertical", outline: "none",
+                    boxSizing: "border-box", lineHeight: 1.6,
+                  }}
+                />
+              </div>
+            ))}
+            {prompts.length === 0 && (
+              <div style={{ textAlign: "center", padding: 40, color: muted, fontFamily: uiFont, fontSize: 13 }}>Inga prompter konfigurerade.</div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2918,7 +3248,13 @@ export default function App() {
       onNewProject={() => setView("upload")}
       onLogout={async () => { await logout(); setView("loading"); }}
       onProfile={() => setView("profile")}
+      onAdmin={() => setView("admin")}
     />
+  );
+
+  // Admin
+  if (view === "admin" && user?.role === "SUPER_ADMIN") return (
+    <SuperAdminView user={user} onBack={() => setView("dashboard")} />
   );
 
   // Profile

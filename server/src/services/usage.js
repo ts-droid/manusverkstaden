@@ -18,6 +18,11 @@ export async function checkUsageLimit(userId, type, wordCount) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { allowed: false, reason: 'Användaren hittades inte' };
 
+  // Dev accounts bypass all usage limits
+  if (user.isDevAccount) {
+    return { allowed: true, wordsUsed: 0, costThisMonth: 0, estimatedCost: 0, devAccount: true };
+  }
+
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
@@ -66,6 +71,12 @@ export async function checkUsageLimit(userId, type, wordCount) {
  * Record a usage event.
  */
 export async function recordUsage(userId, type, wordCount) {
+  // Dev accounts skip cost tracking
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (user?.isDevAccount) {
+    return { id: 'dev', userId, type, wordCount, cost: 0, devAccount: true };
+  }
+
   const cost = calculateCost(type, wordCount);
 
   return prisma.usageRecord.create({

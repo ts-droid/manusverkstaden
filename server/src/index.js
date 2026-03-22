@@ -12,6 +12,7 @@ import chapterRoutes from './routes/chapters.js';
 import suggestionRoutes from './routes/suggestions.js';
 import aiRoutes from './routes/ai.js';
 import billingRoutes from './routes/billing.js';
+import adminRoutes from './routes/admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -37,6 +38,7 @@ app.use('/api/chapters', chapterRoutes);
 app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -177,6 +177,15 @@ class ApiClient {
     });
   }
 
+  // ─── ADMIN ───
+
+  async getAdminOverview() { return this.request('/admin/overview'); }
+  async getAdminUsers(search = '') { return this.request(`/admin/users?search=${encodeURIComponent(search)}`); }
+  async updateAdminUser(id, data) { return this.request(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }); }
+  async getAdminUsage() { return this.request('/admin/usage'); }
+  async getAdminPrompts() { return this.request('/admin/prompts'); }
+  async updateAdminPrompt(key, content) { return this.request(`/admin/prompts/${key}`, { method: 'PUT', body: JSON.stringify({ content }) }); }
+
   // ─── BILLING ───
 
   async createCheckout(priceId) {

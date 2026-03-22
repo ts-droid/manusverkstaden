@@ -35,7 +35,10 @@ model User {
   email                String        @unique
   passwordHash         String
   name                 String?
+  role                 String        @default("USER")
   plan                 Plan          @default(PROVA)
+  isDevAccount         Boolean       @default(false)
+  disabled             Boolean       @default(false)
   stripeCustomerId     String?       @unique
   stripeSubscriptionId String?
   projects             Project[]
@@ -168,4 +171,27 @@ model PublishOrder {
   updatedAt       DateTime      @updatedAt
 
   @@index([projectId])
+}
+
+// ─── ADMIN PROMPT MANAGEMENT ───
+
+model PromptConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  content   String
+  version   Int      @default(1)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PromptHistory {
+  id        String   @id @default(cuid())
+  key       String
+  content   String
+  version   Int
+  updatedBy String?
+  createdAt DateTime @default(now())
+
+  @@index([key])
 }
