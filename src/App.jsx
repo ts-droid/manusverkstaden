@@ -3352,6 +3352,8 @@ export default function App() {
   const [showExport, setShowExport] = useState(false);
   const [developResult, setDevelopResult] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
+  const [analysisLevel, setAnalysisLevel] = useState("standard");
+  const [serverProjectId, setServerProjectId] = useState(null);
   const mainRef = useRef(null);
   const saveTimerRef = useRef(null);
   const saveIndicatorRef = useRef(null);
@@ -3468,10 +3470,6 @@ export default function App() {
     setChapters(parsedChapters.map(ch => ({ ...ch, status: "pending" })));
     setView("settings");
   };
-
-  // Step 2 → Processing
-  const [analysisLevel, setAnalysisLevel] = useState("standard");
-  const [serverProjectId, setServerProjectId] = useState(null);
 
   // ─── LOAD PROJECT FROM SERVER ───
   const handleOpenProject = async (project) => {
