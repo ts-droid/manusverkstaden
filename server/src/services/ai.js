@@ -215,3 +215,55 @@ Returnera JSON:
     return { result: { content: text, comments: [], glossary: [] }, meta };
   }
 }
+
+/**
+ * Final pre-export consistency check across entire manuscript.
+ */
+export async function finalCheck(allText, { genres = [] } = {}) {
+  const defaultPrompt = `Du är en professionell svensk korrekturläsare och redaktör. Du gör en SLUTKONTROLL av ett helt manuskript inför export/tryckning.
+
+Analysera texten och hitta:
+
+1. **Namnkonsekvens** — Stavas karaktärsnamn, platsnamn och andra egennamn konsekvent genom hela texten? Rapportera variationer.
+2. **Tempusbrott** — Bryts berättartempus (t.ex. plötsligt presens i ett preteritum-manus)? Ange kapitel och citat.
+3. **Stilbrott** — Finns passager som bryter mot den övergripande tonen/stilen? T.ex. plötsligt formellt i en informell text.
+4. **Upprepningar** — Återkommer samma ord/fras onaturligt ofta inom korta avsnitt?
+5. **Logiska hål** — Finns inkonsekvenser i handlingen (karaktär på två platser, tid som inte stämmer)?
+6. **Korrekturfel** — Stavfel, felaktig interpunktion, saknade ord som missats i tidigare granskning.
+7. **Formateringsfel** — Inkonsekvent dialogmarkering, blandade citattecken, inkonsekvent kursivering.
+
+Returnera JSON:
+{
+  "issues": [
+    {
+      "category": "namnkonsekvens" | "tempusbrott" | "stilbrott" | "upprepning" | "logik" | "korrektur" | "formatering",
+      "severity": "critical" | "warning" | "minor",
+      "chapter": "<kapitelnamn eller null>",
+      "quote": "<kort citat från texten>",
+      "description": "<beskrivning av problemet på svenska>",
+      "suggestion": "<förslag på åtgärd>"
+    }
+  ],
+  "summary": "<1-3 meningar: övergripande bedömning av manuskriptets status>"
+}
+
+Var GRUNDLIG men rapportera bara verkliga problem, inte subjektiva stilval. Prioritera critical > warning > minor.
+Returnera ENBART JSON.`;
+
+  const systemPrompt = await getPrompt('ai:final_check', defaultPrompt);
+
+  const response = await sendMessage({
+    system: `${systemPrompt}\n\nGenrer: ${genres.join(', ') || 'inga'}`,
+    messages: [{ role: 'user', content: `Gör en slutkontroll av följande manuskript:\n\n${allText.slice(0, 80000)}` }],
+    max_tokens: 8192,
+  });
+
+  const meta = extractMeta(response);
+  const text = extractText(response);
+  try {
+    return { result: parseJsonResponse(text), meta };
+  } catch {
+    console.error('Failed to parse final check response:', text.slice(0, 200));
+    return { result: { issues: [], summary: 'Kunde inte tolka svaret.' }, meta };
+  }
+}

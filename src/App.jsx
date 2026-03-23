@@ -1495,6 +1495,83 @@ function DevelopModal({ initialText, chapterContent, chapterTitle, dnaProfile, e
   );
 }
 
+// ─── FINAL CHECK MODAL ───
+function FinalCheckModal({ issues, summary, onClose, onExport }) {
+  const severityColors = { critical: "#c0392b", warning: "#b8860b", minor: "#6b7280" };
+  const severityLabels = { critical: "Kritiskt", warning: "Varning", minor: "Mindre" };
+  const categoryLabels = {
+    namnkonsekvens: "Namnkonsekvens", tempusbrott: "Tempusbrott", stilbrott: "Stilbrott",
+    upprepning: "Upprepning", logik: "Logiskt hål", korrektur: "Korrekturfel", formatering: "Formatering",
+  };
+
+  const criticalCount = (issues || []).filter(i => i.severity === "critical").length;
+  const warningCount = (issues || []).filter(i => i.severity === "warning").length;
+  const minorCount = (issues || []).filter(i => i.severity === "minor").length;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
+      <div style={{ position: "relative", background: surface, borderRadius: 16, width: 680, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.18)" }}>
+        {/* Header */}
+        <div style={{ padding: "20px 24px 14px", flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink }}>Slutkontroll</div>
+              <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>AI-driven konsekvenskontroll inför export</div>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: muted, cursor: "pointer", padding: "2px 6px" }}>✕</button>
+          </div>
+          {/* Summary stats */}
+          <div style={{ display: "flex", gap: 12, marginTop: 14 }}>
+            {criticalCount > 0 && <span style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: severityColors.critical, background: "#fef2f2", padding: "3px 10px", borderRadius: 6 }}>{criticalCount} kritiska</span>}
+            {warningCount > 0 && <span style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: severityColors.warning, background: "#fefce8", padding: "3px 10px", borderRadius: 6 }}>{warningCount} varningar</span>}
+            {minorCount > 0 && <span style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: severityColors.minor, background: "#f3f4f6", padding: "3px 10px", borderRadius: 6 }}>{minorCount} mindre</span>}
+            {(issues || []).length === 0 && <span style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: "#27864a", background: "#f0faf3", padding: "3px 10px", borderRadius: 6 }}>Inga problem hittade!</span>}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "0 24px 14px", overflow: "auto", flex: 1 }}>
+          {/* Summary */}
+          {summary && (
+            <div style={{ padding: "12px 14px", background: bg, borderRadius: 8, marginBottom: 14, fontFamily: uiFont, fontSize: 12, color: ink, lineHeight: 1.5, borderLeft: `3px solid ${accent}` }}>
+              {summary}
+            </div>
+          )}
+
+          {/* Issues list */}
+          {(issues || []).map((issue, i) => (
+            <div key={i} style={{ padding: "12px 14px", background: bg, borderRadius: 8, marginBottom: 8, borderLeft: `3px solid ${severityColors[issue.severity] || "#ddd"}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span style={{ fontFamily: uiFont, fontSize: 9, fontWeight: 600, color: severityColors[issue.severity], background: `${severityColors[issue.severity]}15`, padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>{severityLabels[issue.severity] || issue.severity}</span>
+                  <span style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 500, color: muted }}>{categoryLabels[issue.category] || issue.category}</span>
+                </div>
+                {issue.chapter && <span style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>{issue.chapter}</span>}
+              </div>
+              {issue.quote && (
+                <div style={{ fontFamily: font, fontSize: 12, color: ink, fontStyle: "italic", margin: "4px 0 6px", padding: "4px 8px", background: surface, borderRadius: 4 }}>
+                  &ldquo;{issue.quote}&rdquo;
+                </div>
+              )}
+              <div style={{ fontFamily: uiFont, fontSize: 11.5, color: ink, lineHeight: 1.4 }}>{issue.description}</div>
+              {issue.suggestion && (
+                <div style={{ fontFamily: uiFont, fontSize: 11, color: accent, marginTop: 4, fontWeight: 500 }}>→ {issue.suggestion}</div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 24px", borderTop: `1px solid ${border}`, display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
+          <button onClick={onClose} style={{ fontFamily: uiFont, fontSize: 12, padding: "8px 18px", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>Fortsätt redigera</button>
+          <button onClick={onExport} style={{ fontFamily: uiFont, fontSize: 12, padding: "8px 22px", borderRadius: 8, border: "none", background: accent, color: "#fff", fontWeight: 600, cursor: "pointer" }}>Exportera ändå</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── TRANSLATE PANEL ───
 function TranslatePanel({ langs }) {
   const [activeLang, setActiveLang] = useState(langs[0] || "en");
@@ -3268,6 +3345,9 @@ export default function App() {
   const [emotionMaps, setEmotionMaps] = useState({}); // { chapterId: emotionMapData }
   const [selectionToolbar, setSelectionToolbar] = useState(null);
   const [developModal, setDevelopModal] = useState(null); // null or { initialText }
+  const [finalCheckResult, setFinalCheckResult] = useState(null); // null or { issues, summary }
+  const [finalCheckRunning, setFinalCheckRunning] = useState(false);
+  const [showFinalCheckPrompt, setShowFinalCheckPrompt] = useState(false);
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [developResult, setDevelopResult] = useState(null);
@@ -4016,6 +4096,15 @@ export default function App() {
     });
   const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
 
+  // Global: count ALL suggestions across ALL chapters
+  const globalAllSuggestions = Object.values(paragraphsByChapter).flatMap(paras => paras.flatMap(p => p.suggestions || []));
+  const globalPendingCount = globalAllSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
+  const allChaptersReviewed = chapters.length > 0 && chapters.every(ch => {
+    const paras = paragraphsByChapter[ch.id] || [];
+    return paras.some(p => p.suggestions?.length > 0);
+  });
+  const manuscriptFullyHandled = allChaptersReviewed && globalPendingCount === 0 && globalAllSuggestions.length > 0;
+
   // ─── RENDER ───
 
   // Auth loading spinner
@@ -4360,7 +4449,39 @@ export default function App() {
                     {pendingCount === 0 && allSuggestions.length > 0 && (
                       <div style={{ textAlign: "center", padding: "12px 16px 8px", fontFamily: uiFont, fontSize: 12, color: "#27864a" }}>
                         <div style={{ fontSize: 22, marginBottom: 4 }}>✓</div>
-                        Alla förslag hanterade! Klicka för att ångra.
+                        Alla förslag i detta kapitel hanterade!
+                      </div>
+                    )}
+                    {manuscriptFullyHandled && !showFinalCheckPrompt && !finalCheckResult && (
+                      <div style={{ margin: "12px 14px", padding: "14px 16px", background: "#f0faf3", borderRadius: 10, border: "1px solid #27864a30" }}>
+                        <div style={{ fontFamily: uiFont, fontSize: 12, fontWeight: 600, color: "#27864a", marginBottom: 6 }}>Hela manuset genomgånget!</div>
+                        <div style={{ fontFamily: uiFont, fontSize: 11, color: ink, lineHeight: 1.4, marginBottom: 10 }}>
+                          Alla {globalAllSuggestions.length} förslag har hanterats. Vill du köra en AI-driven slutkontroll innan export?
+                        </div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={async () => {
+                            setFinalCheckRunning(true);
+                            try {
+                              const result = await apiClient.finalCheck(serverProjectId);
+                              setFinalCheckResult({ issues: result?.issues?.issues || result?.issues || [], summary: result?.issues?.summary || "" });
+                            } catch (err) {
+                              console.error("Final check failed:", err);
+                              alert("Slutkontrollen misslyckades: " + err.message);
+                            } finally {
+                              setFinalCheckRunning(false);
+                            }
+                          }} disabled={finalCheckRunning} style={{
+                            flex: 1, padding: "8px 0", borderRadius: 7, border: "none", fontFamily: uiFont, fontSize: 11.5, fontWeight: 600,
+                            background: finalCheckRunning ? "#d4c8bb" : accent, color: "#fff", cursor: finalCheckRunning ? "default" : "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                          }}>
+                            {finalCheckRunning ? (<><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Kontrollerar...</>) : "Kör slutkontroll"}
+                          </button>
+                          <button onClick={() => setShowExport(true)} style={{
+                            padding: "8px 14px", borderRadius: 7, border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 11.5,
+                            background: surface, color: ink, cursor: "pointer",
+                          }}>Exportera direkt</button>
+                        </div>
                       </div>
                     )}
                     {filtered.map(s => (
@@ -4432,6 +4553,16 @@ export default function App() {
           onSave={(newText) => handleSaveParagraph(editModal.paraId, newText)}
           onCreateChapter={(text) => handleCreateChapterFromText(text, editModal.paraId)}
           onClose={() => setEditModal(null)}
+        />
+      )}
+
+      {/* FINAL CHECK MODAL */}
+      {finalCheckResult && (
+        <FinalCheckModal
+          issues={finalCheckResult.issues}
+          summary={finalCheckResult.summary}
+          onClose={() => setFinalCheckResult(null)}
+          onExport={() => { setFinalCheckResult(null); setShowExport(true); }}
         />
       )}
 

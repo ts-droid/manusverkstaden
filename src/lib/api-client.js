@@ -161,6 +161,13 @@ class ApiClient {
     });
   }
 
+  async finalCheck(projectId) {
+    return this.request('/ai/final-check', {
+      method: 'POST',
+      body: JSON.stringify({ projectId }),
+    });
+  }
+
   async translateChapter(chapterId, language) {
     return this.request('/ai/translate', {
       method: 'POST',

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
-import { reviewChapter, generateDNAProfile, developText, translateText } from '../services/ai.js';
+import { reviewChapter, generateDNAProfile, developText, translateText, finalCheck } from '../services/ai.js';
 import { checkUsageLimit, recordUsage } from '../services/usage.js';
 
 const router = Router();
@@ -160,6 +160,32 @@ router.post('/translate', async (req, res, next) => {
     await recordUsage(req.user.id, 'translate', chapter.wordCount, meta);
 
     res.json({ translation: saved });
+  } catch (err) { next(err); }
+});
+
+// ─── FINAL CHECK (pre-export consistency review) ───
+router.post('/final-check', async (req, res, next) => {
+  try {
+    const { projectId } = req.body;
+
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, userId: req.user.id },
+      include: { chapters: { orderBy: { number: 'asc' } } },
+    });
+    if (!project) return res.status(404).json({ error: 'Projektet hittades inte' });
+
+    const totalWords = project.chapters.reduce((s, c) => s + c.wordCount, 0);
+    const limit = await checkUsageLimit(req.user.id, 'review', totalWords);
+    if (!limit.allowed) {
+      return res.status(429).json({ error: limit.reason, usage: limit });
+    }
+
+    const allText = project.chapters.map(c => `--- ${c.title} ---\n${c.content}`).join('\n\n');
+    const { result, meta } = await finalCheck(allText, { genres: project.genres });
+
+    await recordUsage(req.user.id, 'review', totalWords, meta);
+
+    res.json({ issues: result });
   } catch (err) { next(err); }
 });
 
