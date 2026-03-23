@@ -2099,7 +2099,7 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
 }
 
 // ─── PROFILE VIEW ───
-function ProfileView({ user, onBack }) {
+function ProfileView({ user, onBack, onAdmin }) {
   const [usage, setUsage] = useState(null);
   const [projects, setProjects] = useState([]);
   const [loadingUsage, setLoadingUsage] = useState(true);
@@ -2192,6 +2192,21 @@ function ProfileView({ user, onBack }) {
           </div>
         </div>
 
+        {/* Admin Panel button for SUPER_ADMIN */}
+        {isAdmin && onAdmin && (
+          <button
+            onClick={onAdmin}
+            style={{
+              width: "100%", padding: "14px 0", borderRadius: 10, border: `1px solid ${accent}`,
+              background: accentLight, color: accent, fontSize: 14, fontWeight: 600,
+              cursor: "pointer", fontFamily: uiFont, transition: "background 0.2s",
+              marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}
+          >
+            Admin Panel
+          </button>
+        )}
+
         {/* Usage */}
         <div style={sectionStyle}>
           <h2 style={sectionTitle}>Månadens användning</h2>
@@ -2279,6 +2294,7 @@ function ProfileView({ user, onBack }) {
 function SuperAdminView({ user, onBack }) {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
   const [userSearch, setUserSearch] = useState("");
@@ -2287,11 +2303,14 @@ function SuperAdminView({ user, onBack }) {
   const [editedPrompts, setEditedPrompts] = useState({});
   const [saving, setSaving] = useState(null);
   const [updatingUser, setUpdatingUser] = useState(null);
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [editingUserData, setEditingUserData] = useState({});
+  const [retryKey, setRetryKey] = useState(0);
 
   const tabs = [
-    { id: "overview", label: "Överblick" },
+    { id: "overview", label: "Översikt" },
     { id: "users", label: "Användare" },
-    { id: "usage", label: "API-förbrukning" },
+    { id: "usage", label: "Förbrukning" },
     { id: "prompts", label: "Prompter" },
   ];
 
@@ -2299,6 +2318,7 @@ function SuperAdminView({ user, onBack }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     (async () => {
       try {
         if (tab === "overview") {
@@ -2320,12 +2340,13 @@ function SuperAdminView({ user, onBack }) {
         }
       } catch (err) {
         console.error("Admin fetch failed:", err);
+        if (!cancelled) setError(err.message || "Kunde inte ladda data");
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [tab]);
+  }, [tab, retryKey]);
 
   // Refetch users on search change (debounced)
   useEffect(() => {
@@ -2341,11 +2362,23 @@ function SuperAdminView({ user, onBack }) {
     return () => clearTimeout(timer);
   }, [userSearch, tab]);
 
-  const handleUpdateUser = async (id, data) => {
+  const handleStartEdit = (u) => {
+    setEditingUserId(u.id);
+    setEditingUserData({ plan: u.plan || "PROVA", role: u.role || "USER", isDevAccount: !!u.isDevAccount || !!u.isDev, disabled: !!u.disabled });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUserId(null);
+    setEditingUserData({});
+  };
+
+  const handleSaveUser = async (id) => {
     setUpdatingUser(id);
     try {
-      await apiClient.updateAdminUser(id, data);
-      setUsers(prev => prev.map(u => u.id === id ? { ...u, ...data } : u));
+      await apiClient.updateAdminUser(id, editingUserData);
+      setUsers(prev => prev.map(u => u.id === id ? { ...u, ...editingUserData, isDev: editingUserData.isDevAccount } : u));
+      setEditingUserId(null);
+      setEditingUserData({});
     } catch (err) {
       console.error("Update user failed:", err);
     } finally {
@@ -2383,6 +2416,17 @@ function SuperAdminView({ user, onBack }) {
     </div>
   );
 
+  const errorBox = (
+    <div style={{ textAlign: "center", padding: 60 }}>
+      <div style={{ fontFamily: uiFont, fontSize: 14, color: ink, marginBottom: 8 }}>Kunde inte ladda data</div>
+      <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, marginBottom: 20 }}>{error}</div>
+      <button
+        onClick={() => setRetryKey(k => k + 1)}
+        style={{ fontFamily: uiFont, fontSize: 12, padding: "8px 20px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: accent, cursor: "pointer", fontWeight: 600 }}
+      >Försök igen</button>
+    </div>
+  );
+
   return (
     <div style={{ minHeight: "100vh", background: bg, fontFamily: font }}>
       <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -2396,7 +2440,9 @@ function SuperAdminView({ user, onBack }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>{user?.name || user?.email}</span>
-          <button onClick={onBack} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Tillbaka</button>
+          <button onClick={onBack} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>
+            &larr; Tillbaka till profil
+          </button>
         </div>
       </header>
 
@@ -2416,18 +2462,18 @@ function SuperAdminView({ user, onBack }) {
           ))}
         </div>
 
-        {/* ─── Tab: Överblick ─── */}
-        {tab === "overview" && (loading ? spinner : overview && (
+        {/* ─── Tab: Översikt ─── */}
+        {tab === "overview" && (loading ? spinner : error ? errorBox : overview && (
           <div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
               {statCard("Totala användare", overview.totalUsers)}
-              {statCard("Aktiva (7d)", overview.activeUsers7d)}
-              {statCard("Projekt", overview.totalProjects)}
+              {statCard("Aktiva projekt", overview.totalProjects ?? overview.activeProjects)}
               {statCard("Kapitel", overview.totalChapters)}
+              {statCard("API-kostnad (månad)", overview.costThisMonth != null ? `$${Number(overview.costThisMonth).toFixed(2)}` : "—")}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
+              {statCard("Aktiva (7d)", overview.activeUsers7d)}
               {statCard("API-kostnad idag", overview.costToday != null ? `$${Number(overview.costToday).toFixed(2)}` : "—")}
-              {statCard("API-kostnad denna månad", overview.costThisMonth != null ? `$${Number(overview.costThisMonth).toFixed(2)}` : "—")}
             </div>
             {overview.usersByPlan && (
               <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
@@ -2460,12 +2506,12 @@ function SuperAdminView({ user, onBack }) {
                 boxSizing: "border-box",
               }}
             />
-            {loading ? spinner : (
+            {loading ? spinner : error ? errorBox : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: uiFont, fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: `2px solid ${border}` }}>
-                      {["Email", "Namn", "Plan", "Dev-konto", "Förbrukning (mån)", "Senast aktiv", "Åtgärder"].map(h => (
+                      {["Namn", "Email", "Plan", "Roll", "Dev-konto", "Inaktiverad", "Skapad", "Senast aktiv", "Åtgärder"].map(h => (
                         <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: muted, fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
@@ -2473,38 +2519,87 @@ function SuperAdminView({ user, onBack }) {
                   <tbody>
                     {users.map((u, i) => (
                       <tr key={u.id} style={{ borderBottom: `1px solid ${border}`, background: i % 2 === 0 ? surface : bg }}>
-                        <td style={{ padding: "10px 12px", color: ink }}>{u.email}</td>
                         <td style={{ padding: "10px 12px", color: ink }}>{u.name || "—"}</td>
+                        <td style={{ padding: "10px 12px", color: ink }}>{u.email}</td>
                         <td style={{ padding: "10px 12px" }}>
-                          <select
-                            value={u.plan || "PROVA"}
-                            onChange={e => handleUpdateUser(u.id, { plan: e.target.value })}
-                            disabled={updatingUser === u.id}
-                            style={{ fontFamily: uiFont, fontSize: 11, padding: "4px 8px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}
-                          >
-                            <option value="PROVA">PROVA</option>
-                            <option value="GRUND">GRUND</option>
-                            <option value="FÖRLAG">FÖRLAG</option>
-                          </select>
+                          {editingUserId === u.id ? (
+                            <select
+                              value={editingUserData.plan || "PROVA"}
+                              onChange={e => setEditingUserData(prev => ({ ...prev, plan: e.target.value }))}
+                              style={{ fontFamily: uiFont, fontSize: 11, padding: "4px 8px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}
+                            >
+                              <option value="PROVA">PROVA</option>
+                              <option value="GRUND">GRUND</option>
+                              <option value="FORLAG">FÖRLAG</option>
+                            </select>
+                          ) : (
+                            <span style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: `${accent}12`, color: accent }}>{u.plan || "PROVA"}</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "10px 12px" }}>
+                          {editingUserId === u.id ? (
+                            <select
+                              value={editingUserData.role || "USER"}
+                              onChange={e => setEditingUserData(prev => ({ ...prev, role: e.target.value }))}
+                              style={{ fontFamily: uiFont, fontSize: 11, padding: "4px 8px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}
+                            >
+                              <option value="USER">USER</option>
+                              <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                            </select>
+                          ) : (
+                            <span style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: u.role === "SUPER_ADMIN" ? "#7c3aed" : muted }}>{u.role || "USER"}</span>
+                          )}
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                          <input
-                            type="checkbox"
-                            checked={!!u.isDev}
-                            onChange={e => handleUpdateUser(u.id, { isDev: e.target.checked })}
-                            disabled={updatingUser === u.id}
-                            style={{ cursor: "pointer", accentColor: accent }}
-                          />
+                          {editingUserId === u.id ? (
+                            <input
+                              type="checkbox"
+                              checked={!!editingUserData.isDevAccount}
+                              onChange={e => setEditingUserData(prev => ({ ...prev, isDevAccount: e.target.checked }))}
+                              style={{ cursor: "pointer", accentColor: accent }}
+                            />
+                          ) : (
+                            <span style={{ fontFamily: uiFont, fontSize: 10, color: (u.isDevAccount || u.isDev) ? "#27864a" : muted }}>{(u.isDevAccount || u.isDev) ? "Ja" : "Nej"}</span>
+                          )}
                         </td>
-                        <td style={{ padding: "10px 12px", color: ink }}>{u.monthlyUsage != null ? `$${Number(u.monthlyUsage).toFixed(2)}` : "—"}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          {editingUserId === u.id ? (
+                            <input
+                              type="checkbox"
+                              checked={!!editingUserData.disabled}
+                              onChange={e => setEditingUserData(prev => ({ ...prev, disabled: e.target.checked }))}
+                              style={{ cursor: "pointer", accentColor: "#c0392b" }}
+                            />
+                          ) : (
+                            <span style={{ fontFamily: uiFont, fontSize: 10, color: u.disabled ? "#c0392b" : muted }}>{u.disabled ? "Ja" : "Nej"}</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "10px 12px", color: muted, whiteSpace: "nowrap" }}>{u.createdAt ? new Date(u.createdAt).toLocaleDateString("sv-SE") : "—"}</td>
                         <td style={{ padding: "10px 12px", color: muted, whiteSpace: "nowrap" }}>{u.lastActive ? new Date(u.lastActive).toLocaleDateString("sv-SE") : "—"}</td>
-                        <td style={{ padding: "10px 12px" }}>
-                          {updatingUser === u.id && <span style={{ color: muted, fontSize: 11 }}>Sparar...</span>}
+                        <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                          {editingUserId === u.id ? (
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                onClick={() => handleSaveUser(u.id)}
+                                disabled={updatingUser === u.id}
+                                style={{ fontFamily: uiFont, fontSize: 10, padding: "4px 10px", borderRadius: 5, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}
+                              >{updatingUser === u.id ? "Sparar..." : "Spara"}</button>
+                              <button
+                                onClick={handleCancelEdit}
+                                style={{ fontFamily: uiFont, fontSize: 10, padding: "4px 10px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer" }}
+                              >Avbryt</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleStartEdit(u)}
+                              style={{ fontFamily: uiFont, fontSize: 10, padding: "4px 10px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: accent, cursor: "pointer", fontWeight: 500 }}
+                            >Redigera</button>
+                          )}
                         </td>
                       </tr>
                     ))}
                     {users.length === 0 && (
-                      <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: muted }}>Inga användare hittades.</td></tr>
+                      <tr><td colSpan={9} style={{ padding: 24, textAlign: "center", color: muted }}>Inga användare hittades.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -2513,9 +2608,15 @@ function SuperAdminView({ user, onBack }) {
           </div>
         )}
 
-        {/* ─── Tab: API-förbrukning ─── */}
-        {tab === "usage" && (loading ? spinner : usage && (
+        {/* ─── Tab: Förbrukning ─── */}
+        {tab === "usage" && (loading ? spinner : error ? errorBox : usage && (
           <div>
+            {/* Total cost and tokens summary */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
+              {statCard("Total kostnad", usage.totalCost != null ? `$${Number(usage.totalCost).toFixed(2)}` : "—")}
+              {statCard("Totala tokens", usage.totalTokens != null ? Number(usage.totalTokens).toLocaleString() : "—")}
+            </div>
+
             {/* Bar chart – daily costs */}
             {usage.dailyCosts && usage.dailyCosts.length > 0 && (
               <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}`, marginBottom: 24 }}>
@@ -2553,13 +2654,36 @@ function SuperAdminView({ user, onBack }) {
               ))}
             </div>
 
-            {/* Total tokens */}
-            {statCard("Totala tokens", usage.totalTokens != null ? Number(usage.totalTokens).toLocaleString() : "—")}
+            {/* Per-user usage summary */}
+            {usage.perUser && usage.perUser.length > 0 && (
+              <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
+                <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.04em" }}>Förbrukning per användare</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: uiFont, fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${border}` }}>
+                      {["Användare", "Kostnad", "Tokens", "Anrop"].map(h => (
+                        <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: muted, fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usage.perUser.map((u, i) => (
+                      <tr key={u.userId || i} style={{ borderBottom: `1px solid ${border}` }}>
+                        <td style={{ padding: "8px 12px", color: ink }}>{u.email || u.name || u.userId || "—"}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{u.cost != null ? `$${Number(u.cost).toFixed(2)}` : "—"}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{u.tokens != null ? Number(u.tokens).toLocaleString() : "—"}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{u.requests ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         ))}
 
         {/* ─── Tab: Prompter ─── */}
-        {tab === "prompts" && (loading ? spinner : (
+        {tab === "prompts" && (loading ? spinner : error ? errorBox : (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {prompts.map(p => (
               <div key={p.key} style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
@@ -2567,6 +2691,7 @@ function SuperAdminView({ user, onBack }) {
                   <div>
                     <span style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{p.key}</span>
                     <span style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginLeft: 10 }}>v{p.version || 1}</span>
+                    {p.updatedAt && <span style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginLeft: 10 }}>Uppdaterad {new Date(p.updatedAt).toLocaleDateString("sv-SE")}</span>}
                   </div>
                   <button
                     onClick={() => handleSavePrompt(p.key)}
@@ -3487,12 +3612,12 @@ export default function App() {
 
   // Admin
   if (view === "admin" && user?.role === "SUPER_ADMIN") return (
-    <SuperAdminView user={user} onBack={() => setView("dashboard")} />
+    <SuperAdminView user={user} onBack={() => setView("profile")} />
   );
 
   // Profile
   if (view === "profile") return (
-    <ProfileView user={user} onBack={() => setView("dashboard")} />
+    <ProfileView user={user} onBack={() => setView("dashboard")} onAdmin={() => setView("admin")} />
   );
 
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
