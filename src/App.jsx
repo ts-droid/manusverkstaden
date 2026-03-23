@@ -2591,7 +2591,18 @@ function SuperAdminView({ user, onBack }) {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
               {statCard("API-kostnad (månad)", overview.apiCostUsdThisMonth != null ? `$${Number(overview.apiCostUsdThisMonth).toFixed(4)}` : "—")}
               {statCard("API-kostnad idag", overview.apiCostUsdToday != null ? `$${Number(overview.apiCostUsdToday).toFixed(4)}` : "—")}
-              {statCard("Intäkt (månad)", overview.revenueThisMonth != null ? `${Number(overview.revenueThisMonth).toLocaleString("sv-SE")} kr` : "—")}
+              {statCard(
+                "Intäkt (månad)",
+                overview.revenueThisMonth != null ? `${Number(overview.revenueThisMonth).toLocaleString("sv-SE")} kr` : "—",
+                overview.revenueSource === "stripe" ? "via Stripe" : overview.revenueSource === "unavailable" ? "Stripe ej kopplat" : undefined
+              )}
+              {statCard(
+                "MRR",
+                overview.mrr != null ? `${Number(overview.mrr).toLocaleString("sv-SE")} kr` : "—",
+                overview.activeSubscriptions != null ? `${overview.activeSubscriptions} aktiva` : undefined
+              )}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
               {statCard("Marginal", overview.revenueThisMonth != null && overview.apiCostUsdThisMonth != null
                 ? (() => {
                     const apiCostSek = Number(overview.apiCostUsdThisMonth) * 10.5; // approx USD→SEK

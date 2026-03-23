@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
+import { getRevenueStats } from '../services/stripe-revenue.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -31,9 +32,6 @@ router.get('/overview', async (req, res, next) => {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    // Plan prices in SEK/month for revenue calculation
-    const PLAN_PRICES = { PROVA: 0, GRUND: 149, FORLAG: 999 };
-
     const [
       totalUsers,
       usersByPlan,
@@ -44,6 +42,7 @@ router.get('/overview', async (req, res, next) => {
       apiCostUsdThisMonth,
       apiCostUsdToday,
       activeUsersLast7Days,
+      stripeRevenue,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.groupBy({ by: ['plan'], _count: true }),
@@ -70,13 +69,10 @@ router.get('/overview', async (req, res, next) => {
         select: { userId: true },
         distinct: ['userId'],
       }),
+      getRevenueStats(),
     ]);
 
-    // Calculate monthly revenue from paying subscribers
     const planCounts = Object.fromEntries(usersByPlan.map((g) => [g.plan, g._count]));
-    const revenueThisMonth = Object.entries(planCounts).reduce(
-      (sum, [plan, count]) => sum + (PLAN_PRICES[plan] || 0) * count, 0
-    );
 
     res.json({
       totalUsers,
@@ -87,7 +83,12 @@ router.get('/overview', async (req, res, next) => {
       costToday: costToday._sum.cost || 0,
       apiCostUsdThisMonth: apiCostUsdThisMonth._sum.apiCostUsd || 0,
       apiCostUsdToday: apiCostUsdToday._sum.apiCostUsd || 0,
-      revenueThisMonth,
+      // Revenue from Stripe (null if not configured)
+      revenueThisMonth: stripeRevenue?.revenueThisMonth ?? null,
+      mrr: stripeRevenue?.mrr ?? null,
+      activeSubscriptions: stripeRevenue?.activeSubscriptions ?? null,
+      revenueCurrency: stripeRevenue?.currency ?? 'sek',
+      revenueSource: stripeRevenue?.source ?? 'unavailable',
       activeUsersLast7Days: activeUsersLast7Days.length,
     });
   } catch (err) {
