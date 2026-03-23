@@ -573,8 +573,16 @@ function ParagraphEditSection({ paragraphs, onEdit }) {
 }
 
 // ─── SELECTION TOOLBAR (floating) ───
-function SelectionToolbar({ position, onEdit, onNewChapter, onClose }) {
+function SelectionToolbar({ position, onEdit, onNewChapter, onDevelop, onClose }) {
   if (!position) return null;
+  const btnStyle = {
+    background: "transparent", border: "none", color: "#f7f4ef", fontFamily: uiFont, fontSize: 11,
+    padding: "6px 12px", borderRadius: 5, cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+    fontWeight: 500, whiteSpace: "nowrap",
+  };
+  const hoverOn = e => e.currentTarget.style.background = "rgba(255,255,255,0.12)";
+  const hoverOff = e => e.currentTarget.style.background = "transparent";
+  const divider = <div style={{ width: 1, background: "rgba(255,255,255,0.18)", margin: "4px 0" }} />;
   return (
     <div style={{
       position: "fixed", left: position.x, top: position.y, transform: "translate(-50%, -110%)",
@@ -582,26 +590,16 @@ function SelectionToolbar({ position, onEdit, onNewChapter, onClose }) {
       boxShadow: "0 6px 24px rgba(0,0,0,0.22)", animation: "fadeIn 0.12s ease-out",
     }}>
       <style>{`@keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -100%) scale(0.95); } to { opacity: 1; transform: translate(-50%, -110%) scale(1); } }`}</style>
-      <button onClick={onEdit} style={{
-        background: "transparent", border: "none", color: "#f7f4ef", fontFamily: uiFont, fontSize: 11,
-        padding: "6px 12px", borderRadius: 5, cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-        fontWeight: 500, whiteSpace: "nowrap",
-      }}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
-        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-      >
+      <button onClick={onEdit} style={btnStyle} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
         <span style={{ fontSize: 13 }}>✎</span> Redigera
       </button>
-      <div style={{ width: 1, background: "rgba(255,255,255,0.18)", margin: "4px 0" }} />
-      <button onClick={onNewChapter} style={{
-        background: "transparent", border: "none", color: "#f7f4ef", fontFamily: uiFont, fontSize: 11,
-        padding: "6px 12px", borderRadius: 5, cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-        fontWeight: 500, whiteSpace: "nowrap",
-      }}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
-        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-      >
-        <span style={{ fontSize: 13 }}>+</span> Nytt kapitel
+      {divider}
+      <button onClick={onDevelop} style={btnStyle} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
+        <span style={{ fontSize: 13 }}>↔</span> Utveckla
+      </button>
+      {divider}
+      <button onClick={onNewChapter} style={btnStyle} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
+        <span style={{ fontSize: 13 }}>✂</span> Dela kapitel
       </button>
       {/* Arrow */}
       <div style={{
@@ -994,7 +992,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
 }
 
 // ─── DEVELOP PANEL ───
-function DevelopPanel({ dnaProfile, emotionMap, chapterContent, chapterTitle, onResult }) {
+function DevelopPanel({ inputText, dnaProfile, emotionMap, chapterContent, chapterTitle, onResult }) {
   const [tab, setTab] = useState("dna");
   const tabs = [
     { id: "dna", label: "Språklig DNA" },
@@ -1016,7 +1014,7 @@ function DevelopPanel({ dnaProfile, emotionMap, chapterContent, chapterTitle, on
       <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
         {tab === "dna" && <DNAView profile={dnaProfile} />}
         {tab === "emotion" && <EmotionView emotionMap={emotionMap} />}
-        {tab === "develop" && <DevelopView dnaProfile={dnaProfile} emotionMap={emotionMap} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} />}
+        {tab === "develop" && <DevelopView inputText={inputText} dnaProfile={dnaProfile} emotionMap={emotionMap} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} />}
         {tab === "brainstorm" && <BrainstormView />}
       </div>
     </div>
@@ -2985,6 +2983,7 @@ export default function App() {
   const [dnaProfile, setDnaProfile] = useState(null);
   const [emotionMaps, setEmotionMaps] = useState({}); // { chapterId: emotionMapData }
   const [selectionToolbar, setSelectionToolbar] = useState(null);
+  const [developInputText, setDevelopInputText] = useState("");
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [developResult, setDevelopResult] = useState(null);
@@ -4177,7 +4176,7 @@ export default function App() {
               </div>
             </>
           )}
-          {rightPanel === "develop" && <DevelopPanel dnaProfile={dnaProfile} emotionMap={emotionMaps[activeChapter]} chapterContent={currentChapter?.content} chapterTitle={currentChapter?.title} onResult={setDevelopResult} />}
+          {rightPanel === "develop" && <DevelopPanel inputText={developInputText} dnaProfile={dnaProfile} emotionMap={emotionMaps[activeChapter]} chapterContent={currentChapter?.content} chapterTitle={currentChapter?.title} onResult={setDevelopResult} />}
           {rightPanel === "translate" && <TranslatePanel langs={transLangs} />}
         </aside>
       </div>
@@ -4193,6 +4192,14 @@ export default function App() {
             if (para) {
               handleEditParagraph(selectionToolbar.paraId, para.text);
             }
+          }
+        }}
+        onDevelop={() => {
+          if (selectionToolbar?.text) {
+            setDevelopInputText(selectionToolbar.text);
+            setRightPanel("develop");
+            setSelectionToolbar(null);
+            window.getSelection()?.removeAllRanges();
           }
         }}
         onNewChapter={() => {
