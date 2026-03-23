@@ -320,7 +320,7 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
 }
 
 // ─── PROCESSING VIEW ───
-function ProcessingView({ chapters, statusText }) {
+function ProcessingView({ chapters, statusText, onAbort }) {
   const progress = chapters ? Math.round((chapters.filter(c => c.status === "done").length / chapters.length) * 100) : 0;
 
   return (
@@ -349,6 +349,14 @@ function ProcessingView({ chapters, statusText }) {
           <div style={{ width: `${progress}%`, height: "100%", background: accent, borderRadius: 3, transition: "width 0.5s ease" }} />
         </div>
         <div style={{ fontFamily: uiFont, fontSize: 11, color: muted }}>{progress}%</div>
+
+        {onAbort && (
+          <button onClick={onAbort} style={{
+            marginTop: 16, fontFamily: uiFont, fontSize: 12, padding: "8px 24px",
+            borderRadius: 8, border: `1px solid ${border}`, background: surface,
+            color: muted, cursor: "pointer",
+          }}>Avbryt – börja arbeta med analyserade kapitel</button>
+        )}
 
         {/* Chapter status */}
         {chapters && (
@@ -446,12 +454,13 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
                   <span style={{ fontSize: 9, color: "#b8860b" }}>ej analyserad</span>
                 )}
                 <span style={{
-                  width: ch.status === "active" ? 8 : 5,
-                  height: ch.status === "active" ? 8 : 5,
-                  borderRadius: "50%", marginLeft: "auto",
-                  background: ch.status === "active" ? "#b8860b" : chapterHasSuggestions(ch.id) ? "#27864a" : "#d4c8bb",
+                  width: ch.status === "active" ? 14 : 10,
+                  height: ch.status === "active" ? 14 : 10,
+                  borderRadius: "50%", marginLeft: "auto", flexShrink: 0,
+                  background: ch.status === "active" ? "#b8860b" : chapterHasSuggestions(ch.id) ? "#27864a" : "#c0392b",
                   animation: ch.status === "active" ? "pulse 1.5s ease-in-out infinite" : "none",
-                  boxShadow: ch.status === "active" ? "0 0 6px rgba(184,134,11,0.5)" : "none",
+                  boxShadow: ch.status === "active" ? "0 0 8px rgba(184,134,11,0.6)" : "none",
+                  transition: "all 0.3s ease",
                 }} />
               </div>
             </button>
@@ -2632,6 +2641,7 @@ export default function App() {
   const saveTimerRef = useRef(null);
   const saveIndicatorRef = useRef(null);
   const autoSaveEnabled = useRef(false); // prevent save before restore decision
+  const abortProcessingRef = useRef(false);
 
   // ─── RESTORE ON MOUNT ───
   useEffect(() => {
@@ -2813,7 +2823,12 @@ export default function App() {
     const updatedParas = { ...parasMap };
 
     let skipped = 0;
+    let sentToEditor = false;
     for (let i = 0; i < updatedChapters.length; i++) {
+      if (abortProcessingRef.current) {
+        abortProcessingRef.current = false;
+        break;
+      }
       // Skip chapters that already have suggestions
       const existingParas = updatedParas[updatedChapters[i].id] || [];
       const hasSuggestions = existingParas.some(p => p.suggestions?.length > 0);
@@ -2865,9 +2880,19 @@ export default function App() {
       updatedChapters[i] = { ...updatedChapters[i], status: "done" };
       setChapters([...updatedChapters]);
 
+      // Incremental save after each successful chapter
+      await saveProject({ chapters: [...updatedChapters], paragraphsByChapter: { ...updatedParas }, accepted, rejected, dnaProfile, emotionMaps, conventions, reviewHistory, activeReviewRound, genres, modules, transLangs, activeChapter: updatedChapters[i].id, fileName: uploadedFile?.name || "Manus", view: "editor" });
+
+      // Switch to editor after first analyzed chapter
+      if (i === 0 || (i === skipped && !sentToEditor)) {
+        setView("editor");
+        setActiveChapter(updatedChapters[i].id);
+        sentToEditor = true;
+      }
+
       // Longer pause between chapters to avoid rate limiting (API allows ~5 req/min)
       if (i < updatedChapters.length - 1) {
-        const pauseMs = 8000; // 8 seconds between chapters
+        const pauseMs = 3000; // 3 seconds between chapters
         setProcessingStatus(`Förbereder nästa kapitel... (${i + 2 - skipped}/${updatedChapters.length - skipped})`);
         await new Promise(r => setTimeout(r, pauseMs));
       }
@@ -2899,7 +2924,7 @@ export default function App() {
       } catch (err) {
         console.error(`Emotion map failed for ${ch.title}:`, err);
       }
-      if (i < updatedChapters.length - 1) await new Promise(r => setTimeout(r, 8000));
+      if (i < updatedChapters.length - 1) await new Promise(r => setTimeout(r, 3000));
     }
     setEmotionMaps(prev => ({ ...prev, ...newEmotionMaps }));
 
@@ -3083,6 +3108,10 @@ export default function App() {
     }
 
     for (let i = 0; i < unreviewed.length; i++) {
+      if (abortProcessingRef.current) {
+        abortProcessingRef.current = false;
+        break;
+      }
       const ch = unreviewed[i];
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
       setProcessingStatus(`Analyserar ${ch.title} (${i + 1}/${unreviewed.length})...`);
@@ -3126,10 +3155,13 @@ export default function App() {
 
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "done" } : c));
 
-      // 10 second pause between chapters to stay under rate limit
+      // Incremental save after each successful chapter
+      await saveProject({ chapters, paragraphsByChapter, accepted, rejected, dnaProfile, emotionMaps, conventions, reviewHistory, activeReviewRound, genres, modules, transLangs, activeChapter: ch.id, fileName: uploadedFile?.name || "Manus", view: "editor" });
+
+      // 3 second pause between chapters to stay under rate limit
       if (i < unreviewed.length - 1) {
         setProcessingStatus(`Paus innan ${unreviewed[i + 1].title}... (${i + 2}/${unreviewed.length})`);
-        await new Promise(r => setTimeout(r, 10000));
+        await new Promise(r => setTimeout(r, 3000));
       }
     }
 
@@ -3196,6 +3228,10 @@ export default function App() {
     });
 
     for (let i = 0; i < chapters.length; i++) {
+      if (abortProcessingRef.current) {
+        abortProcessingRef.current = false;
+        break;
+      }
       const ch = chapters[i];
       setProcessingStatus(`Granskning ${activeReviewRound + 1}: ${ch.title} (${i + 1}/${chapters.length})...`);
 
@@ -3230,14 +3266,24 @@ export default function App() {
         }
       }
 
+      // Incremental save after each successful chapter
+      await saveProject({ chapters, paragraphsByChapter: { ...clearedParas }, accepted, rejected, dnaProfile, emotionMaps, conventions, reviewHistory, activeReviewRound: activeReviewRound + 1, genres, modules, transLangs, activeChapter: ch.id, fileName: uploadedFile?.name || "Manus", view: "editor" });
+
       if (i < chapters.length - 1) {
         setProcessingStatus(`Förbereder nästa kapitel...`);
-        await new Promise(r => setTimeout(r, 10000));
+        await new Promise(r => setTimeout(r, 3000));
       }
     }
 
     setProcessingStatus("");
     setReReviewing(false);
+  };
+
+  const handleAbortProcessing = () => {
+    abortProcessingRef.current = true;
+    setBatchAnalyzing(false);
+    setReReviewing(false);
+    setProcessingStatus("");
   };
 
   const handleSplitChapter = (chapterId, paragraphIndex) => {
@@ -3451,7 +3497,7 @@ export default function App() {
 
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
   if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} chapterCount={chapters.length} totalWords={chapters.reduce((s, c) => s + c.wordCount, 0)} onStart={handleStartProcessing} onBack={() => setView("upload")} />;
-  if (view === "processing") return <ProcessingView chapters={chapters} statusText={processingStatus} />;
+  if (view === "processing") return <ProcessingView chapters={chapters} statusText={processingStatus} onAbort={handleAbortProcessing} />;
   if (view === "pricing") return <PricingPage onBack={() => setView("editor")} />;
 
   const currentChapter = chapters.find(c => c.id === activeChapter) || chapters[0];
@@ -3631,7 +3677,7 @@ export default function App() {
           }} />
           <span style={{ fontFamily: uiFont, fontSize: 11, color: "#7a6520" }}>{processingStatus}</span>
           {batchAnalyzing && (
-            <button onClick={() => setBatchAnalyzing(false)} style={{
+            <button onClick={handleAbortProcessing} style={{
               marginLeft: "auto", fontFamily: uiFont, fontSize: 10, padding: "3px 10px",
               borderRadius: 4, border: `1px solid #e8d9a8`, background: "transparent",
               color: "#7a6520", cursor: "pointer",
