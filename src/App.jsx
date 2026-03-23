@@ -1326,19 +1326,171 @@ function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emot
   );
 }
 
-function BrainstormView() {
+// ─── DEVELOP MODAL ───
+function DevelopModal({ initialText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult, onClose }) {
+  const [mode, setMode] = useState("expand");
+  const [userText, setUserText] = useState(initialText || "");
+  const [userInstruction, setUserInstruction] = useState("");
+  const [brainstormText, setBrainstormText] = useState("");
+  const [rewriteFocus, setRewriteFocus] = useState([]);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(null);
+
+  const modes = [
+    { id: "expand", label: "Bygga ut scen", desc: "Fördjupa med sinnesintryck, dialog eller internmonolog" },
+    { id: "rewrite", label: "Skriva om", desc: "Omarbeta en passage med nytt fokus" },
+    { id: "newscene", label: "Ny scen / kapitel", desc: "Generera helt nytt textavsnitt" },
+    { id: "brainstorm", label: "Brainstorming", desc: "Tre alternativa vägar framåt" },
+  ];
+
+  const rewriteOptions = ["Visa istf berätta", "Mer dialog", "Mer sinnesintryck", "Höja tempot", "Sänka tempot", "Fördjupa känsla"];
+
+  const handleGenerate = async () => {
+    if (mode === "brainstorm" && !brainstormText.trim()) return;
+    if (mode !== "brainstorm" && !userText.trim() && mode !== "newscene") return;
+    setGenerating(true);
+    setError(null);
+
+    const dnaStr = dnaProfile ? `\nFörfattarens DNA-profil: Perspektiv: ${dnaProfile.perspective}, Tempus: ${dnaProfile.tense}, Tonalitet: ${dnaProfile.tonality}, Meningslängd: ${dnaProfile.avgSentenceLen}, Dialogstil: ${dnaProfile.dialogStyle}, Bildspråk: ${dnaProfile.dominantImagery}` : "";
+    const emotionStr = emotionMap ? `\nKapitlets emotionella karta: Dominant känsla: ${emotionMap.dominantEmotion}, Spänningsnivå: ${Math.round((emotionMap.tension || 0) * 100)}%, Emotionell båge: ${emotionMap.arc || "okänd"}` : "";
+    const contextSnippet = chapterContent ? chapterContent.slice(0, 6000) : "";
+
+    try {
+      if (mode === "brainstorm") {
+        const systemMsg = `Du är en kreativ skrivassistent. Analysera problemet och ge EXAKT tre alternativa lösningsförslag.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara med JSON:\n{\n  "developedText": "<kort sammanfattning>",\n  "reasoning": "<ditt resonemang>",\n  "alternatives": ["<förslag 1>", "<förslag 2>", "<förslag 3>"]\n}`;
+        const response = await sendMessage({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system: systemMsg, messages: [{ role: "user", content: brainstormText }] });
+        const text = extractText(response);
+        const parsed = parseJsonResponse(text);
+        onResult({ mode: "brainstorm", modeLabel: "Brainstorming", originalText: brainstormText, developedText: parsed?.developedText || text, reasoning: parsed?.reasoning || "", alternatives: parsed?.alternatives });
+      } else {
+        const systemMsg = `Du är en kreativ skrivassistent för svenska manus. Du matchar alltid författarens stil, ton och röst.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara ALLTID med JSON:\n{\n  "developedText": "<den utvecklade texten>",\n  "reasoning": "<1-3 meningar som förklarar ditt resonemang>"\n}`;
+        const instructionStr = userInstruction.trim() ? `\n\nFörfattarens instruktioner: ${userInstruction}` : "";
+        let userMsg = "";
+        if (mode === "expand") userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst.${instructionStr}\n\n${userText}`;
+        else if (mode === "rewrite") { const focus = rewriteFocus.length > 0 ? `\nFokus: ${rewriteFocus.join(", ")}` : ""; userMsg = `Skriv om denna passage.${focus}${instructionStr}\n\n${userText}`; }
+        else if (mode === "newscene") userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil.${instructionStr}\n\n${userText}`;
+
+        const response = await sendMessage({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system: systemMsg, messages: [{ role: "user", content: userMsg }] });
+        const text = extractText(response);
+        const parsed = parseJsonResponse(text);
+        onResult({ mode, modeLabel: modes.find(m => m.id === mode)?.label, originalText: userText, developedText: parsed?.developedText || text, reasoning: parsed?.reasoning || "Texten har genererats baserat på din förfrågan." });
+      }
+    } catch (err) {
+      console.error("Develop failed:", err);
+      setError(err.message || "Generering misslyckades. Kontrollera API-nyckeln.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
-    <div style={{ fontFamily: uiFont, fontSize: 12 }}>
-      <p style={{ color: muted, fontSize: 11.5, lineHeight: 1.5, margin: "0 0 12px", padding: "0 4px" }}>
-        Ställ en fråga eller beskriv ett problem med din berättelse. AI:n presenterar alltid tre alternativa vägar framåt.
-      </p>
-      <textarea placeholder="T.ex: Hur kan jag göra Marcus vändpunkt mer trovärdig? Eller: Behöver kapitel 3 en underplot?" style={{
-        width: "100%", minHeight: 60, padding: 10, borderRadius: 7, border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 11.5,
-        resize: "vertical", background: surface, color: ink, outline: "none", boxSizing: "border-box",
-      }} />
-      <button style={{ marginTop: 6, width: "100%", padding: "10px 0", borderRadius: 7, border: "none", background: accent, color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}>
-        Brainstorma
-      </button>
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
+      <div style={{ position: "relative", background: surface, borderRadius: 16, width: 720, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.18)" }}>
+        {/* Header */}
+        <div style={{ padding: "18px 22px 0", flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink }}>Utveckla text</div>
+              <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>{chapterTitle || "Kapitel"}</div>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, color: muted, cursor: "pointer", padding: "2px 6px", lineHeight: 1 }}>✕</button>
+          </div>
+          {/* Tab bar */}
+          <div style={{ display: "flex", gap: 2, marginTop: 14, borderBottom: `1px solid ${border}` }}>
+            {modes.map(m => (
+              <button key={m.id} onClick={() => { setMode(m.id); setError(null); }} style={{
+                fontFamily: uiFont, fontSize: 11, fontWeight: mode === m.id ? 600 : 400, padding: "8px 14px",
+                border: "none", cursor: "pointer", background: "transparent",
+                color: mode === m.id ? accent : muted, borderBottom: mode === m.id ? `2px solid ${accent}` : "2px solid transparent",
+                marginBottom: -1, transition: "all 0.15s",
+              }}>{m.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "18px 22px", overflow: "auto", flex: 1 }}>
+          <p style={{ fontFamily: uiFont, fontSize: 11, color: muted, lineHeight: 1.5, margin: "0 0 14px" }}>
+            {modes.find(m => m.id === mode)?.desc}
+          </p>
+
+          {mode === "brainstorm" ? (
+            <>
+              <div style={{ fontFamily: uiFont, fontSize: 10.5, fontWeight: 600, color: ink, marginBottom: 4 }}>Din fråga</div>
+              <textarea
+                value={brainstormText}
+                onChange={e => setBrainstormText(e.target.value)}
+                placeholder="T.ex: Hur kan jag göra Marcus vändpunkt mer trovärdig? Behöver kapitel 3 en underplot?"
+                style={{ width: "100%", minHeight: 100, padding: 10, borderRadius: 7, border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 12, resize: "vertical", background: bg, color: ink, outline: "none", boxSizing: "border-box" }}
+              />
+            </>
+          ) : (
+            <>
+              {mode === "rewrite" && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontFamily: uiFont, fontSize: 10.5, fontWeight: 600, color: ink, marginBottom: 6 }}>Fokus</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {rewriteOptions.map(opt => {
+                      const active = rewriteFocus.includes(opt);
+                      return (
+                        <span key={opt} onClick={() => setRewriteFocus(prev => active ? prev.filter(x => x !== opt) : [...prev, opt])} style={{
+                          padding: "5px 12px", borderRadius: 12, fontSize: 11, cursor: "pointer", transition: "all 0.12s",
+                          border: active ? `1.5px solid ${accent}` : `1px solid ${border}`,
+                          background: active ? accentLight : surface, color: active ? accent : ink, fontWeight: active ? 600 : 400,
+                        }}>{opt}</span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontFamily: uiFont, fontSize: 10.5, fontWeight: 600, color: ink, marginBottom: 4 }}>Din instruktion <span style={{ fontWeight: 400, color: muted }}>(valfritt)</span></div>
+                <textarea
+                  value={userInstruction}
+                  onChange={e => setUserInstruction(e.target.value)}
+                  placeholder="T.ex: Fördjupa Claras tvivel, lägg till dialog med Tim..."
+                  style={{ width: "100%", minHeight: 50, padding: 10, borderRadius: 7, border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 12, resize: "vertical", background: bg, color: ink, outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontFamily: uiFont, fontSize: 10.5, fontWeight: 600, color: ink, marginBottom: 4 }}>Text att bearbeta</div>
+                <textarea
+                  value={userText}
+                  onChange={e => setUserText(e.target.value)}
+                  placeholder={mode === "newscene" ? "Beskriv scenen: vad ska hända, vilka karaktärer, vilken stämning..." : "Markerad text från manuset visas här..."}
+                  style={{ width: "100%", minHeight: 120, padding: 10, borderRadius: 7, border: `1px solid ${border}`, fontFamily: font, fontSize: 13, resize: "vertical", background: bg, color: ink, outline: "none", boxSizing: "border-box", lineHeight: 1.7 }}
+                />
+              </div>
+            </>
+          )}
+          {error && (
+            <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 7, background: "#fef2f2", color: "#b91c1c", fontSize: 11, fontFamily: uiFont }}>{error}</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 22px", borderTop: `1px solid ${border}`, display: "flex", justifyContent: "flex-end", gap: 8, flexShrink: 0 }}>
+          <button onClick={onClose} style={{ fontFamily: uiFont, fontSize: 12, padding: "8px 18px", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>Avbryt</button>
+          <button
+            onClick={handleGenerate}
+            disabled={generating || (mode === "brainstorm" ? !brainstormText.trim() : (!userText.trim() && mode !== "newscene"))}
+            style={{
+              fontFamily: uiFont, fontSize: 12, padding: "8px 22px", borderRadius: 8, border: "none",
+              background: generating ? "#d4c8bb" : accent, color: "#fff", fontWeight: 600,
+              cursor: generating ? "default" : "pointer",
+              display: "flex", alignItems: "center", gap: 8,
+            }}
+          >
+            {generating ? (
+              <>
+                <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                AI skriver...
+              </>
+            ) : mode === "brainstorm" ? "Brainstorma" : "Generera förslag"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2983,7 +3135,7 @@ export default function App() {
   const [dnaProfile, setDnaProfile] = useState(null);
   const [emotionMaps, setEmotionMaps] = useState({}); // { chapterId: emotionMapData }
   const [selectionToolbar, setSelectionToolbar] = useState(null);
-  const [developInputText, setDevelopInputText] = useState("");
+  const [developModal, setDevelopModal] = useState(null); // null or { initialText }
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [developResult, setDevelopResult] = useState(null);
@@ -3942,10 +4094,10 @@ export default function App() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {modules.includes("develop") && (
-            <button onClick={() => setRightPanel(rightPanel === "develop" ? "suggestions" : "develop")} style={{
+            <button onClick={() => setDevelopModal({ initialText: "" })} style={{
               fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5,
-              border: rightPanel === "develop" ? `1.5px solid ${accent}` : `1px solid ${border}`,
-              background: rightPanel === "develop" ? accentLight : surface, color: rightPanel === "develop" ? accent : ink, cursor: "pointer", fontWeight: 500,
+              border: `1px solid ${border}`,
+              background: surface, color: ink, cursor: "pointer", fontWeight: 500,
             }}>Utveckla</button>
           )}
           {modules.includes("translate") && (
@@ -4176,7 +4328,6 @@ export default function App() {
               </div>
             </>
           )}
-          {rightPanel === "develop" && <DevelopPanel inputText={developInputText} dnaProfile={dnaProfile} emotionMap={emotionMaps[activeChapter]} chapterContent={currentChapter?.content} chapterTitle={currentChapter?.title} onResult={setDevelopResult} />}
           {rightPanel === "translate" && <TranslatePanel langs={transLangs} />}
         </aside>
       </div>
@@ -4196,8 +4347,7 @@ export default function App() {
         }}
         onDevelop={() => {
           if (selectionToolbar?.text) {
-            setDevelopInputText(selectionToolbar.text);
-            setRightPanel("develop");
+            setDevelopModal({ initialText: selectionToolbar.text });
             setSelectionToolbar(null);
             window.getSelection()?.removeAllRanges();
           }
@@ -4219,6 +4369,22 @@ export default function App() {
           onSave={(newText) => handleSaveParagraph(editModal.paraId, newText)}
           onCreateChapter={(text) => handleCreateChapterFromText(text, editModal.paraId)}
           onClose={() => setEditModal(null)}
+        />
+      )}
+
+      {/* DEVELOP MODAL */}
+      {developModal && (
+        <DevelopModal
+          initialText={developModal.initialText}
+          chapterContent={currentChapter?.content}
+          chapterTitle={currentChapter?.title}
+          dnaProfile={dnaProfile}
+          emotionMap={emotionMaps[activeChapter]}
+          onResult={(result) => {
+            setDevelopResult(result);
+            setDevelopModal(null);
+          }}
+          onClose={() => setDevelopModal(null)}
         />
       )}
 
