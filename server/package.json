@@ -9,6 +9,7 @@
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
     "db:seed": "node src/utils/seed.js",
+    "db:seed-prompts": "node src/utils/seed-prompts.js",
     "db:studio": "npx prisma studio"
   },
   "dependencies": {

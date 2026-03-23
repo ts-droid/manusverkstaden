@@ -2418,6 +2418,7 @@ function SuperAdminView({ user, onBack }) {
   const [prompts, setPrompts] = useState([]);
   const [editedPrompts, setEditedPrompts] = useState({});
   const [saving, setSaving] = useState(null);
+  const [promptCategory, setPromptCategory] = useState("all");
   const [updatingUser, setUpdatingUser] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingUserData, setEditingUserData] = useState({});
@@ -2838,42 +2839,103 @@ function SuperAdminView({ user, onBack }) {
 
         {/* ─── Tab: Prompter ─── */}
         {tab === "prompts" && (loading ? spinner : error ? errorBox : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            {prompts.map(p => (
-              <div key={p.key} style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div>
-                    <span style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{p.key}</span>
-                    <span style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginLeft: 10 }}>v{p.version || 1}</span>
-                    {p.updatedAt && <span style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginLeft: 10 }}>Uppdaterad {new Date(p.updatedAt).toLocaleDateString("sv-SE")}</span>}
+          <div>
+            {/* Prompt category tabs */}
+            {(() => {
+              const categories = [
+                { id: "all", label: "Alla" },
+                { id: "grund", label: "Grundprompt" },
+                { id: "genre", label: "Genretillägg" },
+                { id: "modul", label: "Moduler" },
+                { id: "ai", label: "Backend AI" },
+                { id: "nivå", label: "Analysnivåer" },
+                { id: "format", label: "Responsformat" },
+              ];
+              const categoryLabels = { grund: "Grundprompt", genre: "Genretillägg", modul: "Modul", ai: "Backend AI", "nivå": "Analysnivå", format: "Responsformat" };
+              const friendlyName = (key) => {
+                const [cat, name] = key.split(":");
+                const nameMap = {
+                  base_prompt: "Huvudprompt", realistic: "Realistisk fiktion", crime: "Deckare / Thriller",
+                  fantasy: "Fantasy / Sci-fi", romance: "Romantik / Feelgood", horror: "Skräck / Gothic",
+                  historical: "Historisk roman", ya: "Barn & Ungdom", memoir: "Memoar / Sakprosa",
+                  poetry: "Lyrik / Poesi", develop: "Skrivutveckling", translate: "Översättning",
+                  review: "Granskning", dna_profile: "DNA-profil", develop_brainstorm: "Brainstorm",
+                  develop_expand: "Scenutbyggnad", develop_rewrite: "Omskrivning", develop_newscene: "Ny scen",
+                  quick: "Snabbanalys", deep: "Djupanalys", review_response: "Granskningssvar",
+                  brainstorm: "Brainstorming", translation: "Översättning",
+                };
+                return nameMap[name] || name;
+              };
+              const filtered = promptCategory === "all"
+                ? prompts
+                : prompts.filter(p => p.key?.startsWith(promptCategory + ":"));
+              const counts = {};
+              prompts.forEach(p => { const cat = p.key?.split(":")[0] || "other"; counts[cat] = (counts[cat] || 0) + 1; });
+
+              return (
+                <>
+                  <div style={{ display: "flex", gap: 4, marginBottom: 20, flexWrap: "wrap" }}>
+                    {categories.map(c => {
+                      const count = c.id === "all" ? prompts.length : (counts[c.id] || 0);
+                      if (c.id !== "all" && count === 0) return null;
+                      return (
+                        <button key={c.id} onClick={() => setPromptCategory(c.id)} style={{
+                          fontFamily: uiFont, fontSize: 11, fontWeight: promptCategory === c.id ? 600 : 400,
+                          padding: "6px 14px", borderRadius: 6, cursor: "pointer",
+                          border: promptCategory === c.id ? `1px solid ${accent}` : `1px solid ${border}`,
+                          background: promptCategory === c.id ? `${accent}14` : surface,
+                          color: promptCategory === c.id ? accent : muted,
+                          transition: "all 0.15s",
+                        }}>{c.label} ({count})</button>
+                      );
+                    })}
                   </div>
-                  <button
-                    onClick={() => handleSavePrompt(p.key)}
-                    disabled={saving === p.key || editedPrompts[p.key] === undefined}
-                    style={{
-                      fontFamily: uiFont, fontSize: 11, padding: "5px 14px", borderRadius: 6,
-                      border: "none", cursor: editedPrompts[p.key] !== undefined ? "pointer" : "default",
-                      background: editedPrompts[p.key] !== undefined ? accent : border,
-                      color: editedPrompts[p.key] !== undefined ? "#fff" : muted,
-                      fontWeight: 600, transition: "all 0.15s",
-                    }}
-                  >{saving === p.key ? "Sparar..." : "Spara"}</button>
-                </div>
-                <textarea
-                  value={editedPrompts[p.key] !== undefined ? editedPrompts[p.key] : (p.content || "")}
-                  onChange={e => setEditedPrompts(prev => ({ ...prev, [p.key]: e.target.value }))}
-                  style={{
-                    width: "100%", minHeight: 140, padding: "12px 14px", borderRadius: 8,
-                    border: `1px solid ${border}`, fontFamily: "monospace", fontSize: 12,
-                    background: bg, color: ink, resize: "vertical", outline: "none",
-                    boxSizing: "border-box", lineHeight: 1.6,
-                  }}
-                />
-              </div>
-            ))}
-            {prompts.length === 0 && (
-              <div style={{ textAlign: "center", padding: 40, color: muted, fontFamily: uiFont, fontSize: 13 }}>Inga prompter konfigurerade.</div>
-            )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    {filtered.map(p => {
+                      const [cat] = (p.key || "").split(":");
+                      return (
+                        <div key={p.key} style={{ background: surface, borderRadius: 12, padding: "18px 22px", border: `1px solid ${border}` }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontFamily: uiFont, fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: `${accent}12`, color: accent, textTransform: "uppercase", letterSpacing: "0.04em" }}>{categoryLabels[cat] || cat}</span>
+                              <span style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{friendlyName(p.key)}</span>
+                              <span style={{ fontFamily: "monospace", fontSize: 10, color: muted }}>{p.key}</span>
+                              <span style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>v{p.version || 1}</span>
+                            </div>
+                            <button
+                              onClick={() => handleSavePrompt(p.key)}
+                              disabled={saving === p.key || editedPrompts[p.key] === undefined}
+                              style={{
+                                fontFamily: uiFont, fontSize: 11, padding: "5px 14px", borderRadius: 6,
+                                border: "none", cursor: editedPrompts[p.key] !== undefined ? "pointer" : "default",
+                                background: editedPrompts[p.key] !== undefined ? accent : border,
+                                color: editedPrompts[p.key] !== undefined ? "#fff" : muted,
+                                fontWeight: 600, transition: "all 0.15s",
+                              }}
+                            >{saving === p.key ? "Sparar..." : "Spara"}</button>
+                          </div>
+                          <textarea
+                            value={editedPrompts[p.key] !== undefined ? editedPrompts[p.key] : (p.content || "")}
+                            onChange={e => setEditedPrompts(prev => ({ ...prev, [p.key]: e.target.value }))}
+                            style={{
+                              width: "100%", minHeight: p.content?.length > 500 ? 240 : 120, padding: "12px 14px", borderRadius: 8,
+                              border: `1px solid ${border}`, fontFamily: "monospace", fontSize: 12,
+                              background: bg, color: ink, resize: "vertical", outline: "none",
+                              boxSizing: "border-box", lineHeight: 1.6,
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                    {filtered.length === 0 && (
+                      <div style={{ textAlign: "center", padding: 40, color: muted, fontFamily: uiFont, fontSize: 13 }}>
+                        {prompts.length === 0 ? "Inga prompter konfigurerade. Kör: node server/src/utils/seed-prompts.js" : "Inga prompter i denna kategori."}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         ))}
       </div>

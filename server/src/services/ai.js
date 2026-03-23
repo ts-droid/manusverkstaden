@@ -1,9 +1,35 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { PrismaClient } from '@prisma/client';
 import { config } from '../config.js';
 
 const client = config.anthropicApiKey
   ? new Anthropic({ apiKey: config.anthropicApiKey })
   : null;
+
+const prisma = new PrismaClient();
+
+// In-memory cache for DB prompts (refreshed every 60s)
+let promptCache = {};
+let promptCacheTime = 0;
+const CACHE_TTL = 60_000;
+
+/**
+ * Get a prompt by key, falling back to the provided default.
+ * Reads from PromptConfig DB table with in-memory caching.
+ */
+async function getPrompt(key, fallback) {
+  try {
+    const now = Date.now();
+    if (now - promptCacheTime > CACHE_TTL) {
+      const all = await prisma.promptConfig.findMany();
+      promptCache = Object.fromEntries(all.map(p => [p.key, p.content]));
+      promptCacheTime = now;
+    }
+    return promptCache[key] || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /**
  * Send a message to Claude API (server-side only).
@@ -54,7 +80,7 @@ function parseJsonResponse(text) {
  * Review a chapter and return suggestions.
  */
 export async function reviewChapter(content, { genres = [], modules = [] } = {}) {
-  const systemPrompt = `Du är en professionell svensk redaktör. Granska följande text och returnera förslag på förbättringar.
+  const defaultPrompt = `Du är en professionell svensk redaktör. Granska följande text och returnera förslag på förbättringar.
 
 Returnera ett JSON-array med objekt:
 {
@@ -72,8 +98,10 @@ Nivåer:
 3 = Språkgranskning (grammatik, meningsbyggnad, tempus)
 4 = Korrektur (stavfel, interpunktion, typografi)
 
-Genrer aktiva: ${genres.join(', ') || 'inga'}
 Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
+
+  const basePrompt = await getPrompt('ai:review', defaultPrompt);
+  const systemPrompt = `${basePrompt}\n\nGenrer aktiva: ${genres.join(', ') || 'inga'}`;
 
   const response = await sendMessage({
     system: systemPrompt,
@@ -95,7 +123,7 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
  * Generate a linguistic DNA profile for the entire manuscript.
  */
 export async function generateDNAProfile(allText, { genres = [] } = {}) {
-  const systemPrompt = `Du är en litterär analytiker. Analysera textens språkliga DNA-profil.
+  const systemPrompt = await getPrompt('ai:dna_profile', `Du är en litterär analytiker. Analysera textens språkliga DNA-profil.
 
 Returnera JSON:
 {
@@ -109,7 +137,7 @@ Returnera JSON:
   "summary": "Kort sammanfattning av textens karaktär"
 }
 
-Returnera ENBART JSON, inga andra kommentarer.`;
+Returnera ENBART JSON, inga andra kommentarer.`);
 
   const response = await sendMessage({
     system: systemPrompt,
@@ -131,14 +159,16 @@ Returnera ENBART JSON, inga andra kommentarer.`;
  * Writing development: brainstorm, expand, rewrite.
  */
 export async function developText(mode, input, context = '') {
-  const modes = {
+  const defaultModes = {
     brainstorm: 'Ge 3 kreativa alternativ för att utveckla denna text. Returnera JSON: { "alternatives": ["...", "...", "..."] }',
     expand: 'Bygg ut denna scen med mer detaljer, sinnesintryck och intern dialog. Returnera JSON: { "expanded": "..." }',
     rewrite: 'Skriv om denna text med förbättrad stil och flöde. Behåll kärnan. Returnera JSON: { "rewritten": "..." }',
   };
 
+  const modePrompt = await getPrompt(`ai:develop_${mode}`, defaultModes[mode] || defaultModes.brainstorm);
+
   const response = await sendMessage({
-    system: modes[mode] || modes.brainstorm,
+    system: modePrompt,
     messages: [{ role: 'user', content: context ? `Kontext:\n${context}\n\nText att bearbeta:\n${input}` : input }],
     max_tokens: 4096,
   });
@@ -159,17 +189,20 @@ export async function translateText(content, language) {
   const langNames = { en: 'engelska', de: 'tyska', es: 'spanska', ar: 'arabiska' };
   const langName = langNames[language] || language;
 
-  const model = 'claude-sonnet-4-20250514';
-  const response = await sendMessage({
-    model,
-    system: `Du är en professionell litterär översättare. Översätt texten till ${langName} med hög litterär kvalitet. Behåll stil, ton och känsla.
+  const defaultTranslatePrompt = `Du är en professionell litterär översättare. Översätt texten till målspråket med hög litterär kvalitet. Behåll stil, ton och känsla.
 
 Returnera JSON:
 {
   "content": "den översatta texten",
   "comments": [{ "original": "svenskt uttryck", "note": "översättningskommentar" }],
   "glossary": [{ "original": "...", "translated": "...", "note": "..." }]
-}`,
+}`;
+
+  const baseTranslatePrompt = await getPrompt('ai:translate', defaultTranslatePrompt);
+  const model = 'claude-sonnet-4-20250514';
+  const response = await sendMessage({
+    model,
+    system: `${baseTranslatePrompt}\n\nÖversätt till: ${langName}`,
     messages: [{ role: 'user', content }],
     max_tokens: 8192,
   });
