@@ -168,6 +168,19 @@ class ApiClient {
     });
   }
 
+  // ─── CHAPTERS ───
+
+  async updateChapter(id, data) {
+    return this.request(`/chapters/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getChapter(id) {
+    return this.request(`/chapters/${id}`);
+  }
+
   // ─── SUGGESTIONS ───
 
   async updateSuggestion(id, status) {

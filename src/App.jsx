@@ -845,7 +845,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
             fontWeight: value === o.value ? 600 : 400, transition: "all 0.12s",
           }}>
             <div>{o.label}</div>
-            <div style={{ fontFamily: font, fontSize: 12, color: muted, marginTop: 3, fontStyle: o.italic ? "italic" : "normal" }}>{o.example}</div>
+            <div style={{ fontFamily: font, fontSize: 12, color: muted, marginTop: 3 }}>{o.exampleJsx || o.example}</div>
           </button>
         ))}
       </div>
@@ -957,7 +957,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
             value={conventions.titleStyle}
             onChange={v => setConv("titleStyle", v)}
             options={[
-              { value: "italic", label: "Kursiv", example: "Hon läste Borta med vinden.", italic: true },
+              { value: "italic", label: "Kursiv", example: "Hon läste Borta med vinden.", exampleJsx: <>Hon läste <em>Borta med vinden</em>.</> },
               { value: "quotes", label: "Citattecken", example: 'Hon läste "Borta med vinden".' },
             ]}
           />
@@ -967,7 +967,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
             value={conventions.innerThought}
             onChange={v => setConv("innerThought", v)}
             options={[
-              { value: "italic", label: "Kursiv", example: "Varför sa han så? tänkte hon.", italic: true },
+              { value: "italic", label: "Kursiv", example: "Varför sa han så? tänkte hon.", exampleJsx: <><em>Varför sa han så?</em> tänkte hon.</> },
               { value: "none", label: "Ingen markering", example: "Varför sa han så, tänkte hon." },
             ]}
           />
@@ -3155,24 +3155,52 @@ export default function App() {
     }
     (async () => {
       try {
+        // Check IndexedDB for last-open project reference
         const saved = await loadProject();
-        if (saved?.chapters?.length > 0) {
-          // Restore saved data but go to dashboard (user navigates to editor from there)
-          setChapters(saved.chapters);
-          setParagraphsByChapter(saved.paragraphsByChapter || {});
-          setAccepted(saved.accepted instanceof Set ? saved.accepted : new Set(saved.accepted || []));
-          setRejected(saved.rejected instanceof Set ? saved.rejected : new Set(saved.rejected || []));
-          setDnaProfile(saved.dnaProfile || null);
-          setEmotionMaps(saved.emotionMaps || {});
-          if (saved.conventions) setConventions(saved.conventions);
-          setReviewHistory(saved.reviewHistory || []);
-          setActiveReviewRound(saved.activeReviewRound || 1);
-          setGenres(saved.genres || []);
-          setModules(saved.modules || []);
-          setTransLangs(saved.transLangs || ["en"]);
-          setActiveChapter(saved.activeChapter || saved.chapters?.[0]?.id);
-          setUploadedFile({ name: saved.fileName || "Manus" });
-          autoSaveEnabled.current = true;
+        if (saved?.serverProjectId) {
+          // Restore last project from DB
+          try {
+            const result = await apiClient.getProject(saved.serverProjectId);
+            const data = result?.project || result;
+            if (data) {
+              setServerProjectId(data.id);
+              setUploadedFile({ name: data.title });
+              setGenres(data.genres || []);
+              setModules(data.modules || []);
+              setTransLangs(data.transLanguages || ["en"]);
+              setDnaProfile(data.dnaProfile || null);
+              if (saved.conventions) setConventions(saved.conventions);
+
+              const loadedChapters = (data.chapters || []).map(ch => ({
+                id: ch.id, number: ch.number, title: ch.title,
+                content: ch.content, wordCount: ch.wordCount, status: "done",
+              }));
+              setChapters(loadedChapters);
+
+              const parasMap = {};
+              const restoredAccepted = new Set();
+              const restoredRejected = new Set();
+              for (const ch of data.chapters || []) {
+                const paras = splitIntoParagraphs(ch.content);
+                if (ch.suggestions?.length) {
+                  parasMap[ch.id] = attachSuggestionsToParagraphs(paras, ch.suggestions, ch.id);
+                  ch.suggestions.forEach(s => {
+                    if (s.status === "ACCEPTED") restoredAccepted.add(s.id);
+                    else if (s.status === "REJECTED") restoredRejected.add(s.id);
+                  });
+                } else {
+                  parasMap[ch.id] = paras;
+                }
+              }
+              setParagraphsByChapter(parasMap);
+              setAccepted(restoredAccepted);
+              setRejected(restoredRejected);
+              setActiveChapter(saved.activeChapterId || loadedChapters[0]?.id);
+              autoSaveEnabled.current = true;
+            }
+          } catch (err) {
+            console.error("Failed to restore project from DB:", err);
+          }
         }
         setView("dashboard");
       } catch (err) {
@@ -3182,10 +3210,9 @@ export default function App() {
     })();
   }, [authLoading, isAuthenticated]);
 
-  // ─── AUTO-SAVE ───
+  // ─── AUTO-SAVE (lightweight metadata only – real data is in DB) ───
   useEffect(() => {
-    if (view !== "editor" || chapters.length === 0) return;
-    // Small delay on first render to let restore finish
+    if (view !== "editor" || !serverProjectId) return;
     if (!autoSaveEnabled.current) {
       autoSaveEnabled.current = true;
       return;
@@ -3195,20 +3222,9 @@ export default function App() {
     saveTimerRef.current = setTimeout(async () => {
       setSaveStatus("saving");
       await saveProject({
-        chapters,
-        paragraphsByChapter,
-        accepted,
-        rejected,
-        dnaProfile,
-        emotionMaps,
+        serverProjectId,
+        activeChapterId: activeChapter,
         conventions,
-        reviewHistory,
-        activeReviewRound,
-        genres,
-        modules,
-        transLangs,
-        activeChapter,
-        fileName: uploadedFile?.name || "Manus",
         view,
       });
       setSaveStatus("saved");
@@ -3217,7 +3233,7 @@ export default function App() {
     }, 800);
 
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [chapters, paragraphsByChapter, accepted, rejected, dnaProfile, emotionMaps, conventions, genres, modules, transLangs, activeChapter, view]);
+  }, [serverProjectId, activeChapter, conventions, view]);
 
   // ─── START FRESH (clear saved data) ───
   const handleStartFresh = async () => {
@@ -3269,21 +3285,31 @@ export default function App() {
       }));
       setChapters(loadedChapters);
 
-      // Build paragraphs with suggestions
+      // Build paragraphs with suggestions and restore accepted/rejected from DB
       const parasMap = {};
+      const restoredAccepted = new Set();
+      const restoredRejected = new Set();
       for (const ch of data.chapters || []) {
         const paras = splitIntoParagraphs(ch.content);
         if (ch.suggestions?.length) {
           const enriched = attachSuggestionsToParagraphs(paras, ch.suggestions, ch.id);
           parasMap[ch.id] = enriched;
+          // Restore accepted/rejected status from DB
+          ch.suggestions.forEach(s => {
+            if (s.status === "ACCEPTED") restoredAccepted.add(s.id);
+            else if (s.status === "REJECTED") restoredRejected.add(s.id);
+          });
         } else {
           parasMap[ch.id] = paras;
         }
       }
       setParagraphsByChapter(parasMap);
       setActiveChapter(loadedChapters[0]?.id);
-      setAccepted(new Set());
-      setRejected(new Set());
+      setAccepted(restoredAccepted);
+      setRejected(restoredRejected);
+
+      // Save session reference to IndexedDB for quick restore
+      await saveProject({ serverProjectId: data.id, activeChapterId: loadedChapters[0]?.id, conventions, view: "editor" });
       setView("editor");
     } catch (err) {
       console.error("Failed to load project:", err);
@@ -3309,20 +3335,54 @@ export default function App() {
   };
 
   const runProcessing = async (chaps, parasMap, settings, level = "standard") => {
-    const systemPrompt = buildPrompt({
-      project: { title: uploadedFile?.name?.replace(/\.[^.]+$/, '') },
-      genres: settings.genres,
-      modules: {
-        develop: settings.modules.includes("develop"),
-        translate: settings.modules.includes("translate"),
-      },
-      translationLanguages: settings.transLangs,
-      conventions,
-    });
-
     const updatedChapters = [...chaps];
     const updatedParas = { ...parasMap };
 
+    // Step 1: Create project in DB FIRST (so all data is persisted)
+    let projId = serverProjectId;
+    if (!projId && isAuthenticated) {
+      setProcessingStatus("Skapar projekt...");
+      try {
+        const projectData = await apiClient.createProject({
+          title: uploadedFile?.name?.replace(/\.[^.]+$/, '') || "Manus",
+          genres: settings.genres || genres,
+          modules: settings.modules || modules,
+          transLanguages: settings.transLangs || transLangs,
+          chapters: updatedChapters.map((ch, idx) => ({
+            number: idx + 1,
+            title: ch.title,
+            content: ch.content,
+            wordCount: ch.wordCount,
+          })),
+        });
+        if (projectData?.id) {
+          projId = projectData.id;
+          setServerProjectId(projId);
+          // Update chapter IDs from server (DB-generated IDs)
+          const serverChapters = projectData.project?.chapters || [];
+          for (let j = 0; j < serverChapters.length && j < updatedChapters.length; j++) {
+            const oldId = updatedChapters[j].id;
+            updatedChapters[j] = { ...updatedChapters[j], id: serverChapters[j].id };
+            // Migrate paragraphs to new ID
+            if (updatedParas[oldId]) {
+              updatedParas[serverChapters[j].id] = updatedParas[oldId];
+              delete updatedParas[oldId];
+            }
+          }
+          setChapters([...updatedChapters]);
+          setParagraphsByChapter({ ...updatedParas });
+        }
+      } catch (err) {
+        console.error("Failed to create project:", err);
+        setProcessingStatus("Kunde inte skapa projekt. Kontrollera anslutningen.");
+        return;
+      }
+    }
+
+    // Save metadata to IndexedDB for quick restore
+    await saveProject({ serverProjectId: projId, activeChapterId: updatedChapters[0]?.id, conventions, view: "editor" });
+
+    // Step 2: Review each chapter via backend API (saves suggestions to DB)
     let skipped = 0;
     let sentToEditor = false;
     for (let i = 0; i < updatedChapters.length; i++) {
@@ -3350,23 +3410,20 @@ export default function App() {
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            const wait = Math.pow(2, attempt) * 5000; // 10s, 20s
+            const wait = Math.pow(2, attempt) * 5000;
             setProcessingStatus(`Bearbetar ${updatedChapters[i].title}... (försök ${attempt + 1})`);
             await new Promise(r => setTimeout(r, wait));
           }
 
-          const request = buildReviewRequest(systemPrompt, updatedChapters[i].content, level);
-          const response = await sendMessage(request);
+          // Use backend API – suggestions are saved to DB automatically
+          const result = await apiClient.reviewChapter(updatedChapters[i].id, projId);
+          const suggestions = result?.suggestions || [];
 
-          if (response) {
-            const text = extractText(response);
-            const parsed = parseJsonResponse(text);
-            if (parsed?.suggestions?.length) {
-              const chapterParas = updatedParas[updatedChapters[i].id] || [];
-              const enrichedParas = attachSuggestionsToParagraphs(chapterParas, parsed.suggestions, updatedChapters[i].id);
-              updatedParas[updatedChapters[i].id] = enrichedParas;
-              setParagraphsByChapter({ ...updatedParas });
-            }
+          if (suggestions.length > 0) {
+            const chapterParas = updatedParas[updatedChapters[i].id] || splitIntoParagraphs(updatedChapters[i].content);
+            const enrichedParas = attachSuggestionsToParagraphs(chapterParas, suggestions, updatedChapters[i].id);
+            updatedParas[updatedChapters[i].id] = enrichedParas;
+            setParagraphsByChapter({ ...updatedParas });
           }
           success = true;
         } catch (err) {
@@ -3381,9 +3438,6 @@ export default function App() {
       updatedChapters[i] = { ...updatedChapters[i], status: "done" };
       setChapters([...updatedChapters]);
 
-      // Incremental save after each successful chapter
-      await saveProject({ chapters: [...updatedChapters], paragraphsByChapter: { ...updatedParas }, accepted, rejected, dnaProfile, emotionMaps, conventions, reviewHistory, activeReviewRound, genres, modules, transLangs, activeChapter: updatedChapters[i].id, fileName: uploadedFile?.name || "Manus", view: "editor" });
-
       // Switch to editor after first analyzed chapter
       if (i === 0 || (i === skipped && !sentToEditor)) {
         setView("editor");
@@ -3391,77 +3445,30 @@ export default function App() {
         sentToEditor = true;
       }
 
-      // Longer pause between chapters to avoid rate limiting (API allows ~5 req/min)
+      // Pause between chapters for rate limiting
       if (i < updatedChapters.length - 1) {
-        const pauseMs = 3000; // 3 seconds between chapters
+        const pauseMs = 3000;
         setProcessingStatus(`Förbereder nästa kapitel... (${i + 2 - skipped}/${updatedChapters.length - skipped})`);
         await new Promise(r => setTimeout(r, pauseMs));
       }
     }
 
-    // Emotional maps per chapter
-    const newEmotionMaps = {};
-    for (let i = 0; i < updatedChapters.length; i++) {
-      const ch = updatedChapters[i];
-      setProcessingStatus(`Skapar emotionell karta: ${ch.title} (${i + 1}/${updatedChapters.length})...`);
+    // Step 3: DNA profile via backend API (saved to project in DB)
+    if (projId) {
+      setProcessingStatus("Bygger språklig DNA-profil...");
       try {
-        const emRes = await sendMessage({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1500,
-          system: `Du är en litterär analytiker. Analysera den emotionella strukturen i detta kapitel. Returnera JSON:
-{
-  "dominantEmotion": "<sträng: den dominerande känslan>",
-  "emotions": { "<känsla>": <0.0-1.0 intensitet>, ... },
-  "arc": "<1-2 meningar: kapitlets emotionella båge>",
-  "characterStates": [{ "character": "<namn>", "state": "<kort emotionellt tillstånd>" }],
-  "tension": <0.0-1.0 spänningsnivå>
-}`,
-          messages: [{ role: "user", content: ch.content.slice(0, 8000) }],
-        });
-        if (emRes) {
-          const parsed = parseJsonResponse(extractText(emRes));
-          if (parsed) newEmotionMaps[ch.id] = parsed;
+        const dnaResult = await apiClient.generateDNAProfile(projId);
+        if (dnaResult?.dnaProfile) {
+          setDnaProfile(dnaResult.dnaProfile);
         }
       } catch (err) {
-        console.error(`Emotion map failed for ${ch.title}:`, err);
+        console.error("DNA profile failed:", err);
       }
-      if (i < updatedChapters.length - 1) await new Promise(r => setTimeout(r, 3000));
-    }
-    setEmotionMaps(prev => ({ ...prev, ...newEmotionMaps }));
-
-    // DNA profile
-    setProcessingStatus("Bygger språklig DNA-profil...");
-    const allText = chaps.map(c => c.content).join(" ");
-
-    try {
-      const dnaResponse = await sendMessage({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2048,
-        system: systemPrompt + `\n\nGenerera en språklig DNA-profil. Returnera JSON med exakt dessa fält:
-{
-  "avgSentenceLen": <number>,
-  "shortLongRatio": "<string>",
-  "dominantImagery": "<string>",
-  "dialogStyle": "<string>",
-  "favoriteWords": ["<string>", ...],
-  "tonality": "<string>",
-  "perspective": "<string>",
-  "tense": "<string>"
-}`,
-        messages: [{ role: "user", content: `Analysera denna text och skapa en språklig DNA-profil:\n\n${allText.slice(0, 20000)}` }],
-      });
-
-      if (dnaResponse) {
-        const dnaText = extractText(dnaResponse);
-        const dnaParsed = parseJsonResponse(dnaText);
-        if (dnaParsed) setDnaProfile(dnaParsed);
-      }
-    } catch (err) {
-      console.error("DNA profile failed:", err);
     }
 
     // Fallback DNA if API didn't work
     if (!dnaProfile) {
+      const allText = chaps.map(c => c.content).join(" ");
       const words = allText.split(/\s+/);
       const sentences = allText.split(/[.!?]+/).filter(s => s.trim().length > 0);
       const avgLen = sentences.length > 0 ? Math.round((words.length / sentences.length) * 10) / 10 : 0;
@@ -3473,33 +3480,6 @@ export default function App() {
     }
 
     setActiveChapter(updatedChapters[0]?.id);
-
-    // Save project to server if authenticated
-    if (isAuthenticated) {
-      setProcessingStatus("Sparar projekt...");
-      try {
-        const projectData = await apiClient.createProject({
-          title: uploadedFile?.name?.replace(/\.[^.]+$/, '') || "Manus",
-          genres: settings.genres || genres,
-          modules: settings.modules || modules,
-          transLanguages: settings.transLangs || transLangs,
-          dnaProfile: dnaProfile,
-          chapters: updatedChapters.map((ch, idx) => ({
-            number: idx + 1,
-            title: ch.title,
-            content: ch.content,
-            wordCount: ch.wordCount,
-          })),
-        });
-        if (projectData?.id) {
-          setServerProjectId(projectData.id);
-        }
-      } catch (err) {
-        console.error("Failed to save project to server:", err);
-        // Continue to editor anyway – data is in local state
-      }
-    }
-
     setProcessingStatus("Klart!");
     await new Promise(r => setTimeout(r, 600));
     setView("editor");
@@ -3511,9 +3491,8 @@ export default function App() {
     const chapter = chapters.find(c => c.id === chapterId);
     if (!chapter || reanalyzingChapter) return;
 
-    const useLevel = level || analysisLevel || "standard";
     setReanalyzingChapter(chapterId);
-    setProcessingStatus(`${ANALYSIS_LEVELS[useLevel]?.icon || ''} ${ANALYSIS_LEVELS[useLevel]?.label || 'Analys'}: ${chapter.title}...`);
+    setProcessingStatus(`Analyserar ${chapter.title}...`);
 
     // Clear existing suggestions for this chapter
     const freshParas = splitIntoParagraphs(chapter.content);
@@ -3522,54 +3501,27 @@ export default function App() {
     // Mark as active
     setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "active" } : c));
 
-    const systemPrompt = buildPrompt({
-      project: { title: uploadedFile?.name?.replace(/\.[^.]+$/, '') },
-      genres,
-      modules: { develop: modules.includes("develop"), translate: modules.includes("translate") },
-      translationLanguages: transLangs,
-      conventions,
-    });
-
     let success = false;
     let lastError = null;
-    // Try with selected level first, then fall back to standard if model unavailable
-    const levelsToTry = useLevel === "deep" ? ["deep", "standard"] : [useLevel];
 
-    for (const tryLevel of levelsToTry) {
-      if (success) break;
-      for (let attempt = 0; attempt < 3 && !success; attempt++) {
-        try {
-          if (attempt > 0) {
-            setProcessingStatus(`Bearbetar ${chapter.title}... (försök ${attempt + 1})`);
-            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
-          }
-          const request = buildReviewRequest(systemPrompt, chapter.content, tryLevel);
-          const response = await sendMessage(request);
-          if (!response) {
-            lastError = "Ingen API-nyckel konfigurerad";
-            break;
-          }
-          const text = extractText(response);
-          const parsed = parseJsonResponse(text);
-          if (parsed?.suggestions?.length) {
-            const enrichedParas = attachSuggestionsToParagraphs(freshParas, parsed.suggestions, chapterId);
-            setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enrichedParas }));
-          } else {
-            console.warn("No suggestions in response:", text?.slice(0, 200));
-          }
-          success = true;
-          if (tryLevel !== useLevel) {
-            setProcessingStatus(`${chapter.title} analyserad (standardnivå användes)`);
-          }
-        } catch (err) {
-          lastError = err.message;
-          console.error(`Re-analyze failed (${tryLevel}, attempt ${attempt + 1}):`, err);
-          // If model not available (403), skip to fallback
-          if (err.message?.includes("403") || err.message?.includes("not available") || err.message?.includes("does not exist")) {
-            setProcessingStatus(`${ANALYSIS_LEVELS[tryLevel]?.label} ej tillgänglig, försöker annan nivå...`);
-            break;
-          }
+    for (let attempt = 0; attempt < 3 && !success; attempt++) {
+      try {
+        if (attempt > 0) {
+          setProcessingStatus(`Bearbetar ${chapter.title}... (försök ${attempt + 1})`);
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
         }
+        // Use backend API – suggestions saved to DB automatically
+        const result = await apiClient.reviewChapter(chapterId, serverProjectId);
+        const suggestions = result?.suggestions || [];
+
+        if (suggestions.length > 0) {
+          const enrichedParas = attachSuggestionsToParagraphs(freshParas, suggestions, chapterId);
+          setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enrichedParas }));
+        }
+        success = true;
+      } catch (err) {
+        lastError = err.message;
+        console.error(`Re-analyze failed (attempt ${attempt + 1}):`, err);
       }
     }
 
@@ -3589,13 +3541,6 @@ export default function App() {
   const handleAnalyzeUnreviewed = async () => {
     if (batchAnalyzing) return;
     setBatchAnalyzing(true);
-
-    const systemPrompt = buildPrompt({
-      project: { title: uploadedFile?.name?.replace(/\.[^.]+$/, '') },
-      genres,
-      modules: { develop: modules.includes("develop"), translate: modules.includes("translate") },
-      translationLanguages: transLangs,
-    });
 
     // Find chapters without suggestions
     const unreviewed = chapters.filter(ch => {
@@ -3617,7 +3562,6 @@ export default function App() {
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
       setProcessingStatus(`Analyserar ${ch.title} (${i + 1}/${unreviewed.length})...`);
 
-      // Ensure paragraphs exist
       let paras = paragraphsByChapter[ch.id];
       if (!paras || paras.length === 0) {
         paras = splitIntoParagraphs(ch.content);
@@ -3628,21 +3572,17 @@ export default function App() {
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            const wait = Math.pow(2, attempt) * 5000;
             setProcessingStatus(`Bearbetar ${ch.title}... (försök ${attempt + 1})`);
-            await new Promise(r => setTimeout(r, wait));
+            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
-          const request = buildReviewRequest(systemPrompt, ch.content);
-          const response = await sendMessage(request);
+          // Use backend API – suggestions saved to DB automatically
+          const result = await apiClient.reviewChapter(ch.id, serverProjectId);
+          const suggestions = result?.suggestions || [];
 
-          if (response) {
-            const text = extractText(response);
-            const parsed = parseJsonResponse(text);
-            if (parsed?.suggestions?.length) {
-              const enrichedParas = attachSuggestionsToParagraphs(paras, parsed.suggestions, ch.id);
-              setParagraphsByChapter(prev => ({ ...prev, [ch.id]: enrichedParas }));
-            }
+          if (suggestions.length > 0) {
+            const enrichedParas = attachSuggestionsToParagraphs(paras, suggestions, ch.id);
+            setParagraphsByChapter(prev => ({ ...prev, [ch.id]: enrichedParas }));
           }
           success = true;
         } catch (err) {
@@ -3656,10 +3596,7 @@ export default function App() {
 
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "done" } : c));
 
-      // Incremental save after each successful chapter
-      await saveProject({ chapters, paragraphsByChapter, accepted, rejected, dnaProfile, emotionMaps, conventions, reviewHistory, activeReviewRound, genres, modules, transLangs, activeChapter: ch.id, fileName: uploadedFile?.name || "Manus", view: "editor" });
-
-      // 3 second pause between chapters to stay under rate limit
+      // 3 second pause between chapters
       if (i < unreviewed.length - 1) {
         setProcessingStatus(`Paus innan ${unreviewed[i + 1].title}... (${i + 2}/${unreviewed.length})`);
         await new Promise(r => setTimeout(r, 3000));
@@ -3719,15 +3656,7 @@ export default function App() {
     setRejected(new Set());
     setActiveSuggestion(null);
 
-    // Re-run analysis on all chapters
-    const systemPrompt = buildPrompt({
-      project: { title: uploadedFile?.name?.replace(/\.[^.]+$/, '') },
-      genres,
-      modules: { develop: modules.includes("develop"), translate: modules.includes("translate") },
-      translationLanguages: transLangs,
-      conventions,
-    });
-
+    // Re-run analysis on all chapters via backend API
     for (let i = 0; i < chapters.length; i++) {
       if (abortProcessingRef.current) {
         abortProcessingRef.current = false;
@@ -3744,18 +3673,15 @@ export default function App() {
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
-          const request = buildReviewRequest(systemPrompt, ch.content, useLevel);
-          const response = await sendMessage(request);
+          // Use backend API – suggestions saved to DB automatically
+          const result = await apiClient.reviewChapter(ch.id, serverProjectId);
+          const suggestions = result?.suggestions || [];
 
-          if (response) {
-            const text = extractText(response);
-            const parsed = parseJsonResponse(text);
-            if (parsed?.suggestions?.length) {
-              const paras = clearedParas[ch.id] || splitIntoParagraphs(ch.content);
-              const enriched = attachSuggestionsToParagraphs(paras, parsed.suggestions, ch.id);
-              clearedParas[ch.id] = enriched;
-              setParagraphsByChapter({ ...clearedParas });
-            }
+          if (suggestions.length > 0) {
+            const paras = clearedParas[ch.id] || splitIntoParagraphs(ch.content);
+            const enriched = attachSuggestionsToParagraphs(paras, suggestions, ch.id);
+            clearedParas[ch.id] = enriched;
+            setParagraphsByChapter({ ...clearedParas });
           }
           success = true;
         } catch (err) {
@@ -3766,9 +3692,6 @@ export default function App() {
           }
         }
       }
-
-      // Incremental save after each successful chapter
-      await saveProject({ chapters, paragraphsByChapter: { ...clearedParas }, accepted, rejected, dnaProfile, emotionMaps, conventions, reviewHistory, activeReviewRound: activeReviewRound + 1, genres, modules, transLangs, activeChapter: ch.id, fileName: uploadedFile?.name || "Manus", view: "editor" });
 
       if (i < chapters.length - 1) {
         setProcessingStatus(`Förbereder nästa kapitel...`);
@@ -3896,6 +3819,11 @@ export default function App() {
     setChapters(prev => prev.map(ch =>
       ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
     ));
+
+    // Persist to DB
+    apiClient.updateChapter(activeChapter, { content: newContent }).catch(err =>
+      console.error("Failed to save chapter to DB:", err)
+    );
   };
 
   // ─── CREATE NEW CHAPTER FROM TEXT ───
@@ -4244,6 +4172,7 @@ export default function App() {
                               conventionSuggestions.forEach(s => n.add(s.id));
                               return n;
                             });
+                            conventionSuggestions.forEach(s => apiClient.updateSuggestion(s.id, "ACCEPTED").catch(() => {}));
                           }
                         }} style={{
                           fontFamily: uiFont, fontSize: 9.5, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
@@ -4262,6 +4191,7 @@ export default function App() {
                               filteredPending.forEach(s => n.add(s.id));
                               return n;
                             });
+                            filteredPending.forEach(s => apiClient.updateSuggestion(s.id, "ACCEPTED").catch(() => {}));
                           }
                         }} style={{
                           fontFamily: uiFont, fontSize: 9.5, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
@@ -4305,12 +4235,13 @@ export default function App() {
                       <SuggestionCard key={s.id} s={s} isActive={activeSuggestion === s.id}
                         status={accepted.has(s.id) ? "accepted" : rejected.has(s.id) ? "rejected" : "pending"}
                         onToggle={() => setActiveSuggestion(activeSuggestion === s.id ? null : s.id)}
-                        onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); }}
-                        onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); }}
+                        onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e)); }}
+                        onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); apiClient.updateSuggestion(s.id, "REJECTED").catch(e => console.error("Save reject failed:", e)); }}
                         onUndo={() => {
                           setAccepted(prev => { const n = new Set(prev); n.delete(s.id); return n; });
                           setRejected(prev => { const n = new Set(prev); n.delete(s.id); return n; });
                           setActiveSuggestion(null);
+                          apiClient.updateSuggestion(s.id, "PENDING").catch(e => console.error("Save undo failed:", e));
                         }}
                       />
                     ))}
