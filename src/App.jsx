@@ -4107,8 +4107,8 @@ export default function App() {
 
   // ─── RENDER ───
 
-  // Auth loading spinner
-  if (authLoading || view === "loading") return (
+  // Auth loading spinner (only while auth is settling)
+  if (authLoading) return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, fontFamily: uiFont }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ width: 40, height: 40, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
@@ -4123,8 +4123,8 @@ export default function App() {
     <AuthPage onLogin={login} onRegister={register} />
   );
 
-  // Dashboard
-  if (view === "dashboard" || (view === "loading" && isAuthenticated)) return (
+  // Dashboard (also handles "loading" state after auth is settled)
+  if (view === "dashboard" || view === "loading") return (
     <DashboardView
       user={user}
       onOpenProject={handleOpenProject}
