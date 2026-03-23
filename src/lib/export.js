@@ -29,6 +29,37 @@ const MARGIN_PRESETS = {
 };
 
 /**
+ * Clean text for export — remove invisible/problematic characters
+ * that break formatting in print-ready documents.
+ */
+function cleanTextForExport(text) {
+  return text
+    // Replace tabs with single space
+    .replace(/\t/g, ' ')
+    // Collapse multiple spaces into one (except line starts for intentional formatting)
+    .replace(/([^\n]) {2,}/g, '$1 ')
+    // Remove zero-width spaces, soft hyphens, byte order marks, and other invisible Unicode
+    .replace(/[\u200B\u200C\u200D\u00AD\uFEFF\u2060\u200E\u200F]/g, '')
+    // Replace non-breaking spaces with regular spaces (except after short words like "i", "å")
+    .replace(/\u00A0/g, ' ')
+    // Normalize different dash types: en-dash stays, em-dash stays, but weird dashes normalize
+    .replace(/[\u2010\u2011]/g, '-')       // hyphen variants → regular hyphen
+    .replace(/\u2012/g, '\u2013')           // figure dash → en-dash
+    // Normalize quotes to Swedish standard
+    .replace(/[\u201C\u201D]/g, '\u201D')   // left/right double quotes → right double quote (Swedish uses "")
+    .replace(/[\u2018\u2019]/g, '\u2019')   // left/right single quotes → right single quote
+    // Remove trailing whitespace from each line
+    .replace(/[ \t]+$/gm, '')
+    // Collapse 3+ consecutive newlines into 2 (preserve paragraph breaks but remove excessive spacing)
+    .replace(/\n{3,}/g, '\n\n')
+    // Ensure consistent line endings
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    // Trim the whole text
+    .trim();
+}
+
+/**
  * Apply accepted suggestions to chapter text.
  */
 function applyAcceptedChanges(text, paragraphs, accepted) {
@@ -200,7 +231,8 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
   // ─── Chapter sections ───
   const chapterSections = chapters.map((chapter, chapterIdx) => {
     const paras = paragraphsByChapter?.[chapter.id] || [];
-    const processedText = applyAcceptedChanges(chapter.content, paras, accepted);
+    const rawText = applyAcceptedChanges(chapter.content, paras, accepted);
+    const processedText = cleanTextForExport(rawText);
     const textParagraphs = processedText.split(/\n\s*\n/).filter(p => p.trim());
 
     const indentTwips = Math.round(firstLineIndent * 567); // cm to twips
