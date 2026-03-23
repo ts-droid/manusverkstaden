@@ -41,7 +41,7 @@ router.post('/register', async (req, res, next) => {
     });
 
     res.status(201).json({
-      user: { id: user.id, email: user.email, name: user.name, plan: user.plan },
+      user: { id: user.id, email: user.email, name: user.name, plan: user.plan, role: user.role, isDevAccount: user.isDevAccount },
       accessToken,
     });
   } catch (err) {
@@ -80,7 +80,7 @@ router.post('/login', async (req, res, next) => {
     });
 
     res.json({
-      user: { id: user.id, email: user.email, name: user.name, plan: user.plan },
+      user: { id: user.id, email: user.email, name: user.name, plan: user.plan, role: user.role, isDevAccount: user.isDevAccount },
       accessToken,
     });
   } catch (err) {
@@ -127,7 +127,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, email: true, name: true, plan: true, createdAt: true },
+      select: { id: true, email: true, name: true, plan: true, role: true, isDevAccount: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: 'Användaren hittades inte' });
     res.json({ user });
