@@ -4689,7 +4689,8 @@ function attachSuggestionsToParagraphs(paragraphs, suggestions, chapterId) {
       return para.text.includes(s.original);
     }).map((s, sIdx) => ({
       ...s,
-      id: `${chapterId}_p${pIdx}_s${sIdx}`,
+      // Keep the real DB id if it exists; only generate synthetic id as fallback
+      id: s.id || `${chapterId}_p${pIdx}_s${sIdx}`,
     }));
     return { ...para, suggestions: matchingSuggestions };
   });
