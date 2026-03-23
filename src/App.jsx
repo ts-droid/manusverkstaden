@@ -1783,14 +1783,73 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
   const [exportSpacing, setExportSpacing] = useState(1.5);
   const [exportMargins, setExportMargins] = useState("normal");
   const [exportTitleStyle, setExportTitleStyle] = useState("both");
+  const [exportTitleAlign, setExportTitleAlign] = useState("center");
   const [exportPageNumbers, setExportPageNumbers] = useState(true);
+  const [exportPageNumPos, setExportPageNumPos] = useState("center");
+  const [exportIndent, setExportIndent] = useState(1.27);
+  const [exportChapterStart, setExportChapterStart] = useState("third");
+  const [exportHeader, setExportHeader] = useState("title");
+  const [exportParaSpacing, setExportParaSpacing] = useState(false); // false = no extra space between paragraphs (book standard)
+  const [activePreset, setActivePreset] = useState("fiction");
   const [exporting, setExporting] = useState(false);
 
+  // ─── PRESETS (Swedish publishing standards) ───
+  const presets = {
+    fiction: {
+      label: "Skönlitteratur",
+      desc: "Svensk bokstandard — indrag, inga blankrader, kapitel 1/3 ner",
+      font: "Times New Roman", fontSize: 12, lineSpacing: 1.5, margins: "normal",
+      titleStyle: "both", titleAlign: "center", indent: 1.27, chapterStart: "third",
+      pageNumbers: true, pageNumPos: "center", header: "title", paraSpacing: false,
+    },
+    manuscript: {
+      label: "Manusskript",
+      desc: "Redaktörsformat — dubbelt radavstånd, bred marginal, för granskning",
+      font: "Garamond", fontSize: 12, lineSpacing: 2.0, margins: "wide",
+      titleStyle: "uppercase", titleAlign: "center", indent: 2.0, chapterStart: "third",
+      pageNumbers: true, pageNumPos: "right", header: "both", paraSpacing: false,
+    },
+    modern: {
+      label: "Modern",
+      desc: "Modernt bokformat — blockstycken utan indrag, extra radmellanrum",
+      font: "Georgia", fontSize: 11, lineSpacing: 1.15, margins: "normal",
+      titleStyle: "bold", titleAlign: "left", indent: 0, chapterStart: "direct",
+      pageNumbers: true, pageNumPos: "right", header: "none", paraSpacing: true,
+    },
+    custom: {
+      label: "Anpassad",
+      desc: "Välj alla inställningar manuellt",
+    },
+  };
+
+  const applyPreset = (key) => {
+    setActivePreset(key);
+    const p = presets[key];
+    if (!p || key === "custom") return;
+    setExportFont(p.font);
+    setExportSize(p.fontSize);
+    setExportSpacing(p.lineSpacing);
+    setExportMargins(p.margins);
+    setExportTitleStyle(p.titleStyle);
+    setExportTitleAlign(p.titleAlign);
+    setExportIndent(p.indent);
+    setExportChapterStart(p.chapterStart);
+    setExportPageNumbers(p.pageNumbers);
+    setExportPageNumPos(p.pageNumPos);
+    setExportHeader(p.header);
+    setExportParaSpacing(p.paraSpacing);
+  };
+
   const fonts = ["Times New Roman", "Garamond", "Georgia", "Palatino", "Libre Baskerville"];
-  const sizes = [11, 12, 13];
+  const sizes = [10, 11, 12, 13, 14];
   const spacings = [{ v: 1.0, l: "Enkelt" }, { v: 1.15, l: "1.15" }, { v: 1.5, l: "1.5" }, { v: 2.0, l: "Dubbelt" }];
   const marginOptions = [{ v: "narrow", l: "Smal (1.9cm)" }, { v: "normal", l: "Normal (2.5cm)" }, { v: "wide", l: "Bred (3.2cm)" }];
   const titleStyles = [{ v: "uppercase", l: "VERSALER" }, { v: "bold", l: "Fetstil" }, { v: "both", l: "VERSALER + FET" }];
+  const titleAligns = [{ v: "left", l: "Vänster" }, { v: "center", l: "Centrerat" }, { v: "right", l: "Höger" }];
+  const indentOptions = [{ v: 0, l: "Inget" }, { v: 0.5, l: "0.5 cm" }, { v: 1.27, l: "1.27 cm" }, { v: 2.0, l: "2 cm" }];
+  const chapterStartOptions = [{ v: "direct", l: "Direkt" }, { v: "third", l: "1/3 ner" }, { v: "half", l: "Halva sidan" }];
+  const pageNumPositions = [{ v: "left", l: "Nere vänster" }, { v: "center", l: "Nere centrerat" }, { v: "right", l: "Nere höger" }];
+  const headerOptions = [{ v: "none", l: "Inget" }, { v: "title", l: "Manustitel" }, { v: "author", l: "Författarnamn" }, { v: "both", l: "Titel + författare" }];
 
   const totalWords = chapters.reduce((s, c) => s + c.wordCount, 0);
   const acceptedCount = [...accepted].filter(id => chapters.some(ch => {
@@ -1813,7 +1872,14 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
           lineSpacing: exportSpacing,
           margins: exportMargins,
           chapterTitleStyle: exportTitleStyle,
+          chapterTitleAlign: exportTitleAlign,
           pageNumbers: exportPageNumbers,
+          pageNumberPosition: exportPageNumPos,
+          firstLineIndent: exportIndent,
+          chapterStartPosition: exportChapterStart,
+          headerStyle: exportHeader,
+          authorName: "", // TODO: get from user profile
+          paragraphSpacing: exportParaSpacing,
         },
       });
       downloadBlob(blob, `${fileName} – Tryckfärdig.docx`);
@@ -1854,6 +1920,21 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
           {fileName} · {chapters.length} kapitel · {totalWords.toLocaleString()} ord · {acceptedCount} godkända ändringar appliceras
         </p>
 
+        <OptionGroup label="Formatmall">
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {Object.entries(presets).map(([key, p]) => (
+              <button key={key} onClick={() => applyPreset(key)} style={{
+                flex: "1 1 120px", padding: "10px 12px", borderRadius: 8, cursor: "pointer", fontFamily: uiFont, textAlign: "left",
+                border: activePreset === key ? `2px solid ${accent}` : `1px solid ${border}`,
+                background: activePreset === key ? accentLight : surface, transition: "all 0.12s",
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: activePreset === key ? accent : ink }}>{p.label}</div>
+                <div style={{ fontSize: 9.5, color: muted, marginTop: 2, lineHeight: 1.3 }}>{p.desc}</div>
+              </button>
+            ))}
+          </div>
+        </OptionGroup>
+
         <OptionGroup label="Typsnitt">
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {fonts.map(f => (
@@ -1888,7 +1969,22 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
           </div>
         </OptionGroup>
 
-        <OptionGroup label="Kapitelrubriker">
+        <OptionGroup label="Styckeindrag">
+          <div style={{ display: "flex", gap: 6 }}>
+            {indentOptions.map(o => (
+              <Chip key={o.v} active={exportIndent === o.v} onClick={() => setExportIndent(o.v)}>{o.l}</Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Styckemellanrum">
+          <div style={{ display: "flex", gap: 6 }}>
+            <Chip active={!exportParaSpacing} onClick={() => { setExportParaSpacing(false); setActivePreset("custom"); }}>Nej (bokstandard)</Chip>
+            <Chip active={exportParaSpacing} onClick={() => { setExportParaSpacing(true); setActivePreset("custom"); }}>Ja (extra radmellanrum)</Chip>
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Kapitelrubriker – stil">
           <div style={{ display: "flex", gap: 6 }}>
             {titleStyles.map(t => (
               <Chip key={t.v} active={exportTitleStyle === t.v} onClick={() => setExportTitleStyle(t.v)}>{t.l}</Chip>
@@ -1896,11 +1992,42 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
           </div>
         </OptionGroup>
 
-        <OptionGroup label="Sidnumrering">
+        <OptionGroup label="Kapitelrubriker – placering">
           <div style={{ display: "flex", gap: 6 }}>
+            {titleAligns.map(a => (
+              <Chip key={a.v} active={exportTitleAlign === a.v} onClick={() => setExportTitleAlign(a.v)}>{a.l}</Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Kapitel börjar">
+          <div style={{ display: "flex", gap: 6 }}>
+            {chapterStartOptions.map(o => (
+              <Chip key={o.v} active={exportChapterStart === o.v} onClick={() => setExportChapterStart(o.v)}>{o.l}</Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Sidhuvud">
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {headerOptions.map(h => (
+              <Chip key={h.v} active={exportHeader === h.v} onClick={() => setExportHeader(h.v)}>{h.l}</Chip>
+            ))}
+          </div>
+        </OptionGroup>
+
+        <OptionGroup label="Sidnumrering">
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
             <Chip active={exportPageNumbers} onClick={() => setExportPageNumbers(true)}>Ja</Chip>
             <Chip active={!exportPageNumbers} onClick={() => setExportPageNumbers(false)}>Nej</Chip>
           </div>
+          {exportPageNumbers && (
+            <div style={{ display: "flex", gap: 6 }}>
+              {pageNumPositions.map(p => (
+                <Chip key={p.v} active={exportPageNumPos === p.v} onClick={() => setExportPageNumPos(p.v)}>{p.l}</Chip>
+              ))}
+            </div>
+          )}
         </OptionGroup>
 
         {/* Preview strip */}
@@ -1910,16 +2037,21 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
             fontFamily: exportFont === "Libre Baskerville" ? "Georgia" : exportFont,
             fontSize: exportSize, lineHeight: exportSpacing, color: ink,
           }}>
+            {exportChapterStart === "third" && <div style={{ height: 40 }} />}
+            {exportChapterStart === "half" && <div style={{ height: 70 }} />}
             <div style={{
-              textAlign: "center", marginBottom: 12,
+              textAlign: exportTitleAlign, marginBottom: 12,
               fontWeight: exportTitleStyle === "bold" || exportTitleStyle === "both" ? 700 : 400,
               fontSize: exportSize + 4,
               textTransform: exportTitleStyle === "uppercase" || exportTitleStyle === "both" ? "uppercase" : "none",
             }}>
               Kapitel 1
             </div>
-            <div style={{ textIndent: "1.27cm" }}>
+            <div style={{ textIndent: exportIndent > 0 ? `${exportIndent}cm` : 0 }}>
               Sommaren närmade sig, det var slutet av 80-talet. Det är svårt att föreställa sig att livet kunde erbjuda något bättre.
+            </div>
+            <div style={{ textIndent: exportIndent > 0 ? `${exportIndent}cm` : 0, marginTop: exportParaSpacing ? "0.8em" : 0 }}>
+              Hon stod vid fönstret och såg ut över den stilla sjön. Dimman låg tät över vattnet.
             </div>
           </div>
         </div>

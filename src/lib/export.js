@@ -47,6 +47,24 @@ function applyAcceptedChanges(text, paragraphs, accepted) {
 }
 
 /**
+ * Alignment map from string to docx constant.
+ */
+const ALIGN_MAP = {
+  left: AlignmentType.LEFT,
+  center: AlignmentType.CENTER,
+  right: AlignmentType.RIGHT,
+};
+
+/**
+ * Chapter start position in twips.
+ */
+const CHAPTER_START_SPACING = {
+  direct: 400,    // small gap
+  third: 4800,    // ~1/3 down the page
+  half: 7200,     // ~1/2 down the page
+};
+
+/**
  * Format a chapter title based on style options.
  */
 function formatTitle(title, options) {
@@ -56,10 +74,12 @@ function formatTitle(title, options) {
     text = text.toUpperCase();
   }
   const isBold = style === 'bold' || style === 'both';
+  const alignment = ALIGN_MAP[options.chapterTitleAlign] || AlignmentType.CENTER;
+  const startSpacing = CHAPTER_START_SPACING[options.chapterStartPosition] || CHAPTER_START_SPACING.third;
 
   return new Paragraph({
-    spacing: { before: 400, after: 300 },
-    alignment: AlignmentType.CENTER,
+    spacing: { before: startSpacing, after: 300 },
+    alignment,
     children: [
       new TextRun({
         text,
@@ -90,7 +110,14 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
     lineSpacing = 1.5,
     margins = 'normal',
     chapterTitleStyle = 'both',
+    chapterTitleAlign = 'center',
     pageNumbers = true,
+    pageNumberPosition = 'center',
+    firstLineIndent = 1.27,
+    chapterStartPosition = 'third',
+    headerStyle = 'none',
+    authorName = '',
+    paragraphSpacing = false,
   } = options;
 
   const marginValues = MARGIN_PRESETS[margins] || MARGIN_PRESETS.normal;
@@ -176,13 +203,15 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
     const processedText = applyAcceptedChanges(chapter.content, paras, accepted);
     const textParagraphs = processedText.split(/\n\s*\n/).filter(p => p.trim());
 
+    const indentTwips = Math.round(firstLineIndent * 567); // cm to twips
+
     const children = [
       // Chapter title
-      formatTitle(chapter.title, { font, fontSize, chapterTitleStyle }),
+      formatTitle(chapter.title, { font, fontSize, chapterTitleStyle, chapterTitleAlign, chapterStartPosition }),
       // Body paragraphs
       ...textParagraphs.map(text => new Paragraph({
-        spacing: { line: lineSpacingTwips, after: Math.round(lineSpacingTwips * 0.5) },
-        indent: { firstLine: 720 }, // 1.27 cm indent
+        spacing: { line: lineSpacingTwips, after: paragraphSpacing ? Math.round(lineSpacingTwips * 0.5) : 0 },
+        indent: indentTwips > 0 ? { firstLine: indentTwips } : undefined,
         children: parseFormattedText(text.trim(), font, sizeHalfPts),
       })),
     ];
@@ -199,12 +228,37 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
     };
   });
 
+  // ─── Header ───
+  const pageNumAlignment = ALIGN_MAP[pageNumberPosition] || AlignmentType.CENTER;
+
+  const headerConfig = headerStyle !== 'none' ? {
+    default: new Header({
+      children: [
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [
+            new TextRun({
+              text: headerStyle === 'title' ? title
+                : headerStyle === 'author' ? (authorName || '')
+                : headerStyle === 'both' ? `${authorName || ''} — ${title}`
+                : '',
+              font,
+              size: 16,
+              color: '999999',
+              italics: true,
+            }),
+          ],
+        }),
+      ],
+    }),
+  } : {};
+
   // ─── Footer with page numbers ───
   const footerConfig = pageNumbers ? {
     default: new Footer({
       children: [
         new Paragraph({
-          alignment: AlignmentType.CENTER,
+          alignment: pageNumAlignment,
           children: [
             new TextRun({
               children: [PageNumber.CURRENT],
@@ -234,6 +288,7 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
       // Chapters
       ...chapterSections.map(section => ({
         ...section,
+        headers: headerConfig,
         footers: footerConfig,
       })),
     ],
