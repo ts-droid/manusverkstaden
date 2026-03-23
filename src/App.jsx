@@ -5,7 +5,7 @@ import { buildPrompt, buildReviewRequest, ANALYSIS_LEVELS } from "./lib/prompt-b
 import { saveProject, loadProject, clearProject, hasSavedProject } from "./lib/storage";
 import { exportToDocx, downloadBlob } from "./lib/export";
 import { useAuth } from "./contexts/AuthContext";
-import { apiClient } from "./lib/api-client";
+import { apiClient, AuthError } from "./lib/api-client";
 
 // ─── DATA ───
 const GENRES = [
@@ -3352,6 +3352,7 @@ export default function App() {
   const [showExport, setShowExport] = useState(false);
   const [developResult, setDevelopResult] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [analysisLevel, setAnalysisLevel] = useState("standard");
   const [serverProjectId, setServerProjectId] = useState(null);
   const mainRef = useRef(null);
@@ -3423,6 +3424,22 @@ export default function App() {
       }
     })();
   }, [authLoading, isAuthenticated]);
+
+  // ─── GLOBAL AUTH ERROR HANDLER ───
+  useEffect(() => {
+    const origRequest = apiClient.request.bind(apiClient);
+    apiClient.request = async (...args) => {
+      try {
+        return await origRequest(...args);
+      } catch (err) {
+        if (err instanceof AuthError) {
+          setSessionExpired(true);
+        }
+        throw err;
+      }
+    };
+    return () => { apiClient.request = origRequest; };
+  }, []);
 
   // ─── AUTO-SAVE (lightweight metadata only – real data is in DB) ───
   useEffect(() => {
@@ -4541,6 +4558,24 @@ export default function App() {
         }}
         onClose={() => setSelectionToolbar(null)}
       />
+
+      {/* SESSION EXPIRED */}
+      {sessionExpired && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.55)", backdropFilter: "blur(4px)" }} />
+          <div style={{ position: "relative", background: surface, borderRadius: 16, padding: "32px 28px", maxWidth: 380, textAlign: "center", boxShadow: "0 24px 80px rgba(0,0,0,0.18)" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🔒</div>
+            <div style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink, marginBottom: 8 }}>Sessionen har gått ut</div>
+            <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, lineHeight: 1.5, marginBottom: 20 }}>
+              Du har varit inaktiv för länge. Logga in igen för att fortsätta arbeta. Dina ändringar är sparade.
+            </div>
+            <button onClick={() => { setSessionExpired(false); logout(); setView("auth"); }} style={{
+              width: "100%", padding: "10px 0", borderRadius: 8, border: "none",
+              background: accent, color: "#fff", fontFamily: uiFont, fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>Logga in igen</button>
+          </div>
+        </div>
+      )}
 
       {/* EDIT MODAL */}
       {editModal && (
