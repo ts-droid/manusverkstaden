@@ -74,7 +74,25 @@ export function parseJsonResponse(text) {
   try {
     // Strip markdown code fences if present
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+
+    // Sanitize replacement fields – remove AI meta-instructions
+    if (parsed?.suggestions) {
+      parsed.suggestions = parsed.suggestions.map(s => ({
+        ...s,
+        replacement: s.replacement ? s.replacement
+          .replace(/\s*\(genomgående[^)]*\)/gi, '')
+          .replace(/\s*\(ändra överallt[^)]*\)/gi, '')
+          .replace(/\s*\(i hela texten[^)]*\)/gi, '')
+          .replace(/\s*\(genom hela[^)]*\)/gi, '')
+          .replace(/\s*\(konsekvent[^)]*\)/gi, '')
+          .replace(/\s*\(ändra genom[^)]*\)/gi, '')
+          .replace(/\s*\(bör ändras[^)]*\)/gi, '')
+          .trim() : s.replacement,
+      }));
+    }
+
+    return parsed;
   } catch (error) {
     console.error('Failed to parse JSON response:', error);
     return null;

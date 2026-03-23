@@ -85,12 +85,18 @@ Returnera varje förslag som ett JSON-objekt med:
       "priority": "red|yellow|green",
       "level": 1-4,
       "original": "den EXAKTA texten i originalet – kopierad ordagrant",
-      "replacement": "föreslagen ny text (eller null om det är en kommentar)",
-      "reason": "motivering – förklara problemet och varför ändringen förbättrar"
+      "replacement": "BARA den nya texten – ALDRIG instruktioner, parenteser eller noter",
+      "reason": "motivering – förklara problemet och varför ändringen förbättrar. Om ändringen gäller genomgående i texten, skriv det HÄR, inte i replacement."
     }
   ],
   "overallAssessment": "kort helhetsbeömning av avsnittet"
-}`;
+}
+
+KRITISKT om "replacement"-fältet:
+- Fältet ska ENBART innehålla den nya texten som ska ersätta originalet – inget annat.
+- ALDRIG inkludera instruktioner, parenteser med anmärkningar, eller noter som "(genomgående)", "(ändra överallt)", "(i hela texten)", "(konsekvent)" etc.
+- Om ändringen bör göras genomgående i texten, skriv det i "reason"-fältet, INTE i "replacement".
+- Replacement-fältet matas in direkt i texten vid godkännande – allt du skriver där syns ordagrant.`;
 
 // ─── Genre Prompt Fragments ───
 
