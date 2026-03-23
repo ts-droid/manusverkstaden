@@ -1949,6 +1949,11 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [usageData, setUsageData] = useState(null);
+
+  const SWEDISH_MONTHS = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
+  const planLabels = { trial: "PROVA", PROVA: "PROVA", basic: "GRUND", GRUND: "GRUND", publisher: "FÖRLAG", FORLAG: "FÖRLAG" };
+  const planColors = { trial: muted, PROVA: muted, basic: accent, GRUND: accent, publisher: "#27864a", FORLAG: "#27864a" };
 
   useEffect(() => {
     (async () => {
@@ -1961,6 +1966,10 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
         setLoading(false);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    apiClient.getUsage().then(setUsageData).catch(() => setUsageData(null));
   }, []);
 
   const handleDelete = async (id) => {
@@ -1996,6 +2005,22 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
     return `${dateStr} ${date.getFullYear()}, ${timeStr}`;
   };
 
+  // Compute aggregate stats
+  const totalChapters = projects.reduce((s, p) => s + (p.chapterCount || p.chapters?.length || 0), 0);
+  const totalWords = projects.reduce((s, p) => s + (p.wordCount || p.chapters?.reduce((a, c) => a + (c.wordCount || 0), 0) || 0), 0);
+
+  // Find latest project (most recently updated)
+  const latestProject = projects.length > 0
+    ? [...projects].sort((a, b) => new Date(b.updatedAt || b.updated_at || 0) - new Date(a.updatedAt || a.updated_at || 0))[0]
+    : null;
+
+  // Usage bar helpers
+  const now = new Date();
+  const usageMonth = `${SWEDISH_MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+  const usagePercent = usageData && usageData.limit > 0 ? Math.min(100, Math.round((usageData.used / usageData.limit) * 100)) : null;
+
+  const currentPlan = user?.plan || "PROVA";
+
   return (
     <div style={{ minHeight: "100vh", background: bg, fontFamily: font }}>
       <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -2018,8 +2043,70 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
 
       {/* Content */}
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 24px" }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: ink, margin: "0 0 6px", letterSpacing: "-0.02em" }}>Dina manus</h1>
-        <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 32px" }}>Välj ett projekt att arbeta med eller skapa ett nytt.</p>
+
+        {/* Account overview card */}
+        <div style={{ background: surface, borderRadius: 14, border: `1px solid ${border}`, padding: "22px 24px", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+            {/* Left: welcome + plan badge */}
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <h1 style={{ fontSize: 22, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>
+                  {`Välkommen, ${user?.name || user?.email || ""}`}
+                </h1>
+                <span style={{
+                  fontFamily: uiFont, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em",
+                  padding: "3px 10px", borderRadius: 6,
+                  background: (planColors[currentPlan] || muted) + "18",
+                  color: planColors[currentPlan] || muted,
+                }}>{planLabels[currentPlan] || "PROVA"}</span>
+              </div>
+              <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>
+                {`${projects.length} projekt \u00b7 ${totalChapters} kapitel \u00b7 ${totalWords.toLocaleString()} ord totalt`}
+              </div>
+            </div>
+
+            {/* Right: usage bar */}
+            <div style={{ minWidth: 220, maxWidth: 300, flex: "0 0 auto" }}>
+              <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginBottom: 6 }}>
+                {`F\u00f6rbrukning ${usageMonth}`}
+              </div>
+              {usagePercent !== null ? (
+                <>
+                  <div style={{ height: 6, background: border, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: 3, transition: "width 0.4s",
+                      width: `${usagePercent}%`,
+                      background: usagePercent > 90 ? "#c0392b" : usagePercent > 70 ? "#b8860b" : accent,
+                    }} />
+                  </div>
+                  <div style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginTop: 4, textAlign: "right" }}>
+                    {`${usagePercent}% anv\u00e4nt`}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>{"\u2014"}</div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Quick action: continue latest */}
+        {latestProject && !loading && (
+          <div style={{ marginBottom: 28 }}>
+            <button
+              onClick={() => onOpenProject(latestProject)}
+              style={{
+                fontFamily: uiFont, fontSize: 12, color: accent, background: "none", border: "none",
+                cursor: "pointer", padding: "4px 0", fontWeight: 500, letterSpacing: "-0.01em",
+              }}
+            >
+              {`Forts\u00e4tt med ${latestProject.title || "Namnl\u00f6st manus"} \u2192`}
+            </button>
+          </div>
+        )}
+
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: ink, margin: "0 0 6px", letterSpacing: "-0.02em" }}>Dina manus</h2>
+        <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 24px" }}>V&auml;lj ett projekt att arbeta med eller skapa ett nytt.</p>
 
         {loading ? (
           <div style={{ textAlign: "center", padding: 60 }}>
@@ -2028,7 +2115,7 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260, 1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
             {/* New project card */}
             <button onClick={onNewProject} style={{
               padding: "32px 20px", borderRadius: 14, border: `2px dashed ${border}`, background: "transparent",
@@ -2041,9 +2128,19 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
 
             {/* Project cards */}
             {projects.map(project => {
-              const totalWords = project.wordCount || project.chapters?.reduce((s, c) => s + (c.wordCount || 0), 0) || 0;
+              const projWords = project.wordCount || project.chapters?.reduce((s, c) => s + (c.wordCount || 0), 0) || 0;
               const chapterCount = project.chapterCount || project.chapters?.length || 0;
               const progress = project.progress || 0;
+
+              // Calculate review progress: chapters with suggestions / total chapters
+              const chaptersWithSuggestions = project.chapters
+                ? project.chapters.filter(c => c.suggestions?.length > 0 || c.reviewed).length
+                : 0;
+              const reviewPercent = chapterCount > 0 ? Math.round((chaptersWithSuggestions / chapterCount) * 100) : 0;
+
+              // Genre badges
+              const genres = project.genres || (project.genre ? [project.genre] : []);
+
               return (
                 <div key={project.id} style={{
                   background: surface, borderRadius: 14, padding: "20px 20px 16px", border: `1px solid ${border}`,
@@ -2066,16 +2163,35 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
 
                   <div style={{ flex: 1 }}>
                     <h3 style={{ fontFamily: font, fontSize: 16, fontWeight: 700, color: ink, margin: "0 0 4px", letterSpacing: "-0.01em", paddingRight: 24 }}>{project.title || "Namnlöst manus"}</h3>
-                    {project.genre && <span style={{ fontFamily: uiFont, fontSize: 10, color: muted, background: bg, padding: "2px 8px", borderRadius: 6, fontWeight: 500 }}>{project.genre}</span>}
+                    {genres.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                        {genres.map((g, i) => (
+                          <span key={i} style={{ fontFamily: uiFont, fontSize: 10, color: muted, background: bg, padding: "2px 8px", borderRadius: 6, fontWeight: 500 }}>{g}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, display: "flex", gap: 12 }}>
                     <span>{chapterCount} kapitel</span>
-                    <span>{totalWords.toLocaleString()} ord</span>
+                    <span>{projWords.toLocaleString()} ord</span>
                   </div>
 
-                  {/* Progress bar */}
-                  {progress > 0 && (
+                  {/* Review progress bar */}
+                  {chapterCount > 0 && (
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                        <span style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>Granskat</span>
+                        <span style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>{reviewPercent}%</span>
+                      </div>
+                      <div style={{ height: 4, background: border, borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${Math.min(reviewPercent, 100)}%`, background: reviewPercent === 100 ? "#27864a" : accent, borderRadius: 2, transition: "width 0.3s" }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Legacy progress bar (if no chapters but progress set) */}
+                  {progress > 0 && chapterCount === 0 && (
                     <div style={{ height: 4, background: border, borderRadius: 2, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${Math.min(progress, 100)}%`, background: accent, borderRadius: 2, transition: "width 0.3s" }} />
                     </div>
@@ -2086,7 +2202,7 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
                     <button onClick={() => onOpenProject(project)} style={{
                       fontFamily: uiFont, fontSize: 11, padding: "6px 16px", borderRadius: 7, border: "none",
                       background: accent, color: "#fff", cursor: "pointer", fontWeight: 600,
-                    }}>Öppna</button>
+                    }}>{chapterCount > 0 ? "Fortsätt granska" : "Öppna"}</button>
                   </div>
                 </div>
               );
