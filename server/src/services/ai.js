@@ -23,6 +23,18 @@ async function sendMessage({ model = 'claude-sonnet-4-20250514', max_tokens = 40
   return response;
 }
 
+/**
+ * Extract usage metadata from an Anthropic API response.
+ */
+function extractMeta(response, model = 'claude-sonnet-4-20250514') {
+  const usage = response?.usage || {};
+  return {
+    inputTokens: usage.input_tokens || 0,
+    outputTokens: usage.output_tokens || 0,
+    model,
+  };
+}
+
 function extractText(response) {
   if (!response?.content) return '';
   return response.content
@@ -69,12 +81,13 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
     max_tokens: 8192,
   });
 
+  const meta = extractMeta(response);
   const text = extractText(response);
   try {
-    return parseJsonResponse(text);
+    return { result: parseJsonResponse(text), meta };
   } catch {
     console.error('Failed to parse review response:', text.slice(0, 200));
-    return [];
+    return { result: [], meta };
   }
 }
 
@@ -104,12 +117,13 @@ Returnera ENBART JSON, inga andra kommentarer.`;
     max_tokens: 4096,
   });
 
+  const meta = extractMeta(response);
   const text = extractText(response);
   try {
-    return parseJsonResponse(text);
+    return { result: parseJsonResponse(text), meta };
   } catch {
     console.error('Failed to parse DNA profile:', text.slice(0, 200));
-    return null;
+    return { result: null, meta };
   }
 }
 
@@ -129,11 +143,12 @@ export async function developText(mode, input, context = '') {
     max_tokens: 4096,
   });
 
+  const meta = extractMeta(response);
   const text = extractText(response);
   try {
-    return parseJsonResponse(text);
+    return { result: parseJsonResponse(text), meta };
   } catch {
-    return { text };
+    return { result: { text }, meta };
   }
 }
 
@@ -144,8 +159,9 @@ export async function translateText(content, language) {
   const langNames = { en: 'engelska', de: 'tyska', es: 'spanska', ar: 'arabiska' };
   const langName = langNames[language] || language;
 
+  const model = 'claude-sonnet-4-20250514';
   const response = await sendMessage({
-    model: 'claude-sonnet-4-20250514',
+    model,
     system: `Du är en professionell litterär översättare. Översätt texten till ${langName} med hög litterär kvalitet. Behåll stil, ton och känsla.
 
 Returnera JSON:
@@ -158,10 +174,11 @@ Returnera JSON:
     max_tokens: 8192,
   });
 
+  const meta = extractMeta(response, model);
   const text = extractText(response);
   try {
-    return parseJsonResponse(text);
+    return { result: parseJsonResponse(text), meta };
   } catch {
-    return { content: text, comments: [], glossary: [] };
+    return { result: { content: text, comments: [], glossary: [] }, meta };
   }
 }

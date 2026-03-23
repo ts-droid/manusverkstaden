@@ -118,14 +118,18 @@ model Translation {
 }
 
 model UsageRecord {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type          String   // "review", "dna_profile", "develop", "brainstorm", "translate"
-  wordCount     Int
-  cost          Float    // cost in SEK
-  apiTokensUsed Int?
-  createdAt     DateTime @default(now())
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String   // "review", "dna_profile", "develop", "brainstorm", "translate"
+  wordCount       Int
+  cost            Float    // estimated cost in SEK (user-facing price)
+  apiTokensUsed   Int?
+  apiInputTokens  Int?     // actual input tokens from Anthropic
+  apiOutputTokens Int?     // actual output tokens from Anthropic
+  apiCostUsd      Float?   // actual API cost in USD
+  model           String?  // model used (e.g. "claude-sonnet-4-20250514")
+  createdAt       DateTime @default(now())
 
   @@index([userId, createdAt])
 }

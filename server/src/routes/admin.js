@@ -31,6 +31,9 @@ router.get('/overview', async (req, res, next) => {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
+    // Plan prices in SEK/month for revenue calculation
+    const PLAN_PRICES = { PROVA: 0, GRUND: 149, FORLAG: 999 };
+
     const [
       totalUsers,
       usersByPlan,
@@ -38,6 +41,8 @@ router.get('/overview', async (req, res, next) => {
       totalChapters,
       costThisMonth,
       costToday,
+      apiCostUsdThisMonth,
+      apiCostUsdToday,
       activeUsersLast7Days,
     ] = await Promise.all([
       prisma.user.count(),
@@ -52,6 +57,14 @@ router.get('/overview', async (req, res, next) => {
         where: { createdAt: { gte: todayStart } },
         _sum: { cost: true },
       }),
+      prisma.usageRecord.aggregate({
+        where: { createdAt: { gte: monthStart } },
+        _sum: { apiCostUsd: true },
+      }),
+      prisma.usageRecord.aggregate({
+        where: { createdAt: { gte: todayStart } },
+        _sum: { apiCostUsd: true },
+      }),
       prisma.usageRecord.findMany({
         where: { createdAt: { gte: sevenDaysAgo } },
         select: { userId: true },
@@ -59,13 +72,22 @@ router.get('/overview', async (req, res, next) => {
       }),
     ]);
 
+    // Calculate monthly revenue from paying subscribers
+    const planCounts = Object.fromEntries(usersByPlan.map((g) => [g.plan, g._count]));
+    const revenueThisMonth = Object.entries(planCounts).reduce(
+      (sum, [plan, count]) => sum + (PLAN_PRICES[plan] || 0) * count, 0
+    );
+
     res.json({
       totalUsers,
-      usersByPlan: Object.fromEntries(usersByPlan.map((g) => [g.plan, g._count])),
+      usersByPlan: planCounts,
       totalProjects,
       totalChapters,
       costThisMonth: costThisMonth._sum.cost || 0,
       costToday: costToday._sum.cost || 0,
+      apiCostUsdThisMonth: apiCostUsdThisMonth._sum.apiCostUsd || 0,
+      apiCostUsdToday: apiCostUsdToday._sum.apiCostUsd || 0,
+      revenueThisMonth,
       activeUsersLast7Days: activeUsersLast7Days.length,
     });
   } catch (err) {
@@ -190,9 +212,14 @@ router.get('/usage', async (req, res, next) => {
     thirtyDaysAgo.setHours(0, 0, 0, 0);
 
     const [dailyCosts, byType, byModel, totalTokens] = await Promise.all([
-      // Daily costs for last 30 days
+      // Daily costs for last 30 days (including real API cost)
       prisma.$queryRaw`
-        SELECT DATE("createdAt") as date, SUM(cost) as total_cost, COUNT(*) as count
+        SELECT DATE("createdAt") as date,
+               SUM(cost) as total_cost,
+               SUM("apiCostUsd") as total_api_cost_usd,
+               SUM("apiInputTokens") as total_input_tokens,
+               SUM("apiOutputTokens") as total_output_tokens,
+               COUNT(*) as count
         FROM "UsageRecord"
         WHERE "createdAt" >= ${thirtyDaysAgo}
         GROUP BY DATE("createdAt")
@@ -202,20 +229,20 @@ router.get('/usage', async (req, res, next) => {
       prisma.usageRecord.groupBy({
         by: ['type'],
         where: { createdAt: { gte: thirtyDaysAgo } },
-        _sum: { cost: true, wordCount: true },
+        _sum: { cost: true, wordCount: true, apiCostUsd: true, apiInputTokens: true, apiOutputTokens: true },
         _count: true,
       }),
-      // Breakdown by model (uses type as proxy since model isn't stored separately)
+      // Breakdown by model
       prisma.usageRecord.groupBy({
-        by: ['type'],
-        where: { createdAt: { gte: thirtyDaysAgo } },
-        _sum: { apiTokensUsed: true, cost: true },
+        by: ['model'],
+        where: { createdAt: { gte: thirtyDaysAgo }, model: { not: null } },
+        _sum: { apiInputTokens: true, apiOutputTokens: true, apiCostUsd: true },
         _count: true,
       }),
-      // Total tokens
+      // Totals
       prisma.usageRecord.aggregate({
         where: { createdAt: { gte: thirtyDaysAgo } },
-        _sum: { apiTokensUsed: true, cost: true, wordCount: true },
+        _sum: { apiTokensUsed: true, cost: true, wordCount: true, apiCostUsd: true, apiInputTokens: true, apiOutputTokens: true },
         _count: true,
       }),
     ]);
@@ -224,23 +251,33 @@ router.get('/usage', async (req, res, next) => {
       dailyCosts: dailyCosts.map((d) => ({
         date: d.date,
         cost: Number(d.total_cost) || 0,
+        apiCostUsd: Number(d.total_api_cost_usd) || 0,
+        inputTokens: Number(d.total_input_tokens) || 0,
+        outputTokens: Number(d.total_output_tokens) || 0,
         count: Number(d.count) || 0,
       })),
       byType: byType.map((t) => ({
         type: t.type,
         cost: t._sum.cost || 0,
+        apiCostUsd: t._sum.apiCostUsd || 0,
         wordCount: t._sum.wordCount || 0,
+        inputTokens: t._sum.apiInputTokens || 0,
+        outputTokens: t._sum.apiOutputTokens || 0,
         count: t._count,
       })),
       byModel: byModel.map((m) => ({
-        type: m.type,
-        tokens: m._sum.apiTokensUsed || 0,
-        cost: m._sum.cost || 0,
+        model: m.model,
+        inputTokens: m._sum.apiInputTokens || 0,
+        outputTokens: m._sum.apiOutputTokens || 0,
+        apiCostUsd: m._sum.apiCostUsd || 0,
         count: m._count,
       })),
       totals: {
         tokens: totalTokens._sum.apiTokensUsed || 0,
+        inputTokens: totalTokens._sum.apiInputTokens || 0,
+        outputTokens: totalTokens._sum.apiOutputTokens || 0,
         cost: totalTokens._sum.cost || 0,
+        apiCostUsd: totalTokens._sum.apiCostUsd || 0,
         wordCount: totalTokens._sum.wordCount || 0,
         count: totalTokens._count,
       },

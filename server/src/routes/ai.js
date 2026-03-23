@@ -33,7 +33,7 @@ router.post('/review', async (req, res, next) => {
     await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWING' } });
 
     // Call AI
-    const suggestions = await reviewChapter(chapter.content, {
+    const { result: suggestions, meta } = await reviewChapter(chapter.content, {
       genres: chapter.project.genres,
       modules: chapter.project.modules,
     });
@@ -58,8 +58,8 @@ router.post('/review', async (req, res, next) => {
 
     await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWED' } });
 
-    // Record usage
-    await recordUsage(req.user.id, 'review', chapter.wordCount);
+    // Record usage with real API cost
+    await recordUsage(req.user.id, 'review', chapter.wordCount, meta);
 
     res.json({ suggestions: created });
   } catch (err) { next(err); }
@@ -83,10 +83,10 @@ router.post('/dna-profile', async (req, res, next) => {
     }
 
     const allText = project.chapters.map(c => c.content).join('\n\n---\n\n');
-    const profile = await generateDNAProfile(allText, { genres: project.genres });
+    const { result: profile, meta } = await generateDNAProfile(allText, { genres: project.genres });
 
     await prisma.project.update({ where: { id: projectId }, data: { dnaProfile: profile } });
-    await recordUsage(req.user.id, 'dna_profile', totalWords);
+    await recordUsage(req.user.id, 'dna_profile', totalWords, meta);
 
     res.json({ dnaProfile: profile });
   } catch (err) { next(err); }
@@ -113,8 +113,8 @@ router.post('/develop', async (req, res, next) => {
       return res.status(429).json({ error: limit.reason, usage: limit });
     }
 
-    const result = await developText(mode, input, context);
-    await recordUsage(req.user.id, 'develop', wordCount);
+    const { result, meta } = await developText(mode, input, context);
+    await recordUsage(req.user.id, 'develop', wordCount, meta);
 
     res.json({ result });
   } catch (err) { next(err); }
@@ -138,7 +138,7 @@ router.post('/translate', async (req, res, next) => {
       return res.status(429).json({ error: limit.reason, usage: limit });
     }
 
-    const translation = await translateText(chapter.content, language);
+    const { result: translation, meta } = await translateText(chapter.content, language);
 
     const saved = await prisma.translation.upsert({
       where: { id: `${chapterId}-${language}` },
@@ -157,7 +157,7 @@ router.post('/translate', async (req, res, next) => {
       },
     });
 
-    await recordUsage(req.user.id, 'translate', chapter.wordCount);
+    await recordUsage(req.user.id, 'translate', chapter.wordCount, meta);
 
     res.json({ translation: saved });
   } catch (err) { next(err); }

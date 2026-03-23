@@ -2585,11 +2585,23 @@ function SuperAdminView({ user, onBack }) {
               {statCard("Totala användare", overview.totalUsers)}
               {statCard("Aktiva projekt", overview.totalProjects ?? overview.activeProjects)}
               {statCard("Kapitel", overview.totalChapters)}
-              {statCard("API-kostnad (månad)", overview.costThisMonth != null ? `$${Number(overview.costThisMonth).toFixed(2)}` : "—")}
+              {statCard("Aktiva (7d)", overview.activeUsersLast7Days ?? overview.activeUsers7d)}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
-              {statCard("Aktiva (7d)", overview.activeUsers7d)}
-              {statCard("API-kostnad idag", overview.costToday != null ? `$${Number(overview.costToday).toFixed(2)}` : "—")}
+              {statCard("API-kostnad (månad)", overview.apiCostUsdThisMonth != null ? `$${Number(overview.apiCostUsdThisMonth).toFixed(4)}` : "—")}
+              {statCard("API-kostnad idag", overview.apiCostUsdToday != null ? `$${Number(overview.apiCostUsdToday).toFixed(4)}` : "—")}
+              {statCard("Intäkt (månad)", overview.revenueThisMonth != null ? `${Number(overview.revenueThisMonth).toLocaleString("sv-SE")} kr` : "—")}
+              {statCard("Marginal", overview.revenueThisMonth != null && overview.apiCostUsdThisMonth != null
+                ? (() => {
+                    const apiCostSek = Number(overview.apiCostUsdThisMonth) * 10.5; // approx USD→SEK
+                    const margin = Number(overview.revenueThisMonth) - apiCostSek;
+                    return `${margin >= 0 ? "+" : ""}${margin.toFixed(0)} kr`;
+                  })()
+                : "—",
+                overview.revenueThisMonth != null && overview.apiCostUsdThisMonth != null
+                  ? `API ≈ ${(Number(overview.apiCostUsdThisMonth) * 10.5).toFixed(0)} kr`
+                  : undefined
+              )}
             </div>
             {overview.usersByPlan && (
               <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
@@ -2729,66 +2741,92 @@ function SuperAdminView({ user, onBack }) {
           <div>
             {/* Total cost and tokens summary */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
-              {statCard("Total kostnad", usage.totalCost != null ? `$${Number(usage.totalCost).toFixed(2)}` : "—")}
-              {statCard("Totala tokens", usage.totalTokens != null ? Number(usage.totalTokens).toLocaleString() : "—")}
+              {statCard("API-kostnad (30d)", usage.totals?.apiCostUsd != null ? `$${Number(usage.totals.apiCostUsd).toFixed(4)}` : "—")}
+              {statCard("Input tokens", usage.totals?.inputTokens != null ? Number(usage.totals.inputTokens).toLocaleString() : "—")}
+              {statCard("Output tokens", usage.totals?.outputTokens != null ? Number(usage.totals.outputTokens).toLocaleString() : "—")}
+              {statCard("Anrop", usage.totals?.count != null ? usage.totals.count : "—")}
             </div>
 
-            {/* Bar chart – daily costs */}
+            {/* Bar chart – daily API costs */}
             {usage.dailyCosts && usage.dailyCosts.length > 0 && (
               <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}`, marginBottom: 24 }}>
-                <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.04em" }}>Daglig kostnad (senaste 30 dagar)</div>
+                <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.04em" }}>Daglig API-kostnad USD (senaste 30 dagar)</div>
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 140 }}>
                   {(() => {
-                    const maxCost = Math.max(...usage.dailyCosts.map(d => d.cost || 0), 0.01);
-                    return usage.dailyCosts.map((d, i) => (
-                      <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <div
-                          title={`${d.date}: $${Number(d.cost || 0).toFixed(2)}`}
-                          style={{
-                            width: "100%", maxWidth: 24, minWidth: 4,
-                            height: `${Math.max(((d.cost || 0) / maxCost) * 120, 2)}px`,
-                            background: accent, borderRadius: "3px 3px 0 0",
-                            transition: "height 0.3s",
-                          }}
-                        />
-                        {i % 5 === 0 && (
-                          <div style={{ fontFamily: uiFont, fontSize: 8, color: muted, marginTop: 4, whiteSpace: "nowrap", transform: "rotate(-45deg)", transformOrigin: "top left" }}>
-                            {d.date?.slice(5) || ""}
-                          </div>
-                        )}
-                      </div>
-                    ));
+                    const maxCost = Math.max(...usage.dailyCosts.map(d => d.apiCostUsd || d.cost || 0), 0.001);
+                    return usage.dailyCosts.map((d, i) => {
+                      const costVal = d.apiCostUsd || d.cost || 0;
+                      return (
+                        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                          <div
+                            title={`${d.date}: $${Number(costVal).toFixed(4)} (${Number(d.inputTokens || 0).toLocaleString()} in / ${Number(d.outputTokens || 0).toLocaleString()} out)`}
+                            style={{
+                              width: "100%", maxWidth: 24, minWidth: 4,
+                              height: `${Math.max((costVal / maxCost) * 120, 2)}px`,
+                              background: accent, borderRadius: "3px 3px 0 0",
+                              transition: "height 0.3s",
+                            }}
+                          />
+                          {i % 5 === 0 && (
+                            <div style={{ fontFamily: uiFont, fontSize: 8, color: muted, marginTop: 4, whiteSpace: "nowrap", transform: "rotate(-45deg)", transformOrigin: "top left" }}>
+                              {d.date?.slice(5) || ""}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
                   })()}
                 </div>
               </div>
             )}
 
             {/* Breakdown by type */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
-              {usage.byType && Object.entries(usage.byType).map(([type, cost]) => (
-                statCard(type.replace(/_/g, " "), `$${Number(cost || 0).toFixed(2)}`)
-              ))}
-            </div>
-
-            {/* Per-user usage summary */}
-            {usage.perUser && usage.perUser.length > 0 && (
-              <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
-                <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.04em" }}>Förbrukning per användare</div>
+            {usage.byType && usage.byType.length > 0 && (
+              <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}`, marginBottom: 24 }}>
+                <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.04em" }}>Kostnad per typ</div>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: uiFont, fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: `2px solid ${border}` }}>
-                      {["Användare", "Kostnad", "Tokens", "Anrop"].map(h => (
+                      {["Typ", "API-kostnad", "Input tokens", "Output tokens", "Anrop"].map(h => (
                         <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: muted, fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {usage.perUser.map((u, i) => (
-                      <tr key={u.userId || i} style={{ borderBottom: `1px solid ${border}` }}>
-                        <td style={{ padding: "8px 12px", color: ink }}>{u.email || u.name || u.userId || "—"}</td>
-                        <td style={{ padding: "8px 12px", color: ink }}>{u.cost != null ? `$${Number(u.cost).toFixed(2)}` : "—"}</td>
-                        <td style={{ padding: "8px 12px", color: ink }}>{u.tokens != null ? Number(u.tokens).toLocaleString() : "—"}</td>
-                        <td style={{ padding: "8px 12px", color: ink }}>{u.requests ?? "—"}</td>
+                    {usage.byType.map((t, i) => (
+                      <tr key={t.type || i} style={{ borderBottom: `1px solid ${border}` }}>
+                        <td style={{ padding: "8px 12px", color: ink, fontWeight: 500 }}>{(t.type || "").replace(/_/g, " ")}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>${Number(t.apiCostUsd || 0).toFixed(4)}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{Number(t.inputTokens || 0).toLocaleString()}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{Number(t.outputTokens || 0).toLocaleString()}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{t.count ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Breakdown by model */}
+            {usage.byModel && usage.byModel.length > 0 && (
+              <div style={{ background: surface, borderRadius: 12, padding: "20px 22px", border: `1px solid ${border}` }}>
+                <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, fontWeight: 500, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.04em" }}>Kostnad per modell</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: uiFont, fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${border}` }}>
+                      {["Modell", "API-kostnad", "Input tokens", "Output tokens", "Anrop"].map(h => (
+                        <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: muted, fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usage.byModel.map((m, i) => (
+                      <tr key={m.model || i} style={{ borderBottom: `1px solid ${border}` }}>
+                        <td style={{ padding: "8px 12px", color: ink, fontWeight: 500, fontFamily: "monospace", fontSize: 11 }}>{m.model || "—"}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>${Number(m.apiCostUsd || 0).toFixed(4)}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{Number(m.inputTokens || 0).toLocaleString()}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{Number(m.outputTokens || 0).toLocaleString()}</td>
+                        <td style={{ padding: "8px 12px", color: ink }}>{m.count ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -2895,7 +2933,7 @@ export default function App() {
       try {
         const saved = await loadProject();
         if (saved?.chapters?.length > 0) {
-          // Auto-restore: go straight to editor with saved data
+          // Restore saved data but go to dashboard (user navigates to editor from there)
           setChapters(saved.chapters);
           setParagraphsByChapter(saved.paragraphsByChapter || {});
           setAccepted(saved.accepted instanceof Set ? saved.accepted : new Set(saved.accepted || []));
@@ -2910,11 +2948,9 @@ export default function App() {
           setTransLangs(saved.transLangs || ["en"]);
           setActiveChapter(saved.activeChapter || saved.chapters?.[0]?.id);
           setUploadedFile({ name: saved.fileName || "Manus" });
-          setView("editor");
           autoSaveEnabled.current = true;
-        } else {
-          setView("dashboard");
         }
+        setView("dashboard");
       } catch (err) {
         console.error("Restore failed:", err);
         setView("dashboard");
