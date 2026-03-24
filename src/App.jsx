@@ -4638,14 +4638,19 @@ export default function App() {
           result={developResult}
           onInsert={(text) => {
             // Insert developed text at end of current chapter
-            if (activeChapter) {
-              const chapter = chapters.find(c => c.id === activeChapter);
+            const targetChapter = activeChapter || (chapters.length > 0 ? chapters[0].id : null);
+            if (targetChapter) {
+              const chapter = chapters.find(c => c.id === targetChapter);
               if (chapter) {
                 const newContent = chapter.content + "\n\n" + text;
                 setChapters(prev => prev.map(ch =>
-                  ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
+                  ch.id === targetChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
                 ));
-                setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: splitIntoParagraphs(newContent) }));
+                setParagraphsByChapter(prev => ({ ...prev, [targetChapter]: splitIntoParagraphs(newContent) }));
+                // Also save to DB
+                if (serverProjectId) {
+                  apiClient.updateChapter(targetChapter, { content: newContent }).catch(e => console.error("Failed to save chapter after insert:", e));
+                }
               }
             }
             setDevelopResult(null);
