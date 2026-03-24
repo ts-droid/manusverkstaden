@@ -4269,13 +4269,7 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {modules.includes("develop") && (
-            <button onClick={() => setDevelopModal({ initialText: "" })} style={{
-              fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5,
-              border: `1px solid ${border}`,
-              background: surface, color: ink, cursor: "pointer", fontWeight: 500,
-            }}>Utveckla</button>
-          )}
+          {/* "Utveckla" is now only available via text selection toolbar */}
           {modules.includes("translate") && (
             <button onClick={() => setRightPanel(rightPanel === "translate" ? "suggestions" : "translate")} style={{
               fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5,
@@ -4639,8 +4633,10 @@ export default function App() {
           onInsert={(text) => {
             // Insert developed text at end of current chapter
             const targetChapter = activeChapter || (chapters.length > 0 ? chapters[0].id : null);
-            if (targetChapter) {
+            console.log("[DevelopInsert] activeChapter:", activeChapter, "targetChapter:", targetChapter, "chapters:", chapters.length, "text length:", text?.length);
+            if (targetChapter && text) {
               const chapter = chapters.find(c => c.id === targetChapter);
+              console.log("[DevelopInsert] found chapter:", !!chapter, chapter?.title);
               if (chapter) {
                 const newContent = chapter.content + "\n\n" + text;
                 setChapters(prev => prev.map(ch =>
@@ -4651,7 +4647,10 @@ export default function App() {
                 if (serverProjectId) {
                   apiClient.updateChapter(targetChapter, { content: newContent }).catch(e => console.error("Failed to save chapter after insert:", e));
                 }
+                console.log("[DevelopInsert] Text inserted successfully, new content length:", newContent.length);
               }
+            } else {
+              console.warn("[DevelopInsert] No target chapter or no text to insert");
             }
             setDevelopResult(null);
           }}
