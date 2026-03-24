@@ -32,6 +32,39 @@ router.patch('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ─── CREATE SUGGESTION (e.g. from develop-insert) ───
+router.post('/', async (req, res, next) => {
+  try {
+    const { chapterId, type, priority, level, original, replacement, reason, status } = req.body;
+    if (!chapterId || !type || !original) {
+      return res.status(400).json({ error: 'chapterId, type och original krävs' });
+    }
+
+    // Verify ownership
+    const chapter = await prisma.chapter.findUnique({
+      where: { id: chapterId },
+      include: { project: { select: { userId: true } } },
+    });
+    if (!chapter || chapter.project.userId !== req.user.id) {
+      return res.status(404).json({ error: 'Kapitlet hittades inte' });
+    }
+
+    const suggestion = await prisma.suggestion.create({
+      data: {
+        chapterId,
+        type: type || 'develop',
+        priority: priority || 'green',
+        level: level || 2,
+        original,
+        replacement: replacement || null,
+        reason: reason || '',
+        status: status || 'ACCEPTED',
+      },
+    });
+    res.json({ suggestion });
+  } catch (err) { next(err); }
+});
+
 // ─── BULK UPDATE ───
 router.patch('/', async (req, res, next) => {
   try {

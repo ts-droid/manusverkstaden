@@ -796,7 +796,7 @@ function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onU
         </span>
       </div>
       {s.original && (
-        <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginBottom: 4, padding: "5px 7px", background: bg, borderRadius: 5, borderLeft: `2.5px solid ${p.color}40`, opacity: 0.6, fontStyle: "italic" }}>
+        <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginBottom: 4, padding: "5px 7px", background: bg, borderRadius: 5, borderLeft: `2.5px solid ${p.color}40`, opacity: 0.4, fontStyle: "italic" }}>
           {s.original}
         </div>
       )}
@@ -4734,11 +4734,11 @@ export default function App() {
                 });
 
                 // Add a "develop" suggestion to the paragraph containing the new text
-                const developSuggestionId = `dev_${Date.now()}`;
+                const tempDevId = `dev_${Date.now()}`;
                 const targetParaIdx = enrichedParas.findIndex(p => p.text.includes(newText.substring(0, 50)));
                 if (targetParaIdx >= 0) {
                   const devSuggestion = {
-                    id: developSuggestionId,
+                    id: tempDevId,
                     type: "develop",
                     priority: "green",
                     level: 2,
@@ -4751,8 +4751,44 @@ export default function App() {
                     ...enrichedParas[targetParaIdx],
                     suggestions: [...(enrichedParas[targetParaIdx].suggestions || []), devSuggestion],
                   };
-                  // Mark as accepted
-                  setAccepted(prev => new Set([...prev, developSuggestionId]));
+                  setAccepted(prev => new Set([...prev, tempDevId]));
+
+                  // Save suggestion to DB (replace temp ID with real DB ID)
+                  if (serverProjectId) {
+                    apiClient.createSuggestion({
+                      chapterId: targetChapter,
+                      type: "develop",
+                      priority: "green",
+                      level: 2,
+                      original: originalText,
+                      replacement: newText,
+                      reason: developResult?.reasoning || "Text utvecklad med AI",
+                      status: "ACCEPTED",
+                    }).then(result => {
+                      if (result?.suggestion?.id) {
+                        const realId = result.suggestion.id;
+                        // Update local state with real DB ID
+                        setParagraphsByChapter(prev => {
+                          const paras = prev[targetChapter] || [];
+                          return {
+                            ...prev,
+                            [targetChapter]: paras.map(p => ({
+                              ...p,
+                              suggestions: (p.suggestions || []).map(s =>
+                                s.id === tempDevId ? { ...s, id: realId } : s
+                              ),
+                            })),
+                          };
+                        });
+                        setAccepted(prev => {
+                          const next = new Set(prev);
+                          next.delete(tempDevId);
+                          next.add(realId);
+                          return next;
+                        });
+                      }
+                    }).catch(e => console.error("Failed to save develop suggestion to DB:", e));
+                  }
                 }
 
                 // Find inserted/changed paragraphs
