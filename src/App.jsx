@@ -792,7 +792,7 @@ function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onU
           </span>
         )}
         <span style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginLeft: "auto" }}>
-          {s.type === "style" ? "✦ Stil" : s.type === "repetition" ? "↻ Upprepning" : "▧ Struktur"}
+          {s.type === "develop" ? "↔ Utveckling" : s.type === "style" ? "✦ Stil" : s.type === "repetition" ? "↻ Upprepning" : "▧ Struktur"}
         </span>
       </div>
       {s.original && (
@@ -4546,10 +4546,29 @@ export default function App() {
                         onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e)); }}
                         onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); apiClient.updateSuggestion(s.id, "REJECTED").catch(e => console.error("Save reject failed:", e)); }}
                         onUndo={() => {
+                          // For develop suggestions, restore original text
+                          if (s.type === "develop" && s.original && s.replacement && activeChapter) {
+                            const chapter = chapters.find(c => c.id === activeChapter);
+                            if (chapter && chapter.content.includes(s.replacement.substring(0, 50))) {
+                              const restoredContent = chapter.content.replace(s.replacement, s.original);
+                              setChapters(prev => prev.map(ch =>
+                                ch.id === activeChapter ? { ...ch, content: restoredContent, wordCount: countWords(restoredContent) } : ch
+                              ));
+                              const restoredParas = splitIntoParagraphs(restoredContent);
+                              // Preserve suggestions from other paragraphs
+                              const oldParas = paragraphsByChapter[activeChapter] || [];
+                              const enriched = restoredParas.map(np => {
+                                const op = oldParas.find(o => o.text === np.text);
+                                return op?.suggestions?.length ? { ...np, suggestions: op.suggestions.filter(sg => sg.id !== s.id) } : np;
+                              });
+                              setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: enriched }));
+                              if (serverProjectId) apiClient.updateChapter(activeChapter, { content: restoredContent }).catch(e => console.error("Undo develop failed:", e));
+                            }
+                          }
                           setAccepted(prev => { const n = new Set(prev); n.delete(s.id); return n; });
                           setRejected(prev => { const n = new Set(prev); n.delete(s.id); return n; });
                           setActiveSuggestion(null);
-                          apiClient.updateSuggestion(s.id, "PENDING").catch(e => console.error("Save undo failed:", e));
+                          if (!s.id.startsWith("dev_")) apiClient.updateSuggestion(s.id, "PENDING").catch(e => console.error("Save undo failed:", e));
                         }}
                       />
                     ))}
@@ -4664,43 +4683,78 @@ export default function App() {
       {developResult && (
         <DevelopResultModal
           result={developResult}
-          onInsert={(text) => {
-            // Insert developed text after the paragraph where selection was made
+          onInsert={(newText) => {
             const targetChapter = activeChapter || (chapters.length > 0 ? chapters[0].id : null);
-            if (targetChapter && text) {
+            if (targetChapter && newText) {
               const chapter = chapters.find(c => c.id === targetChapter);
               if (chapter) {
-                const insertAfterParaId = developResult?.insertAfterParaId;
+                const originalText = developResult?.originalText || "";
+                const paraId = developResult?.insertAfterParaId;
                 const oldParas = paragraphsByChapter[targetChapter] || splitIntoParagraphs(chapter.content);
                 let newContent;
 
-                if (insertAfterParaId) {
-                  // Insert after the specific paragraph
-                  const paraIndex = oldParas.findIndex(p => p.id === insertAfterParaId);
+                // REPLACE original text with new text (not append)
+                if (originalText && chapter.content.includes(originalText)) {
+                  newContent = chapter.content.replace(originalText, newText);
+                } else if (paraId) {
+                  // Fallback: replace the paragraph content
+                  const paraIndex = oldParas.findIndex(p => p.id === paraId);
                   if (paraIndex >= 0) {
-                    const beforeParas = oldParas.slice(0, paraIndex + 1).map(p => p.text);
-                    const afterParas = oldParas.slice(paraIndex + 1).map(p => p.text);
-                    newContent = [...beforeParas, text, ...afterParas].join("\n\n");
+                    const updatedParas = oldParas.map((p, i) =>
+                      i === paraIndex ? { ...p, text: newText } : p
+                    );
+                    newContent = updatedParas.map(p => p.text).join("\n\n");
                   } else {
-                    newContent = chapter.content + "\n\n" + text;
+                    newContent = chapter.content + "\n\n" + newText;
                   }
                 } else {
-                  // Fallback: append at end
-                  newContent = chapter.content + "\n\n" + text;
+                  newContent = chapter.content + "\n\n" + newText;
                 }
 
+                // Rebuild paragraphs, preserving existing suggestions
                 const newParas = splitIntoParagraphs(newContent);
-                // Find which paragraphs are new (not in old set)
-                const oldIds = new Set(oldParas.map(p => p.id));
-                const insertedIds = new Set(newParas.filter(p => !oldIds.has(p.id)).map(p => p.id));
+                const enrichedParas = newParas.map(np => {
+                  // Try to find matching old paragraph to preserve its suggestions
+                  const oldPara = oldParas.find(op => op.text === np.text);
+                  if (oldPara?.suggestions?.length) {
+                    return { ...np, suggestions: oldPara.suggestions };
+                  }
+                  return np;
+                });
+
+                // Add a "develop" suggestion to the paragraph containing the new text
+                const developSuggestionId = `dev_${Date.now()}`;
+                const targetParaIdx = enrichedParas.findIndex(p => p.text.includes(newText.substring(0, 50)));
+                if (targetParaIdx >= 0) {
+                  const devSuggestion = {
+                    id: developSuggestionId,
+                    type: "develop",
+                    priority: "green",
+                    level: 2,
+                    original: originalText,
+                    replacement: newText,
+                    reason: developResult?.reasoning || "Text utvecklad med AI",
+                    status: "ACCEPTED",
+                  };
+                  enrichedParas[targetParaIdx] = {
+                    ...enrichedParas[targetParaIdx],
+                    suggestions: [...(enrichedParas[targetParaIdx].suggestions || []), devSuggestion],
+                  };
+                  // Mark as accepted
+                  setAccepted(prev => new Set([...prev, developSuggestionId]));
+                }
+
+                // Find inserted/changed paragraphs
+                const oldTexts = new Set(oldParas.map(p => p.text));
+                const insertedIds = new Set(enrichedParas.filter(p => !oldTexts.has(p.text)).map(p => p.id));
 
                 setChapters(prev => prev.map(ch =>
                   ch.id === targetChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
                 ));
-                setParagraphsByChapter(prev => ({ ...prev, [targetChapter]: newParas }));
+                setParagraphsByChapter(prev => ({ ...prev, [targetChapter]: enrichedParas }));
                 setInsertedParaIds(insertedIds);
 
-                // Auto-scroll to inserted text after render
+                // Auto-scroll to changed text
                 setTimeout(() => {
                   const el = document.querySelector('[data-inserted="true"]');
                   if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -4708,14 +4762,13 @@ export default function App() {
 
                 // Save to DB
                 if (serverProjectId) {
-                  apiClient.updateChapter(targetChapter, { content: newContent }).catch(e => console.error("Failed to save chapter after insert:", e));
+                  apiClient.updateChapter(targetChapter, { content: newContent }).catch(e => console.error("Failed to save chapter after develop-insert:", e));
                 }
               }
             }
             setDevelopResult(null);
           }}
           onRegenerate={() => {
-            // Close modal and let user regenerate from the panel
             setDevelopResult(null);
           }}
           onClose={() => setDevelopResult(null)}
