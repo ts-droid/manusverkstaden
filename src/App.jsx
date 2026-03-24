@@ -4269,22 +4269,14 @@ export default function App() {
             {genres.map(id => { const g = GENRES.find(x => x.id === id); return g ? <span key={id} style={{ fontSize: 14 }} title={g.label}>{g.icon}</span> : null; })}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {/* "Utveckla" is now only available via text selection toolbar */}
-          {modules.includes("translate") && (
-            <button onClick={() => setRightPanel(rightPanel === "translate" ? "suggestions" : "translate")} style={{
-              fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5,
-              border: rightPanel === "translate" ? `1.5px solid ${accent}` : `1px solid ${border}`,
-              background: rightPanel === "translate" ? accentLight : surface, color: rightPanel === "translate" ? accent : ink, cursor: "pointer", fontWeight: 500,
-            }}>Översätt</button>
-          )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {/* Save indicator */}
           {saveStatus && (
             <span style={{ fontFamily: uiFont, fontSize: 10, color: saveStatus === "saving" ? muted : "#27864a", transition: "opacity 0.3s", opacity: saveStatus ? 1 : 0 }}>
               {saveStatus === "saving" ? "Sparar..." : "✓ Sparat"}
             </span>
           )}
-          <button onClick={() => { if (window.confirm("Vill du börja om med ett nytt manus? Allt osparat arbete försvinner.")) handleStartFresh(); }} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer" }}>Nytt manus</button>
+          <button onClick={() => { if (window.confirm("Vill du börja om med ett nytt manus? Allt osparat arbete försvinner.")) handleStartFresh(); }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer", fontWeight: 500 }}>Nytt manus</button>
           {/* Analyze unreviewed button */}
           {(() => {
             const unreviewedCount = chapters.filter(ch => {
@@ -4296,8 +4288,8 @@ export default function App() {
                 onClick={handleAnalyzeUnreviewed}
                 disabled={batchAnalyzing}
                 style={{
-                  fontFamily: uiFont, fontSize: 11, padding: "5px 14px", borderRadius: 5, border: "none",
-                  background: batchAnalyzing ? "#d4c8bb" : "#b8860b", color: "#fff", cursor: batchAnalyzing ? "default" : "pointer",
+                  fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: "none",
+                  background: batchAnalyzing ? "#d4c8bb" : accent, color: "#fff", cursor: batchAnalyzing ? "default" : "pointer",
                   fontWeight: 600, display: "flex", alignItems: "center", gap: 5,
                 }}
               >
@@ -4310,7 +4302,7 @@ export default function App() {
             onClick={() => reReviewing ? null : setShowReReviewModal(true)}
             disabled={reReviewing}
             style={{
-              fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: reReviewing ? "default" : "pointer",
+              fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, cursor: reReviewing ? "default" : "pointer",
               border: `1px solid ${border}`, background: reReviewing ? "#e8ddd2" : surface, color: reReviewing ? muted : ink, fontWeight: 500,
               display: "flex", alignItems: "center", gap: 4,
             }}
@@ -4322,8 +4314,8 @@ export default function App() {
               </span>
             )}
           </button>
-          <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
-          <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "5px 12px", borderRadius: 5, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>Inställningar</button>
+          <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
+          <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Inställningar</button>
         </div>
       </header>
 
