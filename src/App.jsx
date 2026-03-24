@@ -4387,12 +4387,20 @@ export default function App() {
           </div>
           {currentParagraphs.map(para => {
             const isInserted = insertedParaIds.has(para.id);
+            const hasAcceptedChanges = (para.suggestions || []).some(s => accepted.has(s.id));
+            const hasPendingChanges = (para.suggestions || []).some(s => !accepted.has(s.id) && !rejected.has(s.id));
             return (
               <div key={para.id} data-para-id={para.id} data-inserted={isInserted || undefined} style={{ position: "relative", group: "para" }}>
-                {isInserted && (
+                {(isInserted || hasAcceptedChanges) && (
                   <div style={{
                     position: "absolute", left: -18, top: 0, bottom: 0, width: 3,
-                    background: "#27864a", borderRadius: 2,
+                    background: isInserted ? "#27864a" : "#27864a60", borderRadius: 2,
+                  }} />
+                )}
+                {hasPendingChanges && !hasAcceptedChanges && !isInserted && (
+                  <div style={{
+                    position: "absolute", left: -18, top: 0, bottom: 0, width: 3,
+                    background: `${accent}50`, borderRadius: 2,
                   }} />
                 )}
                 <p style={{
