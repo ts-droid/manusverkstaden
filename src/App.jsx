@@ -4799,17 +4799,33 @@ export default function App() {
 // ─── HELPERS ───
 
 function attachSuggestionsToParagraphs(paragraphs, suggestions, chapterId) {
-  return paragraphs.map((para, pIdx) => {
-    const matchingSuggestions = suggestions.filter(s => {
+  const matched = new Set();
+  const result = paragraphs.map((para, pIdx) => {
+    const matchingSuggestions = suggestions.filter((s, sIdx) => {
+      if (matched.has(sIdx)) return false;
       if (!s.original) return false;
-      return para.text.includes(s.original);
-    }).map((s, sIdx) => ({
+      // Exact match
+      if (para.text.includes(s.original)) { matched.add(sIdx); return true; }
+      // Fuzzy: match first 30 chars of original (handles minor edits)
+      const prefix = s.original.substring(0, 30).trim();
+      if (prefix.length > 10 && para.text.includes(prefix)) { matched.add(sIdx); return true; }
+      return false;
+    }).map((s) => ({
       ...s,
-      // Keep the real DB id if it exists; only generate synthetic id as fallback
-      id: s.id || `${chapterId}_p${pIdx}_s${sIdx}`,
+      id: s.id || `${chapterId}_p${pIdx}_s${suggestions.indexOf(s)}`,
     }));
     return { ...para, suggestions: matchingSuggestions };
   });
+
+  // Attach unmatched suggestions to first paragraph so they still appear in the panel
+  const unmatched = suggestions.filter((s, i) => !matched.has(i)).map((s, i) => ({
+    ...s,
+    id: s.id || `${chapterId}_unmatched_${i}`,
+  }));
+  if (unmatched.length > 0 && result.length > 0) {
+    result[0] = { ...result[0], suggestions: [...(result[0].suggestions || []), ...unmatched] };
+  }
+  return result;
 }
 
 function findFrequentWords(text) {
