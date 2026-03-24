@@ -3355,6 +3355,7 @@ export default function App() {
   const [emotionMaps, setEmotionMaps] = useState({}); // { chapterId: emotionMapData }
   const [selectionToolbar, setSelectionToolbar] = useState(null);
   const [developModal, setDevelopModal] = useState(null); // null or { initialText }
+  const [insertedParaIds, setInsertedParaIds] = useState(new Set()); // paragraph IDs just inserted by develop
   const [finalCheckResult, setFinalCheckResult] = useState(null); // null or { issues, summary }
   const [finalCheckRunning, setFinalCheckRunning] = useState(false);
   const [showFinalCheckPrompt, setShowFinalCheckPrompt] = useState(false);
@@ -4373,13 +4374,46 @@ export default function App() {
               <span>{allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length} förslag kvar</span>
             </div>
           </div>
-          {currentParagraphs.map(para => (
-            <div key={para.id} data-para-id={para.id} style={{ position: "relative", group: "para" }}>
-              <p style={{ fontSize: 16.5, lineHeight: 1.85, marginBottom: 22, color: "#3d2e23", position: "relative" }}>
-                {renderText(para)}
-              </p>
-            </div>
-          ))}
+          {currentParagraphs.map(para => {
+            const isInserted = insertedParaIds.has(para.id);
+            return (
+              <div key={para.id} data-para-id={para.id} data-inserted={isInserted || undefined} style={{ position: "relative", group: "para" }}>
+                {isInserted && (
+                  <div style={{
+                    position: "absolute", left: -18, top: 0, bottom: 0, width: 3,
+                    background: "#27864a", borderRadius: 2,
+                  }} />
+                )}
+                <p style={{
+                  fontSize: 16.5, lineHeight: 1.85, marginBottom: 22, position: "relative",
+                  color: isInserted ? "#2d4a35" : "#3d2e23",
+                  background: isInserted ? "#f0faf3" : "transparent",
+                  padding: isInserted ? "6px 10px" : 0,
+                  borderRadius: isInserted ? 6 : 0,
+                  transition: "background 0.3s, color 0.3s",
+                }}>
+                  {renderText(para)}
+                </p>
+                {isInserted && (
+                  <div style={{ display: "flex", gap: 6, marginTop: -14, marginBottom: 16, paddingLeft: 10 }}>
+                    <button onClick={() => {
+                      handleEditParagraph(para.id, para.text);
+                      setInsertedParaIds(new Set());
+                    }} style={{
+                      fontFamily: uiFont, fontSize: 10, padding: "3px 10px", borderRadius: 5,
+                      border: `1px solid #27864a40`, background: "#f0faf3", color: "#27864a",
+                      cursor: "pointer", fontWeight: 500,
+                    }}>✎ Redigera</button>
+                    <button onClick={() => setInsertedParaIds(new Set())} style={{
+                      fontFamily: uiFont, fontSize: 10, padding: "3px 10px", borderRadius: 5,
+                      border: `1px solid ${border}`, background: surface, color: muted,
+                      cursor: "pointer",
+                    }}>✓ OK</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </main>
 
         {/* RIGHT PANEL */}
@@ -4633,24 +4667,32 @@ export default function App() {
           onInsert={(text) => {
             // Insert developed text at end of current chapter
             const targetChapter = activeChapter || (chapters.length > 0 ? chapters[0].id : null);
-            console.log("[DevelopInsert] activeChapter:", activeChapter, "targetChapter:", targetChapter, "chapters:", chapters.length, "text length:", text?.length);
             if (targetChapter && text) {
               const chapter = chapters.find(c => c.id === targetChapter);
-              console.log("[DevelopInsert] found chapter:", !!chapter, chapter?.title);
               if (chapter) {
                 const newContent = chapter.content + "\n\n" + text;
+                // Count existing paragraphs to know which are new
+                const oldParas = splitIntoParagraphs(chapter.content);
+                const newParas = splitIntoParagraphs(newContent);
+                const insertedIds = new Set(newParas.slice(oldParas.length).map(p => p.id));
+
                 setChapters(prev => prev.map(ch =>
                   ch.id === targetChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
                 ));
-                setParagraphsByChapter(prev => ({ ...prev, [targetChapter]: splitIntoParagraphs(newContent) }));
-                // Also save to DB
+                setParagraphsByChapter(prev => ({ ...prev, [targetChapter]: newParas }));
+                setInsertedParaIds(insertedIds);
+
+                // Auto-scroll to inserted text after render
+                setTimeout(() => {
+                  const el = document.querySelector('[data-inserted="true"]');
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 100);
+
+                // Save to DB
                 if (serverProjectId) {
                   apiClient.updateChapter(targetChapter, { content: newContent }).catch(e => console.error("Failed to save chapter after insert:", e));
                 }
-                console.log("[DevelopInsert] Text inserted successfully, new content length:", newContent.length);
               }
-            } else {
-              console.warn("[DevelopInsert] No target chapter or no text to insert");
             }
             setDevelopResult(null);
           }}
