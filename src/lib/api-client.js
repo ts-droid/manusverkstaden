@@ -201,6 +201,13 @@ class ApiClient {
     });
   }
 
+  async createSuggestion(data) {
+    return this.request('/suggestions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // ─── ADMIN ───
 
   async getAdminOverview() { return this.request('/admin/overview'); }
