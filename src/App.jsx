@@ -4591,7 +4591,7 @@ export default function App() {
         }}
         onDevelop={() => {
           if (selectionToolbar?.text) {
-            setDevelopModal({ initialText: selectionToolbar.text });
+            setDevelopModal({ initialText: selectionToolbar.text, paraId: selectionToolbar.paraId });
             setSelectionToolbar(null);
             window.getSelection()?.removeAllRanges();
           }
@@ -4653,7 +4653,7 @@ export default function App() {
           dnaProfile={dnaProfile}
           emotionMap={emotionMaps[activeChapter]}
           onResult={(result) => {
-            setDevelopResult(result);
+            setDevelopResult({ ...result, insertAfterParaId: developModal.paraId || null });
             setDevelopModal(null);
           }}
           onClose={() => setDevelopModal(null)}
@@ -4665,16 +4665,34 @@ export default function App() {
         <DevelopResultModal
           result={developResult}
           onInsert={(text) => {
-            // Insert developed text at end of current chapter
+            // Insert developed text after the paragraph where selection was made
             const targetChapter = activeChapter || (chapters.length > 0 ? chapters[0].id : null);
             if (targetChapter && text) {
               const chapter = chapters.find(c => c.id === targetChapter);
               if (chapter) {
-                const newContent = chapter.content + "\n\n" + text;
-                // Count existing paragraphs to know which are new
-                const oldParas = splitIntoParagraphs(chapter.content);
+                const insertAfterParaId = developResult?.insertAfterParaId;
+                const oldParas = paragraphsByChapter[targetChapter] || splitIntoParagraphs(chapter.content);
+                let newContent;
+
+                if (insertAfterParaId) {
+                  // Insert after the specific paragraph
+                  const paraIndex = oldParas.findIndex(p => p.id === insertAfterParaId);
+                  if (paraIndex >= 0) {
+                    const beforeParas = oldParas.slice(0, paraIndex + 1).map(p => p.text);
+                    const afterParas = oldParas.slice(paraIndex + 1).map(p => p.text);
+                    newContent = [...beforeParas, text, ...afterParas].join("\n\n");
+                  } else {
+                    newContent = chapter.content + "\n\n" + text;
+                  }
+                } else {
+                  // Fallback: append at end
+                  newContent = chapter.content + "\n\n" + text;
+                }
+
                 const newParas = splitIntoParagraphs(newContent);
-                const insertedIds = new Set(newParas.slice(oldParas.length).map(p => p.id));
+                // Find which paragraphs are new (not in old set)
+                const oldIds = new Set(oldParas.map(p => p.id));
+                const insertedIds = new Set(newParas.filter(p => !oldIds.has(p.id)).map(p => p.id));
 
                 setChapters(prev => prev.map(ch =>
                   ch.id === targetChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
