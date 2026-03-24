@@ -4548,10 +4548,15 @@ export default function App() {
         position={selectionToolbar}
         onEdit={() => {
           if (selectionToolbar) {
-            // Open edit modal with the FULL paragraph text, not just the selection
+            // Use the actual selected text — may span multiple paragraphs
+            const selectedText = selectionToolbar.text || "";
             const paras = paragraphsByChapter[activeChapter] || [];
             const para = paras.find(p => p.id === selectionToolbar.paraId);
-            if (para) {
+            if (selectedText && selectedText.includes("\n")) {
+              // Multi-paragraph selection: open modal with selected text
+              handleEditParagraph(selectionToolbar.paraId, selectedText);
+            } else if (para) {
+              // Single paragraph: open modal with full paragraph text
               handleEditParagraph(selectionToolbar.paraId, para.text);
             }
           }
