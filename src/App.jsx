@@ -4256,7 +4256,7 @@ export default function App() {
       <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
       {/* HEADER */}
-      <header style={{ height: 50, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: surface, flexShrink: 0 }}>
+      <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: surface, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div onClick={() => setView("dashboard")} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} title="Tillbaka till dashboard">
             <div style={{ width: 26, height: 26, background: ink, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 13, fontWeight: 700 }}>M</div>
