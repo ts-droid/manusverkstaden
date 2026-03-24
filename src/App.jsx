@@ -3368,6 +3368,8 @@ export default function App() {
       setView("auth");
       return;
     }
+    // Immediately show dashboard while loading project data (prevents editor flash)
+    setView("dashboard");
     (async () => {
       try {
         // Check IndexedDB for last-open project reference
