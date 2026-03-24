@@ -796,13 +796,13 @@ function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onU
         </span>
       </div>
       {s.original && (
-        <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginBottom: 4, padding: "5px 7px", background: bg, borderRadius: 5, borderLeft: `2.5px solid ${p.color}40`, opacity: 0.4, fontStyle: "italic" }}>
-          {s.original}
+        <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginBottom: 4, padding: "5px 7px", background: bg, borderRadius: 5, borderLeft: `2.5px solid ${p.color}40`, opacity: 0.8, fontStyle: "italic", maxHeight: isActive ? "none" : 60, overflow: "hidden" }}>
+          {!isActive && s.original.length > 150 ? s.original.slice(0, 150) + "…" : s.original}
         </div>
       )}
       {s.replacement && (
-        <div style={{ fontFamily: uiFont, fontSize: 11.5, color: ink, fontWeight: 500, marginBottom: 4, padding: "5px 7px", background: "#f0faf3", borderRadius: 5, borderLeft: "2.5px solid #27864a40" }}>
-          {s.replacement}
+        <div style={{ fontFamily: uiFont, fontSize: 11.5, color: ink, fontWeight: 500, marginBottom: 4, padding: "5px 7px", background: "#f0faf3", borderRadius: 5, borderLeft: "2.5px solid #27864a40", maxHeight: isActive ? "none" : 80, overflow: "hidden" }}>
+          {!isActive && s.replacement.length > 200 ? s.replacement.slice(0, 200) + "…" : s.replacement}
         </div>
       )}
       {isActive && !isHandled && (
