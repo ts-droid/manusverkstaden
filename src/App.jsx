@@ -2574,7 +2574,7 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
 }
 
 // ─── PROFILE VIEW ───
-function ProfileView({ user, onBack, onAdmin }) {
+function ProfileView({ user, onBack, onAdmin, onLogout }) {
   const [usage, setUsage] = useState(null);
   const [projects, setProjects] = useState([]);
   const [loadingUsage, setLoadingUsage] = useState(true);
@@ -2629,10 +2629,18 @@ function ProfileView({ user, onBack, onAdmin }) {
       <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
       {/* Header */}
-      <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", padding: "0 24px", background: surface }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", fontFamily: uiFont, fontSize: 12, color: muted, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 16 }}>&larr;</span> Tillbaka till dashboard
-        </button>
+      <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: surface }}>
+        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} title="Tillbaka till dashboard">
+          <div style={{ width: 30, height: 30, background: ink, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 15, fontWeight: 700 }}>M</div>
+          <span style={{ fontSize: 17, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>{user?.name || user?.email}</span>
+          {user?.role === "SUPER_ADMIN" && (
+            <button onClick={onAdmin} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${accent}`, background: accentLight, color: accent, cursor: "pointer", fontWeight: 600 }}>Admin</button>
+          )}
+          {onLogout && <button onClick={onLogout} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600 }}>Logga ut</button>}
+        </div>
       </header>
 
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px" }}>
@@ -2766,7 +2774,7 @@ function ProfileView({ user, onBack, onAdmin }) {
 }
 
 // ─── SUPER ADMIN VIEW ───
-function SuperAdminView({ user, onBack }) {
+function SuperAdminView({ user, onBack, onDashboard }) {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -2910,8 +2918,10 @@ function SuperAdminView({ user, onBack }) {
       {/* Header */}
       <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: surface }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 30, height: 30, background: ink, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 15, fontWeight: 700 }}>M</div>
-          <span style={{ fontSize: 17, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
+          <div onClick={onDashboard} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} title="Tillbaka till dashboard">
+            <div style={{ width: 30, height: 30, background: ink, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 15, fontWeight: 700 }}>M</div>
+            <span style={{ fontSize: 17, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
+          </div>
           <span style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: accent, background: accentLight, padding: "2px 8px", borderRadius: 5, marginLeft: 6 }}>ADMIN</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -4154,12 +4164,12 @@ export default function App() {
 
   // Admin
   if (view === "admin" && user?.role === "SUPER_ADMIN") return (
-    <SuperAdminView user={user} onBack={() => setView("profile")} />
+    <SuperAdminView user={user} onBack={() => setView("profile")} onDashboard={() => setView("dashboard")} />
   );
 
   // Profile
   if (view === "profile") return (
-    <ProfileView user={user} onBack={() => setView("dashboard")} onAdmin={() => setView("admin")} />
+    <ProfileView user={user} onBack={() => setView("dashboard")} onAdmin={() => setView("admin")} onLogout={async () => { await logout(); setView("loading"); }} />
   );
 
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
