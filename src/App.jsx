@@ -1869,6 +1869,8 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
   const [exportParaSpacing, setExportParaSpacing] = useState(false); // false = no extra space between paragraphs (book standard)
   const [activePreset, setActivePreset] = useState("fiction");
   const [exporting, setExporting] = useState(false);
+  const [exportScope, setExportScope] = useState("all"); // "all" or chapter id
+
 
   // ─── PRESETS (Swedish publishing standards) ───
   const presets = {
@@ -1934,12 +1936,15 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
     return paras.some(p => p.suggestions?.some(s => s.id === id));
   })).length;
 
+  const exportChapters = exportScope === "all" ? chapters : chapters.filter(ch => ch.id === exportScope);
+  const exportFileName = exportScope === "all" ? fileName : `${fileName} – ${exportChapters[0]?.title || "Kapitel"}`;
+
   const handleExport = async () => {
     setExporting(true);
     try {
       const blob = await exportToDocx({
-        title: fileName,
-        chapters,
+        title: exportFileName,
+        chapters: exportChapters,
         paragraphsByChapter,
         accepted,
         rejected,
@@ -1959,7 +1964,7 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
           paragraphSpacing: exportParaSpacing,
         },
       });
-      downloadBlob(blob, `${fileName} – Tryckfärdig.docx`);
+      downloadBlob(blob, `${exportFileName} – Tryckfärdig.docx`);
       onClose();
     } catch (err) {
       console.error("Export failed:", err);
@@ -1993,9 +1998,23 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
           <h2 style={{ fontFamily: font, fontSize: 22, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Exportera manus</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
         </div>
-        <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 24px" }}>
-          {fileName} · {chapters.length} kapitel · {totalWords.toLocaleString()} ord · {acceptedCount} godkända ändringar appliceras
+        <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 20px" }}>
+          {exportScope === "all"
+            ? `${fileName} · ${chapters.length} kapitel · ${totalWords.toLocaleString()} ord · ${acceptedCount} godkända ändringar appliceras`
+            : `${exportChapters[0]?.title || "Kapitel"} · ${exportChapters[0]?.wordCount?.toLocaleString() || 0} ord`
+          }
         </p>
+
+        <OptionGroup label="Vad vill du exportera?">
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Chip active={exportScope === "all"} onClick={() => setExportScope("all")}>Hela boken</Chip>
+            {chapters.map(ch => (
+              <Chip key={ch.id} active={exportScope === ch.id} onClick={() => setExportScope(ch.id)}>
+                {ch.title || `Kapitel ${ch.number}`}
+              </Chip>
+            ))}
+          </div>
+        </OptionGroup>
 
         <OptionGroup label="Formatmall">
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
