@@ -26,18 +26,22 @@ class ApiClient {
 
     const response = await fetch(url, { ...options, headers, credentials: 'include' });
 
-    // Auto-refresh on expired token
+    // Auto-refresh on any 401 (expired token, invalid token, etc.)
     if (response.status === 401) {
-      const data = await response.json().catch(() => ({}));
-      if (data.code === 'TOKEN_EXPIRED') {
-        const refreshed = await this.refresh();
-        if (refreshed) {
-          // Retry with new token
-          headers.Authorization = `Bearer ${this.accessToken}`;
-          return fetch(url, { ...options, headers, credentials: 'include' });
+      const refreshed = await this.refresh();
+      if (refreshed) {
+        // Retry with new token
+        headers.Authorization = `Bearer ${this.accessToken}`;
+        const retryResponse = await fetch(url, { ...options, headers, credentials: 'include' });
+        if (retryResponse.ok) return retryResponse.json();
+        // If retry also fails, fall through to error handling
+        if (retryResponse.status === 401) {
+          throw new AuthError('Sessionen har gått ut. Logga in igen.');
         }
+        const retryData = await retryResponse.json().catch(() => ({ error: 'Okänt fel' }));
+        throw new ApiError(retryData.error || `HTTP ${retryResponse.status}`, retryResponse.status, retryData);
       }
-      throw new AuthError('Autentisering krävs');
+      throw new AuthError('Sessionen har gått ut. Logga in igen.');
     }
 
     if (!response.ok) {
