@@ -796,8 +796,8 @@ function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onU
         </span>
       </div>
       {s.original && (
-        <div style={{ fontFamily: uiFont, fontSize: 11.5, color: muted, marginBottom: 4, padding: "5px 7px", background: bg, borderRadius: 5, borderLeft: `2.5px solid ${p.color}40` }}>
-          <span style={{ textDecoration: "line-through", opacity: 0.65 }}>{s.original}</span>
+        <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginBottom: 4, padding: "5px 7px", background: bg, borderRadius: 5, borderLeft: `2.5px solid ${p.color}40`, opacity: 0.6, fontStyle: "italic" }}>
+          {s.original}
         </div>
       )}
       {s.replacement && (
