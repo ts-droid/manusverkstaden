@@ -4260,8 +4260,8 @@ export default function App() {
       <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: surface, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div onClick={() => setView("dashboard")} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} title="Tillbaka till dashboard">
-            <div style={{ width: 26, height: 26, background: ink, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 13, fontWeight: 700 }}>M</div>
-            <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
+            <div style={{ width: 30, height: 30, background: ink, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 15, fontWeight: 700 }}>M</div>
+            <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
           </div>
           <div style={{ width: 1, height: 20, background: border }} />
           <span style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>{uploadedFile?.name?.replace(/\.[^.]+$/, '') || "Manus"}</span>
