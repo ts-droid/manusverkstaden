@@ -3504,11 +3504,6 @@ export default function App() {
               setRejected(restoredRejected);
               setActiveChapter(saved.activeChapterId || loadedChapters[0]?.id);
               autoSaveEnabled.current = true;
-              // Restore view – if user was in editor, go back to editor
-              if (saved.view === "editor" && loadedChapters.length > 0) {
-                setView("editor");
-                return; // Don't fall through to dashboard
-              }
             }
           } catch (err) {
             console.error("Failed to restore project from DB:", err);
@@ -4315,6 +4310,19 @@ export default function App() {
   if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} chapterCount={chapters.length} totalWords={chapters.reduce((s, c) => s + c.wordCount, 0)} onStart={handleSettingsDone} onBack={() => setView("upload")} />;
   if (view === "processing") return <ProcessingView chapters={chapters} statusText={processingStatus} onAbort={handleAbortProcessing} />;
   if (view === "pricing") return <PricingPage onBack={() => setView("editor")} />;
+
+  // Guard: if editor view but no chapters loaded, show loading or fallback to dashboard
+  if (view === "editor" && chapters.length === 0) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, flexDirection: "column", gap: 16 }}>
+      <div style={{ width: 36, height: 36, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>Laddar manus...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <button onClick={() => setView("dashboard")} style={{
+        fontFamily: uiFont, fontSize: 11, padding: "6px 16px", borderRadius: 7,
+        border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", marginTop: 8,
+      }}>← Tillbaka till dashboard</button>
+    </div>
+  );
 
   const currentChapter = chapters.find(c => c.id === activeChapter) || chapters[0];
 
