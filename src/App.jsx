@@ -338,7 +338,8 @@ function ProcessingView({ chapters, statusText, onAbort }) {
           }}>
             <div style={{ width: 44, height: 44, borderRadius: "50%", background: accent, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 700 }}>M</div>
           </div>
-          <style>{`@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: 0.85; } }`}</style>
+          <style>{`@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: 0.85; } }
+@keyframes flash-highlight { 0% { background: #a0522d60; } 50% { background: #a0522d40; } 100% { background: #a0522d25; } }`}</style>
         </div>
 
         <h2 style={{ fontSize: 22, fontWeight: 700, color: ink, margin: "0 0 8px", letterSpacing: "-0.02em" }}>Bearbetar ditt manus</h2>
@@ -770,7 +771,7 @@ function EditModal({ text, paragraphId, chapterTitle, onSave, onCreateChapter, o
   );
 }
 
-function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onUndo }) {
+function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onUndo, hasInlineHighlight, onNavigateTerm, termOccurrenceCount, currentTermIdx }) {
   const p = PRIORITY[s.priority];
   const isHandled = status === "accepted" || status === "rejected";
 
@@ -810,6 +811,30 @@ function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onU
       )}
       {isActive && !isHandled && (
         <div style={{ marginTop: 8 }}>
+          {/* Show "Visa i text" navigation when suggestion has no inline highlight */}
+          {!hasInlineHighlight && onNavigateTerm && termOccurrenceCount > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, padding: "5px 8px", background: "#fdf6e3", borderRadius: 5, border: "1px solid #e8dcc8" }}>
+              <button onClick={e => { e.stopPropagation(); onNavigateTerm(0); }} style={{
+                padding: "3px 10px", borderRadius: 4, border: "none", background: accent, color: "#fff",
+                fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: uiFont, whiteSpace: "nowrap",
+              }}>📍 Visa i text</button>
+              {termOccurrenceCount > 1 && currentTermIdx !== null && (
+                <>
+                  <button onClick={e => { e.stopPropagation(); onNavigateTerm(Math.max(0, (currentTermIdx || 0) - 1)); }} style={{
+                    padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface,
+                    fontSize: 10, cursor: "pointer", fontFamily: uiFont, color: ink,
+                  }}>←</button>
+                  <span style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>
+                    {(currentTermIdx || 0) + 1}/{termOccurrenceCount}
+                  </span>
+                  <button onClick={e => { e.stopPropagation(); onNavigateTerm(Math.min(termOccurrenceCount - 1, (currentTermIdx || 0) + 1)); }} style={{
+                    padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface,
+                    fontSize: 10, cursor: "pointer", fontFamily: uiFont, color: ink,
+                  }}>→</button>
+                </>
+              )}
+            </div>
+          )}
           <p style={{ fontFamily: uiFont, fontSize: 11.5, color: "#5a4e42", lineHeight: 1.55, margin: "0 0 10px" }}>{s.reason}</p>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={e => { e.stopPropagation(); onAccept(); }} style={{ flex: 1, padding: "7px 0", borderRadius: 5, border: "none", background: "#27864a", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}>✓ Godkänn</button>
@@ -3386,6 +3411,7 @@ export default function App() {
   const [paragraphsByChapter, setParagraphsByChapter] = useState({});
   const [activeChapter, setActiveChapter] = useState(null);
   const [activeSuggestion, setActiveSuggestion] = useState(null);
+  const [highlightTermState, setHighlightTermState] = useState(null); // { suggestionId, occurrenceIdx, terms, occurrences }
   const [accepted, setAccepted] = useState(new Set());
   const [rejected, setRejected] = useState(new Set());
   const [reviewHistory, setReviewHistory] = useState([]); // [{ date, chapterId, suggestionCount, accepted, rejected }]
@@ -4326,6 +4352,56 @@ export default function App() {
 
   // Find s.original in text, falling back to normalized/fuzzy matching.
   // Returns { idx, len } where idx is position in text and len is the actual matched length in text.
+  // ─── EXTRACT SEARCH TERMS FROM PATTERN-STYLE ORIGINALS ───
+  const extractSearchTerms = (original) => {
+    if (!original) return [];
+    // Split on common separators: ..., –, —, /, ,
+    const parts = original.split(/\.{2,}|[–—\/,;]/).map(s => s.trim()).filter(s => s.length >= 3);
+    // Also try the whole original if it's a single short phrase
+    if (parts.length === 0 && original.trim().length >= 3) return [original.trim()];
+    return [...new Set(parts)];
+  };
+
+  // ─── FIND ALL OCCURRENCES OF TERMS IN FULL CHAPTER TEXT ───
+  const findAllTermOccurrences = (chapterContent, terms) => {
+    if (!chapterContent || !terms.length) return [];
+    const results = [];
+    for (const term of terms) {
+      const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      let m;
+      while ((m = regex.exec(chapterContent)) !== null) {
+        results.push({ term, index: m.index, length: m[0].length, text: m[0] });
+      }
+    }
+    // Sort by position, dedup overlapping
+    results.sort((a, b) => a.index - b.index);
+    const deduped = [];
+    for (const r of results) {
+      const last = deduped[deduped.length - 1];
+      if (last && r.index < last.index + last.length) continue;
+      deduped.push(r);
+    }
+    return deduped;
+  };
+
+  // ─── NAVIGATE TO TERM OCCURRENCE ───
+  const navigateToTermOccurrence = useCallback((suggestionId, terms, occIdx) => {
+    const chapter = chapters.find(c => c.id === activeChapter);
+    if (!chapter) return;
+    const occs = findAllTermOccurrences(chapter.content, terms);
+    if (occs.length === 0) return;
+    const idx = Math.min(occIdx, occs.length - 1);
+    setHighlightTermState({ suggestionId, occurrenceIdx: idx, terms, occurrences: occs });
+
+    // Find the occurrence in the DOM via text scanning
+    setTimeout(() => {
+      const el = mainRef.current?.querySelector(`[data-term-highlight="${suggestionId}-${idx}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 50);
+  }, [chapters, activeChapter]);
+
   const findInText = (text, original, fromIndex = 0) => {
     // Exact match
     const exact = text.indexOf(original, fromIndex);
@@ -4372,9 +4448,45 @@ export default function App() {
     return null;
   };
 
-  const renderText = (para) => {
+  const renderText = (para, paraGlobalOffset) => {
     const { text, suggestions } = para;
-    if (!suggestions || !suggestions.length) return renderFormatted(text, `p${para.id}`);
+
+    // Helper: apply term highlights to a text fragment
+    const applyTermHighlights = (fragment, keyPrefix, globalStart) => {
+      if (!highlightTermState || !fragment) return renderFormatted(fragment, keyPrefix);
+      const { suggestionId, occurrenceIdx, occurrences } = highlightTermState;
+      // Find occurrences that fall within this fragment's global range
+      const fragEnd = globalStart + fragment.length;
+      const matching = occurrences.map((occ, i) => ({ ...occ, occIdx: i }))
+        .filter(occ => occ.index >= globalStart && occ.index + occ.length <= fragEnd);
+      if (matching.length === 0) return renderFormatted(fragment, keyPrefix);
+
+      const parts = [];
+      let pos = 0;
+      for (const occ of matching) {
+        const localIdx = occ.index - globalStart;
+        if (localIdx > pos) parts.push(<span key={`${keyPrefix}t${pos}`}>{...renderFormatted(fragment.slice(pos, localIdx), `${keyPrefix}t${pos}`)}</span>);
+        const isCurrentOcc = occ.occIdx === occurrenceIdx;
+        parts.push(
+          <mark key={`${keyPrefix}h${occ.occIdx}`}
+            data-term-highlight={`${suggestionId}-${occ.occIdx}`}
+            style={{
+              background: isCurrentOcc ? "#a0522d40" : "#a0522d15",
+              borderBottom: `2px solid ${isCurrentOcc ? "#a0522d" : "#a0522d60"}`,
+              padding: "1px 2px", borderRadius: 3,
+              outline: isCurrentOcc ? "2px solid #a0522d50" : "none", outlineOffset: 1,
+              animation: isCurrentOcc ? "flash-highlight 1.5s ease-out" : "none",
+            }}>
+            {...renderFormatted(occ.text, `${keyPrefix}h${occ.occIdx}`)}
+          </mark>
+        );
+        pos = localIdx + occ.length;
+      }
+      if (pos < fragment.length) parts.push(<span key={`${keyPrefix}e`}>{...renderFormatted(fragment.slice(pos), `${keyPrefix}e`)}</span>);
+      return parts;
+    };
+
+    if (!suggestions || !suggestions.length) return applyTermHighlights(text, `p${para.id}`, paraGlobalOffset);
     const parts = [];
     let last = 0;
     // Pre-compute positions for sorting
@@ -4386,7 +4498,7 @@ export default function App() {
     for (const { s, match } of withPos) {
       const { idx, len } = match;
       if (idx < last) continue; // Skip overlapping
-      if (idx > last) parts.push(<span key={`t${last}`}>{...renderFormatted(text.slice(last, idx), `t${last}`)}</span>);
+      if (idx > last) parts.push(<span key={`t${last}`}>{...applyTermHighlights(text.slice(last, idx), `t${last}`, paraGlobalOffset + last)}</span>);
       const matchedText = text.slice(idx, idx + len);
       const isAcc = accepted.has(s.id), isRej = rejected.has(s.id), isAct = activeSuggestion === s.id;
       const p = PRIORITY[s.priority];
@@ -4409,8 +4521,8 @@ export default function App() {
       }
       last = idx + len;
     }
-    if (last < text.length) parts.push(<span key="end">{...renderFormatted(text.slice(last), "end")}</span>);
-    return parts.length ? parts : renderFormatted(text, `p${para.id}`);
+    if (last < text.length) parts.push(<span key="end">{...applyTermHighlights(text.slice(last), "end", paraGlobalOffset + last)}</span>);
+    return parts.length ? parts : applyTermHighlights(text, `p${para.id}`, paraGlobalOffset);
   };
 
   return (
@@ -4528,7 +4640,9 @@ export default function App() {
               <span>{allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length} förslag kvar</span>
             </div>
           </div>
-          {currentParagraphs.map(para => {
+          {(() => { let _globalOff = 0; return currentParagraphs.map(para => {
+            const paraGlobalOffset = _globalOff;
+            _globalOff += para.text.length + 1; // +1 for paragraph separator
             const isInserted = insertedParaIds.has(para.id);
             const hasAcceptedChanges = (para.suggestions || []).some(s => accepted.has(s.id));
             const hasPendingChanges = (para.suggestions || []).some(s => !accepted.has(s.id) && !rejected.has(s.id));
@@ -4554,7 +4668,7 @@ export default function App() {
                   borderRadius: isInserted ? 6 : 0,
                   transition: "background 0.3s, color 0.3s",
                 }}>
-                  {renderText(para)}
+                  {renderText(para, paraGlobalOffset)}
                 </p>
                 {isInserted && (
                   <div style={{ display: "flex", gap: 6, marginTop: -14, marginBottom: 16, paddingLeft: 10 }}>
@@ -4575,7 +4689,7 @@ export default function App() {
                 )}
               </div>
             );
-          })}
+          }); })()}
         </main>
 
         {/* RIGHT PANEL */}
@@ -4701,12 +4815,22 @@ export default function App() {
                         </div>
                       </div>
                     )}
-                    {filtered.map(s => (
+                    {filtered.map(s => {
+                      // Check if this suggestion has an inline highlight in the text
+                      const hasInline = s.original && currentParagraphs.some(p => findInText(p.text, s.original) !== null);
+                      const terms = !hasInline && s.original ? extractSearchTerms(s.original) : [];
+                      const chapter = chapters.find(c => c.id === activeChapter);
+                      const termOccs = terms.length > 0 && chapter ? findAllTermOccurrences(chapter.content, terms) : [];
+                      return (
                       <SuggestionCard key={s.id} s={s} isActive={activeSuggestion === s.id}
                         status={accepted.has(s.id) ? "accepted" : rejected.has(s.id) ? "rejected" : "pending"}
-                        onToggle={() => setActiveSuggestion(activeSuggestion === s.id ? null : s.id)}
-                        onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e)); }}
-                        onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); apiClient.updateSuggestion(s.id, "REJECTED").catch(e => console.error("Save reject failed:", e)); }}
+                        hasInlineHighlight={hasInline}
+                        termOccurrenceCount={termOccs.length}
+                        currentTermIdx={highlightTermState?.suggestionId === s.id ? highlightTermState.occurrenceIdx : null}
+                        onNavigateTerm={termOccs.length > 0 ? (idx) => navigateToTermOccurrence(s.id, terms, idx) : null}
+                        onToggle={() => { setActiveSuggestion(activeSuggestion === s.id ? null : s.id); if (activeSuggestion !== s.id) setHighlightTermState(null); }}
+                        onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); setHighlightTermState(null); apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e)); }}
+                        onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); setHighlightTermState(null); apiClient.updateSuggestion(s.id, "REJECTED").catch(e => console.error("Save reject failed:", e)); }}
                         onUndo={() => {
                           // For develop suggestions, restore original text
                           if (s.type === "develop" && s.original && s.replacement && activeChapter) {
@@ -4733,7 +4857,7 @@ export default function App() {
                           if (!s.id.startsWith("dev_")) apiClient.updateSuggestion(s.id, "PENDING").catch(e => console.error("Save undo failed:", e));
                         }}
                       />
-                    ))}
+                    ); })}
                   </>
                 )}
 
