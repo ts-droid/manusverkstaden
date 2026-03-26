@@ -4952,16 +4952,28 @@ export default function App() {
 // ─── HELPERS ───
 
 function attachSuggestionsToParagraphs(paragraphs, suggestions, chapterId) {
+  const normalize = (str) => str.replace(/\s+/g, ' ').trim();
   const matched = new Set();
   const result = paragraphs.map((para, pIdx) => {
+    const paraText = para.text;
+    const paraNorm = normalize(paraText);
     const matchingSuggestions = suggestions.filter((s, sIdx) => {
       if (matched.has(sIdx)) return false;
       if (!s.original) return false;
+      const orig = s.original;
+      const origNorm = normalize(orig);
       // Exact match
-      if (para.text.includes(s.original)) { matched.add(sIdx); return true; }
-      // Fuzzy: match first 30 chars of original (handles minor edits)
-      const prefix = s.original.substring(0, 30).trim();
-      if (prefix.length > 10 && para.text.includes(prefix)) { matched.add(sIdx); return true; }
+      if (paraText.includes(orig)) { matched.add(sIdx); return true; }
+      // Normalized whitespace match
+      if (paraNorm.includes(origNorm)) { matched.add(sIdx); return true; }
+      // Prefix match (first 60 chars)
+      const prefix = origNorm.substring(0, 60).trim();
+      if (prefix.length > 15 && paraNorm.includes(prefix)) { matched.add(sIdx); return true; }
+      // Suffix match (last 40 chars)
+      const suffix = origNorm.slice(-40).trim();
+      if (suffix.length > 15 && paraNorm.includes(suffix)) { matched.add(sIdx); return true; }
+      // Case-insensitive match
+      if (paraNorm.toLowerCase().includes(origNorm.toLowerCase())) { matched.add(sIdx); return true; }
       return false;
     }).map((s) => ({
       ...s,
