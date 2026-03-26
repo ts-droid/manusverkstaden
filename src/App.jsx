@@ -4145,14 +4145,29 @@ export default function App() {
   // ─── SCROLL TO SUGGESTION IN TEXT ───
   useEffect(() => {
     if (!activeSuggestion || !mainRef.current) return;
-    const el = mainRef.current.querySelector(`[data-suggestion-id="${activeSuggestion}"]`);
+    // Try inline highlight first
+    let el = mainRef.current.querySelector(`[data-suggestion-id="${activeSuggestion}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
-      // Flash animation
       el.style.transition = "background 0.15s";
       const original = el.style.background;
       el.style.background = "#a0522d30";
       setTimeout(() => { el.style.background = original; }, 800);
+      return;
+    }
+    // Fallback: find the paragraph that owns this suggestion
+    const paraEl = mainRef.current.querySelector(`[data-para-suggestion-ids*="${activeSuggestion}"]`);
+    if (paraEl) {
+      paraEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      paraEl.style.transition = "background 0.3s, outline 0.3s";
+      paraEl.style.background = "#a0522d12";
+      paraEl.style.outline = "2px solid #a0522d40";
+      paraEl.style.outlineOffset = "4px";
+      paraEl.style.borderRadius = "4px";
+      setTimeout(() => {
+        paraEl.style.background = "transparent";
+        paraEl.style.outline = "none";
+      }, 1500);
     }
   }, [activeSuggestion]);
 
@@ -4547,6 +4562,49 @@ export default function App() {
       }
       return { idx: realIdx, len: realEnd - realIdx };
     }
+    // Punctuation-stripped fallback: ignore quotes, dashes, ellipsis differences
+    const stripPunct = (s) => s.replace(/[""''«»\-–—….,;:!?()[\]{}]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const textStripped = stripPunct(text);
+    const origStripped = stripPunct(original);
+    if (origStripped.length > 10) {
+      const stripIdx = textStripped.indexOf(origStripped);
+      if (stripIdx !== -1) {
+        // Map back: walk through text, skip punctuation chars to find real start
+        let realIdx = 0, strippedPos = 0;
+        while (strippedPos < stripIdx && realIdx < text.length) {
+          const ch = text[realIdx];
+          if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realIdx++; continue; }
+          if (/\s/.test(ch) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
+          realIdx++; strippedPos++;
+        }
+        // Find end
+        let realEnd = realIdx, strippedEnd = stripIdx;
+        while (strippedEnd < stripIdx + origStripped.length && realEnd < text.length) {
+          const ch = text[realEnd];
+          if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realEnd++; continue; }
+          if (/\s/.test(ch) && realEnd > realIdx && /\s/.test(text[realEnd - 1])) { realEnd++; continue; }
+          realEnd++; strippedEnd++;
+        }
+        return { idx: realIdx, len: realEnd - realIdx };
+      }
+      // Try first 40 chars of stripped original as prefix
+      const strippedPrefix = origStripped.substring(0, 40);
+      if (strippedPrefix.length > 15) {
+        const prefStripIdx = textStripped.indexOf(strippedPrefix);
+        if (prefStripIdx !== -1) {
+          let realIdx = 0, strippedPos = 0;
+          while (strippedPos < prefStripIdx && realIdx < text.length) {
+            const ch = text[realIdx];
+            if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realIdx++; continue; }
+            if (/\s/.test(ch) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
+            realIdx++; strippedPos++;
+          }
+          // Match a reasonable chunk
+          const approxLen = Math.min(original.length + 20, text.length - realIdx);
+          return { idx: realIdx, len: approxLen };
+        }
+      }
+    }
     return null;
   };
 
@@ -4762,7 +4820,9 @@ export default function App() {
                     background: `${accent}50`, borderRadius: 2,
                   }} />
                 )}
-                <p style={{
+                <p
+                  data-para-suggestion-ids={(para.suggestions || []).map(s => s.id).join(',') || undefined}
+                  style={{
                   fontSize: 16.5, lineHeight: 1.85, marginBottom: 22, position: "relative",
                   color: isInserted ? "#2d4a35" : "#3d2e23",
                   background: isInserted ? "#f0faf3" : "transparent",
