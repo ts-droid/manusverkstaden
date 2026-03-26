@@ -3504,6 +3504,11 @@ export default function App() {
               setRejected(restoredRejected);
               setActiveChapter(saved.activeChapterId || loadedChapters[0]?.id);
               autoSaveEnabled.current = true;
+              // Restore view – if user was in editor, go back to editor
+              if (saved.view === "editor" && loadedChapters.length > 0) {
+                setView("editor");
+                return; // Don't fall through to dashboard
+              }
             }
           } catch (err) {
             console.error("Failed to restore project from DB:", err);
