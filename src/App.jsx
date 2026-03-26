@@ -422,7 +422,7 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
                   {activeChapter === ch.id && onReanalyze && (
                     <span
                       onClick={(e) => { e.stopPropagation(); onReanalyze(ch.id); }}
-                      title={chapterHasSuggestions(ch.id) ? "Analysera om" : "Analysera"}
+                      title={chapterHasSuggestions(ch.id) ? "Analysera om detta kapitel" : "Analysera detta kapitel"}
                       style={{
                         fontSize: 12, color: muted, cursor: "pointer",
                         padding: "2px 5px", lineHeight: 1, borderRadius: 4,
@@ -4444,13 +4444,14 @@ export default function App() {
               <button
                 onClick={handleAnalyzeUnreviewed}
                 disabled={batchAnalyzing}
+                title="Analysera alla ogranskade kapitel i följd"
                 style={{
                   fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: "none",
                   background: batchAnalyzing ? "#d4c8bb" : accent, color: "#fff", cursor: batchAnalyzing ? "default" : "pointer",
                   fontWeight: 600, display: "flex", alignItems: "center", gap: 5,
                 }}
               >
-                {batchAnalyzing ? `Analyserar...` : `Analysera (${unreviewedCount})`}
+                {batchAnalyzing ? `Analyserar...` : `Analysera alla (${unreviewedCount} kvar)`}
               </button>
             ) : null;
           })()}
