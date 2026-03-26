@@ -312,7 +312,7 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
           onClick={() => onStart({ genres, modules, transLangs, analysisLevel })}
           style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
         >
-          Starta {ANALYSIS_LEVELS[analysisLevel].label.toLowerCase()}
+          Spara och öppna manus
         </button>
       </div>
     </div>
@@ -3544,11 +3544,21 @@ export default function App() {
     setView("dashboard");
   };
 
-  // Upload → Create project in DB → Editor (no forced analysis)
-  const handleUploadNext = async (file, parsedChapters) => {
+  // Upload step 1 → Settings
+  const handleUploadNext = (file, parsedChapters) => {
     setUploadedFile(file);
-    const chaps = parsedChapters.map(ch => ({ ...ch, status: "pending" }));
-    setChapters(chaps);
+    setChapters(parsedChapters.map(ch => ({ ...ch, status: "pending" })));
+    setView("settings");
+  };
+
+  // Settings → Save project to DB → Editor (no forced analysis)
+  const handleSettingsDone = async (settings) => {
+    setGenres(settings.genres || []);
+    setModules(settings.modules || []);
+    setTransLangs(settings.transLangs || []);
+    if (settings.analysisLevel) setAnalysisLevel(settings.analysisLevel);
+
+    const chaps = chapters;
     setActiveChapter(chaps[0]?.id);
 
     // Build paragraphs
@@ -3560,8 +3570,10 @@ export default function App() {
     if (isAuthenticated) {
       try {
         const projectData = await apiClient.createProject({
-          title: file?.name?.replace(/\.[^.]+$/, '') || "Manus",
-          genres: [], modules: [], transLanguages: [],
+          title: uploadedFile?.name?.replace(/\.[^.]+$/, '') || "Manus",
+          genres: settings.genres || [],
+          modules: settings.modules || [],
+          transLanguages: settings.transLangs || [],
           chapters: chaps.map((ch, idx) => ({
             number: idx + 1, title: ch.title,
             content: ch.content, wordCount: ch.wordCount,
@@ -4265,7 +4277,7 @@ export default function App() {
   );
 
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
-  if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} chapterCount={chapters.length} totalWords={chapters.reduce((s, c) => s + c.wordCount, 0)} onStart={handleStartProcessing} onBack={() => setView("upload")} />;
+  if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} chapterCount={chapters.length} totalWords={chapters.reduce((s, c) => s + c.wordCount, 0)} onStart={handleSettingsDone} onBack={() => setView("upload")} />;
   if (view === "processing") return <ProcessingView chapters={chapters} statusText={processingStatus} onAbort={handleAbortProcessing} />;
   if (view === "pricing") return <PricingPage onBack={() => setView("editor")} />;
 
