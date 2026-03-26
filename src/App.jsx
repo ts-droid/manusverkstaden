@@ -3638,10 +3638,17 @@ export default function App() {
 
   // ─── LOAD PROJECT FROM SERVER ───
   const handleOpenProject = async (project) => {
+    // Show loading state immediately
+    setChapters([]);
+    setView("editor"); // Guard will show spinner until chapters load
     try {
       const result = await apiClient.getProject(project.id);
       const data = result?.project || result;
-      if (!data) return;
+      if (!data) {
+        console.error("No project data returned for id:", project.id);
+        setView("dashboard");
+        return;
+      }
 
       setServerProjectId(data.id);
       setUploadedFile({ name: data.title });
@@ -3673,6 +3680,14 @@ export default function App() {
         content: ch.content, wordCount: ch.wordCount,
         status: ch.suggestions?.length > 0 ? "done" : "pending",
       }));
+
+      if (loadedChapters.length === 0) {
+        console.error("Project has no chapters:", data.id);
+        setView("dashboard");
+        alert("Projektet har inga kapitel.");
+        return;
+      }
+
       setChapters(loadedChapters);
       setParagraphsByChapter(parasMap);
       setActiveChapter(loadedChapters[0]?.id);
@@ -3681,9 +3696,9 @@ export default function App() {
 
       // Save session reference to IndexedDB for quick restore
       await saveProject({ serverProjectId: data.id, activeChapterId: loadedChapters[0]?.id, conventions, view: "editor" });
-      setView("editor");
     } catch (err) {
       console.error("Failed to load project:", err);
+      setView("dashboard");
       alert("Kunde inte öppna projektet: " + err.message);
     }
   };
