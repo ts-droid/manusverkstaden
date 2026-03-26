@@ -2334,6 +2334,8 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
   const planColors = { trial: muted, PROVA: muted, basic: accent, GRUND: accent, publisher: "#27864a", FORLAG: "#27864a" };
 
   useEffect(() => {
+    if (!user) return;
+    setLoading(true);
     (async () => {
       try {
         const data = await apiClient.getProjects();
@@ -2344,11 +2346,12 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
         setLoading(false);
       }
     })();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (!user) return;
     apiClient.getUsage().then(setUsageData).catch(() => setUsageData(null));
-  }, []);
+  }, [user]);
 
   const handleDelete = async (id) => {
     if (deleting) return;
@@ -3418,12 +3421,6 @@ export default function App() {
               setDnaProfile(data.dnaProfile || null);
               if (saved.conventions) setConventions(saved.conventions);
 
-              const loadedChapters = (data.chapters || []).map(ch => ({
-                id: ch.id, number: ch.number, title: ch.title,
-                content: ch.content, wordCount: ch.wordCount, status: "done",
-              }));
-              setChapters(loadedChapters);
-
               const parasMap = {};
               const restoredAccepted = new Set();
               const restoredRejected = new Set();
@@ -3439,6 +3436,13 @@ export default function App() {
                   parasMap[ch.id] = paras;
                 }
               }
+
+              const loadedChapters = (data.chapters || []).map(ch => ({
+                id: ch.id, number: ch.number, title: ch.title,
+                content: ch.content, wordCount: ch.wordCount,
+                status: ch.suggestions?.length > 0 ? "done" : "pending",
+              }));
+              setChapters(loadedChapters);
               setParagraphsByChapter(parasMap);
               setAccepted(restoredAccepted);
               setRejected(restoredRejected);
@@ -3513,11 +3517,54 @@ export default function App() {
     setView("dashboard");
   };
 
-  // Step 1 → Step 2
-  const handleUploadNext = (file, parsedChapters) => {
+  // Upload → Create project in DB → Editor (no forced analysis)
+  const handleUploadNext = async (file, parsedChapters) => {
     setUploadedFile(file);
-    setChapters(parsedChapters.map(ch => ({ ...ch, status: "pending" })));
-    setView("settings");
+    const chaps = parsedChapters.map(ch => ({ ...ch, status: "pending" }));
+    setChapters(chaps);
+
+    // Build paragraphs
+    const parasMap = {};
+    chaps.forEach(ch => { parasMap[ch.id] = splitIntoParagraphs(ch.content); });
+    setParagraphsByChapter(parasMap);
+
+    // Create project in DB
+    if (isAuthenticated) {
+      try {
+        const projectData = await apiClient.createProject({
+          title: file?.name?.replace(/\.[^.]+$/, '') || "Manus",
+          genres: [], modules: [], transLanguages: [],
+          chapters: chaps.map((ch, idx) => ({
+            number: idx + 1, title: ch.title,
+            content: ch.content, wordCount: ch.wordCount,
+          })),
+        });
+        if (projectData?.id) {
+          const projId = projectData.id;
+          setServerProjectId(projId);
+          const serverChapters = projectData.project?.chapters || [];
+          const updatedChapters = [...chaps];
+          const updatedParas = { ...parasMap };
+          for (let j = 0; j < serverChapters.length && j < updatedChapters.length; j++) {
+            const oldId = updatedChapters[j].id;
+            updatedChapters[j] = { ...updatedChapters[j], id: serverChapters[j].id };
+            if (updatedParas[oldId]) {
+              updatedParas[serverChapters[j].id] = updatedParas[oldId];
+              delete updatedParas[oldId];
+            }
+          }
+          setChapters(updatedChapters);
+          setParagraphsByChapter(updatedParas);
+          setActiveChapter(updatedChapters[0]?.id);
+          await saveProject({ serverProjectId: projId, activeChapterId: updatedChapters[0]?.id, conventions, view: "editor" });
+        }
+      } catch (err) {
+        console.error("Failed to create project:", err);
+        alert("Kunde inte skapa projekt: " + err.message);
+        return;
+      }
+    }
+    setView("editor");
   };
 
   // ─── LOAD PROJECT FROM SERVER ───
@@ -3534,16 +3581,6 @@ export default function App() {
       setTransLangs(data.transLanguages || ["en"]);
       setDnaProfile(data.dnaProfile || null);
 
-      const loadedChapters = (data.chapters || []).map(ch => ({
-        id: ch.id,
-        number: ch.number,
-        title: ch.title,
-        content: ch.content,
-        wordCount: ch.wordCount,
-        status: "done",
-      }));
-      setChapters(loadedChapters);
-
       // Build paragraphs with suggestions and restore accepted/rejected from DB
       const parasMap = {};
       const restoredAccepted = new Set();
@@ -3553,7 +3590,6 @@ export default function App() {
         if (ch.suggestions?.length) {
           const enriched = attachSuggestionsToParagraphs(paras, ch.suggestions, ch.id);
           parasMap[ch.id] = enriched;
-          // Restore accepted/rejected status from DB
           ch.suggestions.forEach(s => {
             if (s.status === "ACCEPTED") restoredAccepted.add(s.id);
             else if (s.status === "REJECTED") restoredRejected.add(s.id);
@@ -3562,6 +3598,13 @@ export default function App() {
           parasMap[ch.id] = paras;
         }
       }
+
+      const loadedChapters = (data.chapters || []).map(ch => ({
+        id: ch.id, number: ch.number, title: ch.title,
+        content: ch.content, wordCount: ch.wordCount,
+        status: ch.suggestions?.length > 0 ? "done" : "pending",
+      }));
+      setChapters(loadedChapters);
       setParagraphsByChapter(parasMap);
       setActiveChapter(loadedChapters[0]?.id);
       setAccepted(restoredAccepted);
@@ -4173,6 +4216,7 @@ export default function App() {
   // Dashboard (also handles "loading" state after auth is settled)
   if (view === "dashboard" || view === "loading") return (
     <DashboardView
+      key={view}
       user={user}
       onOpenProject={handleOpenProject}
       onNewProject={() => setView("upload")}
