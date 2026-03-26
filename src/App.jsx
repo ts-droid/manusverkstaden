@@ -4413,7 +4413,7 @@ export default function App() {
   };
 
   // ─── NAVIGATE TO TERM OCCURRENCE ───
-  const navigateToTermOccurrence = useCallback((suggestionId, terms, occIdx) => {
+  const navigateToTermOccurrence = (suggestionId, terms, occIdx) => {
     const chapter = chapters.find(c => c.id === activeChapter);
     if (!chapter) return;
     const occs = findAllTermOccurrences(chapter.content, terms);
@@ -4428,7 +4428,7 @@ export default function App() {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }, 50);
-  }, [chapters, activeChapter]);
+  };
 
   const findInText = (text, original, fromIndex = 0) => {
     // Exact match
