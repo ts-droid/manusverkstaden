@@ -4507,7 +4507,7 @@ export default function App() {
     }
     // Prefix match: find first 50 chars – but only if the original looks like
     // an actual text excerpt (not a pattern like "obehag... obehagliga")
-    const looksLikeExcerpt = !original.includes('...') && !original.includes('–') && original.length > 60;
+    const looksLikeExcerpt = !original.includes('...') && original.length > 60;
     if (looksLikeExcerpt) {
       const prefix = norm(original.substring(0, 50)).trim();
       if (prefix.length > 15) {
@@ -4523,6 +4523,23 @@ export default function App() {
           return { idx: realIdx, len: approxLen };
         }
       }
+    }
+    // Case-insensitive fallback
+    const textLower = textNorm.toLowerCase();
+    const origLower = origNorm.toLowerCase();
+    const ciIdx = textLower.indexOf(origLower, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
+    if (ciIdx !== -1) {
+      let realIdx = 0, normPos = 0;
+      while (normPos < ciIdx && realIdx < text.length) {
+        if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
+        realIdx++; normPos++;
+      }
+      let realEnd = realIdx, normEnd = ciIdx;
+      while (normEnd < ciIdx + origLower.length && realEnd < text.length) {
+        if (/\s/.test(text[realEnd]) && realEnd > realIdx && /\s/.test(text[realEnd - 1])) { realEnd++; continue; }
+        realEnd++; normEnd++;
+      }
+      return { idx: realIdx, len: realEnd - realIdx };
     }
     return null;
   };
