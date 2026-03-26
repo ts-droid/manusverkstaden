@@ -2514,11 +2514,11 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
               const chapterCount = project.chapterCount || project.chapters?.length || 0;
               const progress = project.progress || 0;
 
-              // Calculate review progress: chapters with suggestions / total chapters
-              const chaptersWithSuggestions = project.chapters
-                ? project.chapters.filter(c => c.suggestions?.length > 0 || c.reviewed).length
+              // Calculate review progress: chapters with REVIEWED status / total chapters
+              const chaptersReviewed = project.chapters
+                ? project.chapters.filter(c => c.status === 'REVIEWED').length
                 : 0;
-              const reviewPercent = chapterCount > 0 ? Math.round((chaptersWithSuggestions / chapterCount) * 100) : 0;
+              const reviewPercent = chapterCount > 0 ? Math.round((chaptersReviewed / chapterCount) * 100) : 0;
 
               // Genre badges
               const genres = project.genres || (project.genre ? [project.genre] : []);
