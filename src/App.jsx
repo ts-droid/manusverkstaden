@@ -4325,15 +4325,21 @@ export default function App() {
   // Get current chapter paragraphs
   const currentParagraphs = paragraphsByChapter[activeChapter] || [];
   const allSuggestions = currentParagraphs.flatMap(p => p.suggestions || []);
-  // Show all suggestions: pending first, then handled. Filter by priority.
+  const [showHandled, setShowHandled] = useState(false);
+  // Default: only show pending suggestions. Toggle to see handled ones too.
   const filtered = allSuggestions
-    .filter(s => filterPriority === "all" || s.priority === filterPriority)
+    .filter(s => {
+      const isHandled = accepted.has(s.id) || rejected.has(s.id);
+      if (!showHandled && isHandled) return false;
+      return filterPriority === "all" || s.priority === filterPriority;
+    })
     .sort((a, b) => {
       const aHandled = accepted.has(a.id) || rejected.has(a.id) ? 1 : 0;
       const bHandled = accepted.has(b.id) || rejected.has(b.id) ? 1 : 0;
       return aHandled - bHandled; // pending first
     });
   const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
+  const handledCount = allSuggestions.length - pendingCount;
 
   // Global: count ALL suggestions across ALL chapters
   const globalAllSuggestions = Object.values(paragraphsByChapter).flatMap(paras => paras.flatMap(p => p.suggestions || []));
@@ -4928,6 +4934,15 @@ export default function App() {
                     </div>
                   ) : null;
                 })()}
+                {handledCount > 0 && (
+                  <button onClick={() => setShowHandled(!showHandled)} style={{
+                    fontFamily: uiFont, fontSize: 9.5, padding: "3px 8px", borderRadius: 5, cursor: "pointer",
+                    border: `1px solid ${border}`, background: showHandled ? "#f0faf3" : surface,
+                    color: showHandled ? "#27864a" : muted, fontWeight: 500, marginTop: 4,
+                  }}>
+                    {showHandled ? `Dölj hanterade (${handledCount})` : `Visa hanterade (${handledCount})`}
+                  </button>
+                )}
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
                 {/* Suggestion cards – primary content */}
