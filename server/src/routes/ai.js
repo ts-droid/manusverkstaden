@@ -12,7 +12,8 @@ router.use(requireAuth);
 // ─── REVIEW CHAPTER ───
 router.post('/review', async (req, res, next) => {
   try {
-    const { chapterId, projectId } = req.body;
+    const chapterId = String(req.body.chapterId);
+    const { projectId } = req.body;
 
     // Verify ownership
     const chapter = await prisma.chapter.findUnique({
@@ -95,7 +96,8 @@ router.post('/dna-profile', async (req, res, next) => {
 // ─── DEVELOP TEXT ───
 router.post('/develop', async (req, res, next) => {
   try {
-    const { mode, input, context, chapterId } = req.body;
+    const { mode, input, context } = req.body;
+    const chapterId = req.body.chapterId ? String(req.body.chapterId) : null;
 
     if (chapterId) {
       const chapter = await prisma.chapter.findUnique({
@@ -123,7 +125,8 @@ router.post('/develop', async (req, res, next) => {
 // ─── TRANSLATE ───
 router.post('/translate', async (req, res, next) => {
   try {
-    const { chapterId, language } = req.body;
+    const chapterId = String(req.body.chapterId);
+    const { language } = req.body;
 
     const chapter = await prisma.chapter.findUnique({
       where: { id: chapterId },
