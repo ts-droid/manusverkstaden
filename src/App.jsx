@@ -529,7 +529,7 @@ function SplitChapterPopover({ chapter, onSplit, onClose }) {
 }
 
 // ─── COLLAPSIBLE PARAGRAPH EDIT SECTION ───
-function ParagraphEditSection({ paragraphs, onEdit }) {
+function ParagraphEditSection({ paragraphs, onEdit, getEffectiveText }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -553,7 +553,7 @@ function ParagraphEditSection({ paragraphs, onEdit }) {
           {paragraphs.map((para, i) => (
             <button
               key={para.id}
-              onClick={() => onEdit(para.id, para.text)}
+              onClick={() => onEdit(para.id, getEffectiveText ? getEffectiveText(para) : para.text)}
               style={{
                 width: "100%", textAlign: "left", padding: "5px 8px", marginBottom: 2, borderRadius: 5,
                 border: `1px solid ${border}`, background: surface, cursor: "pointer",
@@ -4180,6 +4180,45 @@ export default function App() {
     });
   }, []);
 
+  // ─── GET EFFECTIVE TEXT (with accepted replacements applied) ───
+  const getEffectiveText = (para) => {
+    if (!para?.suggestions?.length) return para?.text || "";
+    let text = para.text;
+    // Apply accepted replacements in reverse position order (to preserve indices)
+    const norm = (s) => s.replace(/\s+/g, ' ');
+    const findMatch = (haystack, needle) => {
+      const exact = haystack.indexOf(needle);
+      if (exact !== -1) return { idx: exact, len: needle.length };
+      const hNorm = norm(haystack);
+      const nNorm = norm(needle);
+      const normIdx = hNorm.indexOf(nNorm);
+      if (normIdx !== -1) {
+        // Map back to original positions
+        let realIdx = 0, np = 0;
+        while (np < normIdx && realIdx < haystack.length) {
+          if (/\s/.test(haystack[realIdx]) && realIdx > 0 && /\s/.test(haystack[realIdx - 1])) { realIdx++; continue; }
+          realIdx++; np++;
+        }
+        let realEnd = realIdx, ne = normIdx;
+        while (ne < normIdx + nNorm.length && realEnd < haystack.length) {
+          if (/\s/.test(haystack[realEnd]) && realEnd > realIdx && /\s/.test(haystack[realEnd - 1])) { realEnd++; continue; }
+          realEnd++; ne++;
+        }
+        return { idx: realIdx, len: realEnd - realIdx };
+      }
+      return null;
+    };
+    const withPos = para.suggestions
+      .filter(s => accepted.has(s.id) && s.original && s.replacement)
+      .map(s => ({ s, match: findMatch(text, s.original) }))
+      .filter(x => x.match)
+      .sort((a, b) => b.match.idx - a.match.idx); // reverse order to preserve indices
+    for (const { s, match } of withPos) {
+      text = text.slice(0, match.idx) + s.replacement + text.slice(match.idx + match.len);
+    }
+    return text;
+  };
+
   // ─── EDIT PARAGRAPH ───
   const handleEditParagraph = (paraId, text) => {
     setEditModal({
@@ -4705,7 +4744,7 @@ export default function App() {
                 {isInserted && (
                   <div style={{ display: "flex", gap: 6, marginTop: -14, marginBottom: 16, paddingLeft: 10 }}>
                     <button onClick={() => {
-                      handleEditParagraph(para.id, para.text);
+                      handleEditParagraph(para.id, getEffectiveText(para));
                       setInsertedParaIds(new Set());
                     }} style={{
                       fontFamily: uiFont, fontSize: 10, padding: "3px 10px", borderRadius: 5,
@@ -4895,7 +4934,7 @@ export default function App() {
 
                 {/* Collapsible paragraph edit section */}
                 {currentParagraphs.length > 0 && (
-                  <ParagraphEditSection paragraphs={currentParagraphs} onEdit={handleEditParagraph} />
+                  <ParagraphEditSection paragraphs={currentParagraphs} onEdit={handleEditParagraph} getEffectiveText={getEffectiveText} />
                 )}
               </div>
               <div style={{ padding: "10px 14px", borderTop: `1px solid ${border}`, fontFamily: uiFont, fontSize: 10, color: muted, display: "flex", justifyContent: "space-between" }}>
@@ -4921,8 +4960,8 @@ export default function App() {
               // Multi-paragraph selection: open modal with selected text
               handleEditParagraph(selectionToolbar.paraId, selectedText);
             } else if (para) {
-              // Single paragraph: open modal with full paragraph text
-              handleEditParagraph(selectionToolbar.paraId, para.text);
+              // Single paragraph: open modal with effective text (includes accepted replacements)
+              handleEditParagraph(selectionToolbar.paraId, getEffectiveText(para));
             }
           }
         }}
