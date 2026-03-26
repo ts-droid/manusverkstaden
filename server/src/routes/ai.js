@@ -39,10 +39,24 @@ router.post('/review', async (req, res, next) => {
       modules: chapter.project.modules,
     });
 
-    // Save suggestions
-    await prisma.suggestion.deleteMany({ where: { chapterId } });
+    // Save suggestions – preserve accepted/rejected, only replace pending
+    const existing = await prisma.suggestion.findMany({ where: { chapterId } });
+    const kept = existing.filter(s => s.status === 'ACCEPTED' || s.status === 'REJECTED');
+    const keptOriginals = new Set(kept.map(s => s.original?.trim().toLowerCase()).filter(Boolean));
+
+    // Delete only pending suggestions
+    await prisma.suggestion.deleteMany({
+      where: { chapterId, status: 'PENDING' },
+    });
+
+    // Filter out new suggestions that duplicate kept ones (same original text)
+    const newSuggestions = suggestions.filter(s => {
+      const origKey = s.original?.trim().toLowerCase();
+      return origKey && !keptOriginals.has(origKey);
+    });
+
     const created = await Promise.all(
-      suggestions.map(s =>
+      newSuggestions.map(s =>
         prisma.suggestion.create({
           data: {
             type: s.type,
@@ -62,7 +76,8 @@ router.post('/review', async (req, res, next) => {
     // Record usage with real API cost
     await recordUsage(req.user.id, 'review', chapter.wordCount, meta);
 
-    res.json({ suggestions: created });
+    // Return ALL suggestions (kept + new) so frontend has full picture
+    res.json({ suggestions: [...kept, ...created] });
   } catch (err) {
     console.error(`[AI Review Error] Chapter ${req.body?.chapterId}:`, err.message);
     // Reset chapter status so it doesn't stay stuck in REVIEWING

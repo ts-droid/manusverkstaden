@@ -3880,11 +3880,9 @@ export default function App() {
     setReanalyzingChapter(chapterId);
     setProcessingStatus(`Analyserar ${chapter.title}...`);
 
-    // Clear existing suggestions for this chapter
     const freshParas = splitIntoParagraphs(chapter.content);
-    setParagraphsByChapter(prev => ({ ...prev, [chapterId]: freshParas }));
 
-    // Mark as active
+    // Mark as active but keep existing accepted/rejected suggestions visible
     setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "active" } : c));
 
     let success = false;
@@ -3896,13 +3894,25 @@ export default function App() {
           setProcessingStatus(`Bearbetar ${chapter.title}... (försök ${attempt + 1})`);
           await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
         }
-        // Use backend API – suggestions saved to DB automatically
+        // Use backend API – backend preserves accepted/rejected, returns all
         const result = await apiClient.reviewChapter(chapterId, serverProjectId);
         const suggestions = result?.suggestions || [];
+
+        // Restore accepted/rejected state from DB status
+        const restoredAccepted = new Set(accepted);
+        const restoredRejected = new Set(rejected);
+        for (const s of suggestions) {
+          if (s.status === "ACCEPTED") restoredAccepted.add(s.id);
+          if (s.status === "REJECTED") restoredRejected.add(s.id);
+        }
+        setAccepted(restoredAccepted);
+        setRejected(restoredRejected);
 
         if (suggestions.length > 0) {
           const enrichedParas = attachSuggestionsToParagraphs(freshParas, suggestions, chapterId);
           setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enrichedParas }));
+        } else {
+          setParagraphsByChapter(prev => ({ ...prev, [chapterId]: freshParas }));
         }
         success = true;
       } catch (err) {
