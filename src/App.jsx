@@ -3522,6 +3522,7 @@ export default function App() {
     setUploadedFile(file);
     const chaps = parsedChapters.map(ch => ({ ...ch, status: "pending" }));
     setChapters(chaps);
+    setActiveChapter(chaps[0]?.id);
 
     // Build paragraphs
     const parasMap = {};
