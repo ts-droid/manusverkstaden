@@ -4430,19 +4430,23 @@ export default function App() {
       }
       return { idx: realIdx, len: realEnd - realIdx };
     }
-    // Prefix match: find first 50 chars
-    const prefix = norm(original.substring(0, 50)).trim();
-    if (prefix.length > 15) {
-      const prefIdx = textNorm.indexOf(prefix, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
-      if (prefIdx !== -1) {
-        let realIdx = 0, normPos = 0;
-        while (normPos < prefIdx && realIdx < text.length) {
-          if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
-          realIdx++; normPos++;
+    // Prefix match: find first 50 chars – but only if the original looks like
+    // an actual text excerpt (not a pattern like "obehag... obehagliga")
+    const looksLikeExcerpt = !original.includes('...') && !original.includes('–') && original.length > 60;
+    if (looksLikeExcerpt) {
+      const prefix = norm(original.substring(0, 50)).trim();
+      if (prefix.length > 15) {
+        const prefIdx = textNorm.indexOf(prefix, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
+        if (prefIdx !== -1) {
+          let realIdx = 0, normPos = 0;
+          while (normPos < prefIdx && realIdx < text.length) {
+            if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
+            realIdx++; normPos++;
+          }
+          // Match only the prefix length, not the full original
+          const approxLen = Math.min(prefix.length + 10, text.length - realIdx);
+          return { idx: realIdx, len: approxLen };
         }
-        // Try to match the full original length from this point
-        const approxLen = Math.min(original.length + 20, text.length - realIdx);
-        return { idx: realIdx, len: approxLen };
       }
     }
     return null;
@@ -5188,12 +5192,15 @@ function attachSuggestionsToParagraphs(paragraphs, suggestions, chapterId) {
       if (paraText.includes(orig)) { matched.add(sIdx); return true; }
       // Normalized whitespace match
       if (paraNorm.includes(origNorm)) { matched.add(sIdx); return true; }
-      // Prefix match (first 60 chars)
-      const prefix = origNorm.substring(0, 60).trim();
-      if (prefix.length > 15 && paraNorm.includes(prefix)) { matched.add(sIdx); return true; }
-      // Suffix match (last 40 chars)
-      const suffix = origNorm.slice(-40).trim();
-      if (suffix.length > 15 && paraNorm.includes(suffix)) { matched.add(sIdx); return true; }
+      // Prefix match (first 60 chars) – only for excerpt-style originals, not patterns
+      const looksLikeExcerpt = !orig.includes('...') && !orig.includes('–') && orig.length > 60;
+      if (looksLikeExcerpt) {
+        const prefix = origNorm.substring(0, 60).trim();
+        if (prefix.length > 15 && paraNorm.includes(prefix)) { matched.add(sIdx); return true; }
+        // Suffix match (last 40 chars)
+        const suffix = origNorm.slice(-40).trim();
+        if (suffix.length > 15 && paraNorm.includes(suffix)) { matched.add(sIdx); return true; }
+      }
       // Case-insensitive match
       if (paraNorm.toLowerCase().includes(origNorm.toLowerCase())) { matched.add(sIdx); return true; }
       return false;
