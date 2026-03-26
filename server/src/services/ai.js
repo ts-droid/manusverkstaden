@@ -87,10 +87,16 @@ Returnera ett JSON-array med objekt:
   "type": "grammar" | "style" | "repetition" | "structure",
   "priority": "red" | "yellow" | "green",
   "level": 1-4,
-  "original": "den ursprungliga texten",
+  "original": "exakt citat från texten",
   "replacement": "föreslagen ersättning",
   "reason": "kort förklaring på svenska"
 }
+
+VIKTIGT om "original"-fältet:
+- "original" MÅSTE vara en EXAKT ordagrann kopia från texten, tecken för tecken
+- Kopiera texten direkt - ändra INGA ord, lägg inte till eller ta bort något
+- Inkludera tillräckligt med kontext (hela meningen eller frasen) så att citatet är unikt i texten
+- Om du inte kan citera exakt, hoppa över förslaget
 
 Nivåer:
 1 = Utvecklingsredaktionellt (berättarstruktur, tempo, karaktärer)

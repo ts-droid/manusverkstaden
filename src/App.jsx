@@ -4419,22 +4419,28 @@ export default function App() {
 
   // Find s.original in text, falling back to normalized/fuzzy matching.
   // Returns { idx, len } where idx is position in text and len is the actual matched length in text.
-  // ─── EXTRACT SEARCH TERMS FROM PATTERN-STYLE ORIGINALS ───
-  // Only for true patterns like "obehag... obehagliga... obehaget" — NOT for prose excerpts
+  // ─── EXTRACT SEARCH TERMS FROM ORIGINALS ───
+  // Extracts searchable fragments: sentence parts, phrases, or individual significant words
   const extractSearchTerms = (original) => {
     if (!original) return [];
-    // If it looks like prose (long, has sentences), use sentence fragments instead
-    if (original.length > 40) {
-      // Split into sentences and use the longer ones as search terms
-      const sentences = original.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 10);
-      if (sentences.length > 0) return [...new Set(sentences)];
+    const terms = [];
+    // 1. Try the whole original first
+    terms.push(original.trim());
+    // 2. Split into sentences and add each as a term
+    const sentences = original.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 8);
+    for (const s of sentences) terms.push(s);
+    // 3. For pattern-style originals with ..., split on that too
+    if (original.includes('...')) {
+      const parts = original.split(/\.{2,}/).map(s => s.trim()).filter(s => s.length >= 3);
+      for (const p of parts) terms.push(p);
     }
-    // For short patterns: split on ... separators only
-    const parts = original.split(/\.{2,}/).map(s => s.trim()).filter(s => s.length >= 3);
-    if (parts.length > 1) return [...new Set(parts)];
-    // Fallback: use the whole original
-    if (original.trim().length >= 3) return [original.trim()];
-    return [];
+    // 4. Extract significant multi-word phrases (3+ words, 15+ chars)
+    const words = original.replace(/[.!?,;:–—]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+    for (let i = 0; i < words.length - 2; i++) {
+      const phrase = words.slice(i, i + 3).join(' ');
+      if (phrase.length >= 15) terms.push(phrase);
+    }
+    return [...new Set(terms)];
   };
 
   // ─── FIND ALL OCCURRENCES OF TERMS IN FULL CHAPTER TEXT ───
