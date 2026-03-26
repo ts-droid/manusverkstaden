@@ -450,7 +450,10 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: uiFont, fontSize: 10, color: muted }}>
                 <span>{ch.wordCount.toLocaleString()} ord</span>
-                {!chapterHasSuggestions(ch.id) && ch.status !== "active" && (
+                {ch.status === "error" && (
+                  <span style={{ fontSize: 9, color: "#c0392b" }}>analys misslyckades</span>
+                )}
+                {!chapterHasSuggestions(ch.id) && ch.status !== "active" && ch.status !== "error" && (
                   <span style={{ fontSize: 9, color: "#b8860b" }}>ej analyserad</span>
                 )}
                 <span style={{
@@ -3868,11 +3871,12 @@ export default function App() {
     }
 
     if (!success && lastError) {
-      setProcessingStatus(`${chapter.title}: Analysen misslyckades`);
-      await new Promise(r => setTimeout(r, 2000));
+      const shortError = lastError.length > 80 ? lastError.slice(0, 80) + '...' : lastError;
+      setProcessingStatus(`❌ ${chapter.title}: Analysen misslyckades – ${shortError}`);
+      await new Promise(r => setTimeout(r, 5000));
     }
 
-    setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "done" } : c));
+    setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: success ? "done" : "error" } : c));
     setProcessingStatus("");
     setReanalyzingChapter(null);
   };

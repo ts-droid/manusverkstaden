@@ -63,7 +63,21 @@ router.post('/review', async (req, res, next) => {
     await recordUsage(req.user.id, 'review', chapter.wordCount, meta);
 
     res.json({ suggestions: created });
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error(`[AI Review Error] Chapter ${req.body?.chapterId}:`, err.message);
+    // Reset chapter status so it doesn't stay stuck in REVIEWING
+    try {
+      if (req.body?.chapterId) {
+        await prisma.chapter.update({
+          where: { id: String(req.body.chapterId) },
+          data: { status: 'PENDING' },
+        });
+      }
+    } catch (resetErr) {
+      console.error('[AI Review] Failed to reset chapter status:', resetErr.message);
+    }
+    next(err);
+  }
 });
 
 // ─── DNA PROFILE ───

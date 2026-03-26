@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { config } from '../config.js';
 
 const client = config.anthropicApiKey
-  ? new Anthropic({ apiKey: config.anthropicApiKey })
+  ? new Anthropic({ apiKey: config.anthropicApiKey, timeout: 120000 })
   : null;
 
 const prisma = new PrismaClient();
@@ -112,10 +112,15 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
   const meta = extractMeta(response);
   const text = extractText(response);
   try {
-    return { result: parseJsonResponse(text), meta };
-  } catch {
-    console.error('Failed to parse review response:', text.slice(0, 200));
-    return { result: [], meta };
+    const parsed = parseJsonResponse(text);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      console.error('[AI Review] Empty or invalid response from Claude:', text.slice(0, 500));
+      throw new Error('AI returnerade inga förslag. Försök igen.');
+    }
+    return { result: parsed, meta };
+  } catch (parseErr) {
+    console.error('[AI Review] Failed to parse response:', text.slice(0, 500));
+    throw new Error(`AI-svaret kunde inte tolkas: ${parseErr.message}`);
   }
 }
 
