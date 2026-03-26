@@ -158,10 +158,10 @@ class ApiClient {
     });
   }
 
-  async developText(mode, input, context, chapterId) {
+  async developText(mode, input, { context, chapterId, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus } = {}) {
     return this.request('/ai/develop', {
       method: 'POST',
-      body: JSON.stringify({ mode, input, context, chapterId }),
+      body: JSON.stringify({ mode, input, context, chapterId, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus }),
     });
   }
 

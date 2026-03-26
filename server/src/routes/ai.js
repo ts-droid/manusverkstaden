@@ -125,7 +125,7 @@ router.post('/dna-profile', async (req, res, next) => {
 // ─── DEVELOP TEXT ───
 router.post('/develop', async (req, res, next) => {
   try {
-    const { mode, input, context } = req.body;
+    const { mode, input, context, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus } = req.body;
     const chapterId = req.body.chapterId ? String(req.body.chapterId) : null;
 
     if (chapterId) {
@@ -144,7 +144,9 @@ router.post('/develop', async (req, res, next) => {
       return res.status(429).json({ error: limit.reason, usage: limit });
     }
 
-    const { result, meta } = await developText(mode, input, context);
+    const { result, meta } = await developText(mode, input, {
+      context, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus,
+    });
     await recordUsage(req.user.id, 'develop', wordCount, meta);
 
     res.json({ result });

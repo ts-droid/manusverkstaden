@@ -174,20 +174,68 @@ Returnera ENBART JSON, inga andra kommentarer.`);
 }
 
 /**
- * Writing development: brainstorm, expand, rewrite.
+ * Writing development: brainstorm, expand, rewrite, newscene.
  */
-export async function developText(mode, input, context = '') {
+export async function developText(mode, input, options = {}) {
+  const { context, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus } =
+    typeof options === 'string' ? { context: options } : options;
+
   const defaultModes = {
-    brainstorm: 'Ge 3 kreativa alternativ för att utveckla denna text. Returnera JSON: { "alternatives": ["...", "...", "..."] }',
-    expand: 'Bygg ut denna scen med mer detaljer, sinnesintryck och intern dialog. Returnera JSON: { "expanded": "..." }',
-    rewrite: 'Skriv om denna text med förbättrad stil och flöde. Behåll kärnan. Returnera JSON: { "rewritten": "..." }',
+    brainstorm: `Du är en kreativ skrivassistent. Analysera problemet och ge EXAKT tre alternativa lösningsförslag.\n\nSvara ENBART med giltig JSON:\n{"developedText":"kort sammanfattning","reasoning":"ditt resonemang","alternatives":["förslag 1","förslag 2","förslag 3"]}`,
+    expand: `Du är en litterär ghostwriter. Bygg ut scenen med sinnesintryck, intern dialog och atmosfärskapande detaljer. Behåll författarens röst.\n\nSvara ENBART med giltig JSON:\n{"developedText":"den utbyggda texten","reasoning":"1-3 meningar om dina val"}`,
+    rewrite: `Du är en erfaren svensk redaktör och stilist. Skriv om texten med förbättrad stil och flöde. Behåll kärnan.\n\nSvara ENBART med giltig JSON:\n{"developedText":"den omskrivna texten","reasoning":"1-3 meningar om dina val"}`,
+    newscene: `Du är en kreativ skrivassistent för svenska manus. Skriv ett nytt textavsnitt baserat på beskrivningen. Matcha författarens stil.\n\nSvara ENBART med giltig JSON:\n{"developedText":"det nya avsnittet","reasoning":"1-3 meningar om dina val"}`,
   };
 
-  const modePrompt = await getPrompt(`ai:develop_${mode}`, defaultModes[mode] || defaultModes.brainstorm);
+  // Fetch admin prompt (falls back to default)
+  const basePrompt = await getPrompt(`ai:develop_${mode}`, defaultModes[mode] || defaultModes.brainstorm);
+
+  // Build system prompt with DNA profile and emotion context
+  let systemPrompt = basePrompt;
+
+  if (dnaProfile) {
+    const dnaStr = [
+      dnaProfile.perspective && `Perspektiv: ${dnaProfile.perspective}`,
+      dnaProfile.tense && `Tempus: ${dnaProfile.tense}`,
+      dnaProfile.tonality && `Tonalitet: ${dnaProfile.tonality}`,
+      dnaProfile.avgSentenceLen && `Meningslängd: ${dnaProfile.avgSentenceLen}`,
+      dnaProfile.dialogStyle && `Dialogstil: ${dnaProfile.dialogStyle}`,
+      dnaProfile.dominantImagery && `Bildspråk: ${dnaProfile.dominantImagery}`,
+    ].filter(Boolean).join(', ');
+    if (dnaStr) systemPrompt += `\n\nFörfattarens DNA-profil: ${dnaStr}`;
+  }
+
+  if (emotionMap) {
+    const emotionStr = [
+      emotionMap.dominantEmotion && `Dominant känsla: ${emotionMap.dominantEmotion}`,
+      emotionMap.tension != null && `Spänningsnivå: ${Math.round(emotionMap.tension * 100)}%`,
+      emotionMap.arc && `Emotionell båge: ${emotionMap.arc}`,
+    ].filter(Boolean).join(', ');
+    if (emotionStr) systemPrompt += `\nKapitlets emotionella karta: ${emotionStr}`;
+  }
+
+  if (context) {
+    systemPrompt += `\n\nKontext från ${chapterTitle || 'kapitlet'}:\n${context.slice(0, 6000)}`;
+  }
+
+  // Build user message
+  let userMsg = input;
+  const instructionStr = userInstruction?.trim() ? `\nFörfattarens instruktioner: ${userInstruction}` : '';
+
+  if (mode === 'expand') {
+    userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst.${instructionStr}\n\n${input}`;
+  } else if (mode === 'rewrite') {
+    const focus = rewriteFocus?.length > 0 ? `\nFokus: ${rewriteFocus.join(', ')}` : '';
+    userMsg = `Skriv om denna passage.${focus}${instructionStr}\n\n${input}`;
+  } else if (mode === 'newscene') {
+    userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil.${instructionStr}\n\n${input}`;
+  } else if (mode === 'brainstorm') {
+    userMsg = input; // brainstorm gets free-form text
+  }
 
   const response = await sendMessage({
-    system: modePrompt,
-    messages: [{ role: 'user', content: context ? `Kontext:\n${context}\n\nText att bearbeta:\n${input}` : input }],
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMsg }],
     max_tokens: 4096,
   });
 
@@ -196,7 +244,7 @@ export async function developText(mode, input, context = '') {
   try {
     return { result: parseJsonResponse(text), meta };
   } catch {
-    return { result: { text }, meta };
+    return { result: { developedText: text, reasoning: '' }, meta };
   }
 }
 

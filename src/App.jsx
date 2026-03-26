@@ -1020,7 +1020,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
 }
 
 // ─── DEVELOP PANEL ───
-function DevelopPanel({ inputText, dnaProfile, emotionMap, chapterContent, chapterTitle, onResult }) {
+function DevelopPanel({ inputText, dnaProfile, emotionMap, chapterContent, chapterTitle, onResult, apiClient, chapterId }) {
   const [tab, setTab] = useState("dna");
   const tabs = [
     { id: "dna", label: "Språklig DNA" },
@@ -1042,7 +1042,7 @@ function DevelopPanel({ inputText, dnaProfile, emotionMap, chapterContent, chapt
       <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
         {tab === "dna" && <DNAView profile={dnaProfile} />}
         {tab === "emotion" && <EmotionView emotionMap={emotionMap} />}
-        {tab === "develop" && <DevelopView inputText={inputText} dnaProfile={dnaProfile} emotionMap={emotionMap} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} />}
+        {tab === "develop" && <DevelopView inputText={inputText} dnaProfile={dnaProfile} emotionMap={emotionMap} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} apiClient={apiClient} chapterId={chapterId} />}
         {tab === "brainstorm" && <BrainstormView />}
       </div>
     </div>
@@ -1174,7 +1174,7 @@ function EmotionView({ emotionMap }) {
   );
 }
 
-function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult }) {
+function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult, apiClient: apiClientProp, chapterId }) {
   const [mode, setMode] = useState(null);
   const [userText, setUserText] = useState(inputText || "");
   const [userInstruction, setUserInstruction] = useState("");
@@ -1198,56 +1198,29 @@ function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emot
     setGenerating(true);
     setError(null);
 
-    const dnaStr = dnaProfile ? `\nFörfattarens DNA-profil: Perspektiv: ${dnaProfile.perspective}, Tempus: ${dnaProfile.tense}, Tonalitet: ${dnaProfile.tonality}, Meningslängd: ${dnaProfile.avgSentenceLen}, Dialogstil: ${dnaProfile.dialogStyle}, Bildspråk: ${dnaProfile.dominantImagery}` : "";
-
-    const emotionStr = emotionMap ? `\nKapitlets emotionella karta: Dominant känsla: ${emotionMap.dominantEmotion}, Spänningsnivå: ${Math.round((emotionMap.tension || 0) * 100)}%, Emotionell båge: ${emotionMap.arc || "okänd"}${emotionMap.characterStates?.length ? ", Karaktärer: " + emotionMap.characterStates.map(cs => `${cs.character} (${cs.state})`).join(", ") : ""}` : "";
-
     const contextSnippet = chapterContent ? chapterContent.slice(0, 6000) : "";
 
-    let systemMsg = `Du är en kreativ skrivassistent för svenska manus. Du matchar alltid författarens stil, ton och röst.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara ALLTID med JSON i detta format:\n{\n  "developedText": "<den utvecklade texten>",\n  "reasoning": "<1-3 meningar som förklarar ditt resonemang och hur texten passar in i berättelsen>"\n}`;
-
-    const instructionStr = userInstruction.trim() ? `\n\nFörfattarens instruktioner: ${userInstruction}` : "";
-
-    let userMsg = "";
-    if (mode === "expand") {
-      userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst.${instructionStr}\n\n${userText}`;
-    } else if (mode === "rewrite") {
-      const focus = rewriteFocus.length > 0 ? `\nFokus: ${rewriteFocus.join(", ")}` : "";
-      userMsg = `Skriv om denna passage.${focus}${instructionStr}\n\n${userText}`;
-    } else if (mode === "newscene") {
-      userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil.${instructionStr}\n\n${userText}`;
-    }
-
     try {
-      const response = await sendMessage({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        system: systemMsg,
-        messages: [{ role: "user", content: userMsg }],
+      const { result } = await apiClientProp.developText(mode, userText, {
+        context: contextSnippet,
+        chapterId,
+        dnaProfile,
+        emotionMap,
+        chapterTitle,
+        userInstruction: userInstruction.trim() || undefined,
+        rewriteFocus: mode === "rewrite" && rewriteFocus.length > 0 ? rewriteFocus : undefined,
       });
 
-      if (response) {
-        const text = extractText(response);
-        const parsed = parseJsonResponse(text);
-        if (parsed?.developedText) {
-          onResult({
-            mode,
-            modeLabel: modes.find(m => m.id === mode)?.label,
-            originalText: userText,
-            developedText: parsed.developedText,
-            reasoning: parsed.reasoning || "AI har genererat en ny version baserat på din text och författarprofil.",
-          });
-        } else {
-          // Fallback: treat the whole response as text
-          onResult({
-            mode,
-            modeLabel: modes.find(m => m.id === mode)?.label,
-            originalText: userText,
-            developedText: text,
-            reasoning: "Texten har genererats baserat på din förfrågan.",
-          });
-        }
-      }
+      const developedText = result?.developedText || result?.text || "";
+      const reasoning = result?.reasoning || "Texten har genererats baserat på din förfrågan.";
+
+      onResult({
+        mode,
+        modeLabel: modes.find(m => m.id === mode)?.label,
+        originalText: userText,
+        developedText,
+        reasoning,
+      });
     } catch (err) {
       console.error("Develop failed:", err);
       setError(err.message || "Generering misslyckades. Kontrollera API-nyckeln.");
@@ -1355,7 +1328,7 @@ function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emot
 }
 
 // ─── DEVELOP MODAL ───
-function DevelopModal({ initialText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult, onClose }) {
+function DevelopModal({ initialText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult, onClose, apiClient: apiClientProp, chapterId }) {
   const [mode, setMode] = useState("expand");
   const [userText, setUserText] = useState(initialText || "");
   const [userInstruction, setUserInstruction] = useState("");
@@ -1379,33 +1352,32 @@ function DevelopModal({ initialText, chapterContent, chapterTitle, dnaProfile, e
     setGenerating(true);
     setError(null);
 
-    const dnaStr = dnaProfile ? `\nFörfattarens DNA-profil: Perspektiv: ${dnaProfile.perspective}, Tempus: ${dnaProfile.tense}, Tonalitet: ${dnaProfile.tonality}, Meningslängd: ${dnaProfile.avgSentenceLen}, Dialogstil: ${dnaProfile.dialogStyle}, Bildspråk: ${dnaProfile.dominantImagery}` : "";
-    const emotionStr = emotionMap ? `\nKapitlets emotionella karta: Dominant känsla: ${emotionMap.dominantEmotion}, Spänningsnivå: ${Math.round((emotionMap.tension || 0) * 100)}%, Emotionell båge: ${emotionMap.arc || "okänd"}` : "";
+    const inputText = mode === "brainstorm" ? brainstormText : userText;
     const contextSnippet = chapterContent ? chapterContent.slice(0, 6000) : "";
 
     try {
-      if (mode === "brainstorm") {
-        const systemMsg = `Du är en kreativ skrivassistent. Analysera problemet och ge EXAKT tre alternativa lösningsförslag.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara med JSON:\n{\n  "developedText": "<kort sammanfattning>",\n  "reasoning": "<ditt resonemang>",\n  "alternatives": ["<förslag 1>", "<förslag 2>", "<förslag 3>"]\n}`;
-        const response = await sendMessage({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system: systemMsg, messages: [{ role: "user", content: brainstormText }] });
-        const text = extractText(response);
-        const parsed = parseJsonResponse(text);
-        onResult({ mode: "brainstorm", modeLabel: "Brainstorming", originalText: brainstormText, developedText: parsed?.developedText || text, reasoning: parsed?.reasoning || "", alternatives: parsed?.alternatives });
-      } else {
-        const systemMsg = `Du är en kreativ skrivassistent för svenska manus. Du matchar alltid författarens stil, ton och röst.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara ALLTID med JSON:\n{\n  "developedText": "<den utvecklade texten>",\n  "reasoning": "<1-3 meningar som förklarar ditt resonemang>"\n}`;
-        const instructionStr = userInstruction.trim() ? `\n\nFörfattarens instruktioner: ${userInstruction}` : "";
-        let userMsg = "";
-        if (mode === "expand") userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst.${instructionStr}\n\n${userText}`;
-        else if (mode === "rewrite") { const focus = rewriteFocus.length > 0 ? `\nFokus: ${rewriteFocus.join(", ")}` : ""; userMsg = `Skriv om denna passage.${focus}${instructionStr}\n\n${userText}`; }
-        else if (mode === "newscene") userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil.${instructionStr}\n\n${userText}`;
+      const { result } = await apiClientProp.developText(mode, inputText, {
+        context: contextSnippet,
+        chapterId,
+        dnaProfile,
+        emotionMap,
+        chapterTitle,
+        userInstruction: userInstruction.trim() || undefined,
+        rewriteFocus: mode === "rewrite" && rewriteFocus.length > 0 ? rewriteFocus : undefined,
+      });
 
-        const response = await sendMessage({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system: systemMsg, messages: [{ role: "user", content: userMsg }] });
-        const text = extractText(response);
-        const parsed = parseJsonResponse(text);
-        onResult({ mode, modeLabel: modes.find(m => m.id === mode)?.label, originalText: userText, developedText: parsed?.developedText || text, reasoning: parsed?.reasoning || "Texten har genererats baserat på din förfrågan." });
+      const developedText = result?.developedText || result?.text || "";
+      const reasoning = result?.reasoning || "Texten har genererats baserat på din förfrågan.";
+      const alternatives = result?.alternatives;
+
+      if (mode === "brainstorm") {
+        onResult({ mode: "brainstorm", modeLabel: "Brainstorming", originalText: brainstormText, developedText, reasoning, alternatives });
+      } else {
+        onResult({ mode, modeLabel: modes.find(m => m.id === mode)?.label, originalText: userText, developedText, reasoning });
       }
     } catch (err) {
       console.error("Develop failed:", err);
-      setError(err.message || "Generering misslyckades. Kontrollera API-nyckeln.");
+      setError(err.message || "Generering misslyckades.");
     } finally {
       setGenerating(false);
     }
@@ -5146,6 +5118,8 @@ export default function App() {
           chapterTitle={currentChapter?.title}
           dnaProfile={dnaProfile}
           emotionMap={emotionMaps[activeChapter]}
+          apiClient={apiClient}
+          chapterId={activeChapter}
           onResult={(result) => {
             setDevelopResult({ ...result, insertAfterParaId: developModal.paraId || null });
             setDevelopModal(null);
