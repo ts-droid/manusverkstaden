@@ -4912,8 +4912,10 @@ export default function App() {
                       </div>
                     )}
                     {filtered.map(s => {
-                      // Check if this suggestion has an inline highlight in the text
-                      const hasInline = s.original && currentParagraphs.some(p => findInText(p.text, s.original) !== null);
+                      // Check if this suggestion actually renders with an inline highlight
+                      // It must be attached to a paragraph AND findInText must find it in THAT paragraph's text
+                      const attachedPara = currentParagraphs.find(p => p.suggestions?.some(ps => ps.id === s.id));
+                      const hasInline = !!(attachedPara && s.original && findInText(attachedPara.text, s.original) !== null);
                       const terms = !hasInline && s.original ? extractSearchTerms(s.original) : [];
                       const chapter = chapters.find(c => c.id === activeChapter);
                       const termOccs = terms.length > 0 && chapter ? findAllTermOccurrences(chapter.content, terms) : [];
