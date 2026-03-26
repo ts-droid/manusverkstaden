@@ -2327,6 +2327,7 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null); // project to confirm delete
   const [usageData, setUsageData] = useState(null);
 
   const SWEDISH_MONTHS = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
@@ -2534,10 +2535,10 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
                     }}>...</button>
                     {menuOpen === project.id && (
                       <div style={{ position: "absolute", right: 0, top: "100%", background: surface, border: `1px solid ${border}`, borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", zIndex: 10, minWidth: 120, overflow: "hidden" }}>
-                        <button onClick={() => handleDelete(project.id)} disabled={deleting === project.id} style={{
+                        <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(project); setMenuOpen(null); }} style={{
                           width: "100%", padding: "9px 14px", border: "none", background: "none", textAlign: "left",
                           fontFamily: uiFont, fontSize: 12, color: "#c0392b", cursor: "pointer",
-                        }}>{deleting === project.id ? "Raderar..." : "Radera"}</button>
+                        }}>Radera</button>
                       </div>
                     )}
                   </div>
@@ -2591,6 +2592,32 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
           </div>
         )}
       </div>
+
+      {/* Delete confirmation dialog */}
+      {confirmDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={() => setConfirmDelete(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: surface, borderRadius: 16, padding: "32px 28px", maxWidth: 420, width: "90%", boxShadow: "0 16px 48px rgba(0,0,0,0.15)" }}>
+            <h3 style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink, margin: "0 0 12px" }}>Radera manus?</h3>
+            <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, lineHeight: 1.5, margin: "0 0 24px" }}>
+              Är du säker? Detta raderar även ändringar i manuset. Exportera först om du vill dokumentera ändringarna.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { onOpenProject(confirmDelete); setConfirmDelete(null); }} style={{
+                flex: 1, padding: "10px 16px", borderRadius: 8, border: `1px solid ${border}`,
+                background: surface, fontFamily: uiFont, fontSize: 13, fontWeight: 500, color: ink, cursor: "pointer",
+              }}>Exportera först</button>
+              <button onClick={async () => { const id = confirmDelete.id; setConfirmDelete(null); await handleDelete(id); }} disabled={deleting} style={{
+                flex: 1, padding: "10px 16px", borderRadius: 8, border: "none",
+                background: "#c0392b", fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer",
+              }}>{deleting ? "Raderar..." : "Radera"}</button>
+            </div>
+            <button onClick={() => setConfirmDelete(null)} style={{
+              width: "100%", marginTop: 10, padding: "8px", border: "none", background: "none",
+              fontFamily: uiFont, fontSize: 12, color: muted, cursor: "pointer",
+            }}>Avbryt</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
