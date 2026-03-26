@@ -98,6 +98,13 @@ VIKTIGT om "original"-fältet:
 - Inkludera tillräckligt med kontext (hela meningen eller frasen) så att citatet är unikt i texten
 - Om du inte kan citera exakt, hoppa över förslaget
 
+KVALITETSKRAV:
+- Var SÄKER på att ditt förslag verkligen är en förbättring innan du inkluderar det
+- Dubbelkolla svensk grammatik noggrant: substantivets genus styr adjektivböjningen (en dyster natt, ett dystert mörker, den/det dystra)
+- Föreslå INTE ändringar av korrekt böjda ord – verifiera genus och böjning innan du flaggar
+- Om du är osäker på om något är ett fel, hoppa över det – falska positiva är värre än att missa något
+- Prioritera tydliga, odiskutabla förbättringar framför subjektiva stilval
+
 Nivåer:
 1 = Utvecklingsredaktionellt (berättarstruktur, tempo, karaktärer)
 2 = Stilistiskt (ordval, flöde, ton, upprepningar)
