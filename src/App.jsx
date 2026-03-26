@@ -4420,13 +4420,21 @@ export default function App() {
   // Find s.original in text, falling back to normalized/fuzzy matching.
   // Returns { idx, len } where idx is position in text and len is the actual matched length in text.
   // ─── EXTRACT SEARCH TERMS FROM PATTERN-STYLE ORIGINALS ───
+  // Only for true patterns like "obehag... obehagliga... obehaget" — NOT for prose excerpts
   const extractSearchTerms = (original) => {
     if (!original) return [];
-    // Split on common separators: ..., –, —, /, ,
-    const parts = original.split(/\.{2,}|[–—\/,;]/).map(s => s.trim()).filter(s => s.length >= 3);
-    // Also try the whole original if it's a single short phrase
-    if (parts.length === 0 && original.trim().length >= 3) return [original.trim()];
-    return [...new Set(parts)];
+    // If it looks like prose (long, has sentences), use sentence fragments instead
+    if (original.length > 40) {
+      // Split into sentences and use the longer ones as search terms
+      const sentences = original.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 10);
+      if (sentences.length > 0) return [...new Set(sentences)];
+    }
+    // For short patterns: split on ... separators only
+    const parts = original.split(/\.{2,}/).map(s => s.trim()).filter(s => s.length >= 3);
+    if (parts.length > 1) return [...new Set(parts)];
+    // Fallback: use the whole original
+    if (original.trim().length >= 3) return [original.trim()];
+    return [];
   };
 
   // ─── FIND ALL OCCURRENCES OF TERMS IN FULL CHAPTER TEXT ───
@@ -5260,7 +5268,7 @@ function attachSuggestionsToParagraphs(paragraphs, suggestions, chapterId) {
       // Normalized whitespace match
       if (paraNorm.includes(origNorm)) { matched.add(sIdx); return true; }
       // Prefix match (first 60 chars) – only for excerpt-style originals, not patterns
-      const looksLikeExcerpt = !orig.includes('...') && !orig.includes('–') && orig.length > 60;
+      const looksLikeExcerpt = !orig.includes('...') && orig.length > 60;
       if (looksLikeExcerpt) {
         const prefix = origNorm.substring(0, 60).trim();
         if (prefix.length > 15 && paraNorm.includes(prefix)) { matched.add(sIdx); return true; }
