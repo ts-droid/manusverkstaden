@@ -39,10 +39,14 @@ function splitIntoChapters(text) {
 
   const chapters = [];
   for (let i = 0; i < markers.length; i++) {
-    const start = markers[i].index;
+    const headingEnd = markers[i].index + markers[i].title.length;
+    const contentStart = text.indexOf('\n', headingEnd);
+    const start = contentStart !== -1 ? contentStart + 1 : headingEnd;
     const end = i + 1 < markers.length ? markers[i + 1].index : text.length;
     const content = text.slice(start, end).trim();
     const words = content.split(/\s+/).filter(w => w).length;
+
+    if (content.length === 0) continue; // Skip heading-only entries
 
     chapters.push({
       title: markers[i].title,

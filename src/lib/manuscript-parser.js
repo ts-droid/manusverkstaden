@@ -115,15 +115,20 @@ function splitIntoChapters(text) {
 
   const chapters = [];
   for (let i = 0; i < bestSplits.length; i++) {
-    // Use the index of the actual chapter title (capture group 1), not the newline prefix
     const matchStr = bestSplits[i][0];
     const captureStart = bestSplits[i].index + matchStr.indexOf(bestSplits[i][1]);
-    const start = captureStart;
+    const title = bestSplits[i][1].trim();
+
+    // Content starts AFTER the chapter heading line
+    const headingEnd = captureStart + title.length;
+    const contentStart = normalized.indexOf('\n', headingEnd);
+    const start = contentStart !== -1 ? contentStart + 1 : headingEnd;
     const end = i + 1 < bestSplits.length
       ? bestSplits[i + 1].index + bestSplits[i + 1][0].indexOf(bestSplits[i + 1][1])
       : normalized.length;
     const content = normalized.slice(start, end).trim();
-    const title = bestSplits[i][1].trim();
+
+    if (content.length === 0) continue; // Skip empty chapters (heading-only)
 
     chapters.push({
       id: i + 1,
