@@ -4281,23 +4281,77 @@ export default function App() {
     return parts.length ? parts : [<span key={keyPrefix}>{str}</span>];
   };
 
+  // Find s.original in text, falling back to normalized/fuzzy matching.
+  // Returns { idx, len } where idx is position in text and len is the actual matched length in text.
+  const findInText = (text, original, fromIndex = 0) => {
+    // Exact match
+    const exact = text.indexOf(original, fromIndex);
+    if (exact !== -1) return { idx: exact, len: original.length };
+    // Normalized match: collapse whitespace in both and map back
+    const norm = (s) => s.replace(/\s+/g, ' ');
+    const origNorm = norm(original);
+    const textNorm = norm(text);
+    const normIdx = textNorm.indexOf(origNorm, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
+    if (normIdx !== -1) {
+      // Map normalized index back to original text position
+      let realIdx = 0, normPos = 0;
+      while (normPos < normIdx && realIdx < text.length) {
+        if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) {
+          realIdx++; continue;
+        }
+        realIdx++; normPos++;
+      }
+      // Find end position
+      let realEnd = realIdx, normEnd = normIdx;
+      while (normEnd < normIdx + origNorm.length && realEnd < text.length) {
+        if (/\s/.test(text[realEnd]) && realEnd > realIdx && /\s/.test(text[realEnd - 1])) {
+          realEnd++; continue;
+        }
+        realEnd++; normEnd++;
+      }
+      return { idx: realIdx, len: realEnd - realIdx };
+    }
+    // Prefix match: find first 50 chars
+    const prefix = norm(original.substring(0, 50)).trim();
+    if (prefix.length > 15) {
+      const prefIdx = textNorm.indexOf(prefix, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
+      if (prefIdx !== -1) {
+        let realIdx = 0, normPos = 0;
+        while (normPos < prefIdx && realIdx < text.length) {
+          if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
+          realIdx++; normPos++;
+        }
+        // Try to match the full original length from this point
+        const approxLen = Math.min(original.length + 20, text.length - realIdx);
+        return { idx: realIdx, len: approxLen };
+      }
+    }
+    return null;
+  };
+
   const renderText = (para) => {
     const { text, suggestions } = para;
     if (!suggestions || !suggestions.length) return renderFormatted(text, `p${para.id}`);
     const parts = [];
     let last = 0;
-    const sorted = [...suggestions].filter(s => s.original).sort((a, b) => text.indexOf(a.original) - text.indexOf(b.original));
-    for (const s of sorted) {
-      const idx = text.indexOf(s.original, last);
-      if (idx === -1) continue;
+    // Pre-compute positions for sorting
+    const withPos = suggestions.filter(s => s.original).map(s => {
+      const match = findInText(text, s.original);
+      return { s, match };
+    }).filter(x => x.match).sort((a, b) => a.match.idx - b.match.idx);
+
+    for (const { s, match } of withPos) {
+      const { idx, len } = match;
+      if (idx < last) continue; // Skip overlapping
       if (idx > last) parts.push(<span key={`t${last}`}>{...renderFormatted(text.slice(last, idx), `t${last}`)}</span>);
+      const matchedText = text.slice(idx, idx + len);
       const isAcc = accepted.has(s.id), isRej = rejected.has(s.id), isAct = activeSuggestion === s.id;
       const p = PRIORITY[s.priority];
       if (p) {
         if (isRej) {
-          parts.push(<span key={`s${s.id}`} data-suggestion-id={s.id}>{...renderFormatted(s.original, `r${s.id}`)}</span>);
+          parts.push(<span key={`s${s.id}`} data-suggestion-id={s.id}>{...renderFormatted(matchedText, `r${s.id}`)}</span>);
         } else {
-          const displayText = isAcc && s.replacement ? s.replacement : s.original;
+          const displayText = isAcc && s.replacement ? s.replacement : matchedText;
           parts.push(
             <span key={`s${s.id}`} data-suggestion-id={s.id} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
               background: isAcc ? "#dcfce7" : isAct ? `${p.color}30` : `${p.color}0c`,
@@ -4310,7 +4364,7 @@ export default function App() {
           );
         }
       }
-      last = idx + s.original.length;
+      last = idx + len;
     }
     if (last < text.length) parts.push(<span key="end">{...renderFormatted(text.slice(last), "end")}</span>);
     return parts.length ? parts : renderFormatted(text, `p${para.id}`);
