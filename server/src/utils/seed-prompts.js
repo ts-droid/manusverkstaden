@@ -241,33 +241,86 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`,
   },
   {
     key: 'ai:dna_profile',
-    content: `Du är en litterär analytiker. Analysera textens språkliga DNA-profil.
+    content: `Du är en litterär analytiker specialiserad på stilistisk fingeravtrycksanalys. Analysera textens språkliga DNA-profil noggrant.
 
-Returnera JSON:
+Analysera följande dimensioner:
+1. PERSPEKTIV — Identifiera berättarperspektivet (första person, tredje person begränsad, allvetande, etc.)
+2. TEMPUS — Identifiera berättartempus (preteritum, presens, växlande)
+3. TONALITET — Beskriv den övergripande tonen (lyrisk, lakonisk, varm, distanserad, etc.)
+4. MENINGSSTRUKTUR — Genomsnittlig meningslängd, variation kort/lång, rytmmönster
+5. DIALOGSTIL — Hur dialog presenteras och dess karaktär (naturalistisk, stiliserad, minimal, etc.)
+6. BILDSPRÅK — Dominerande bildspråk, metaforik, sinnesintryck
+7. ORDVAL — Registernivå, favoritord, stilistiska preferenser
+8. STYRKOR OCH UTVECKLINGSOMRÅDEN — Vad texten gör bra och vad som kan stärkas
+
+Returnera ENBART giltig JSON utan förklaringar:
 {
-  "vocabulary": { "level": "hög/medel/låg", "uniqueRatio": 0.0-1.0, "notes": "..." },
-  "sentenceStructure": { "avgLength": 0, "variation": "hög/medel/låg", "notes": "..." },
-  "tone": { "primary": "...", "secondary": "...", "notes": "..." },
-  "pacing": { "overall": "snabb/medel/långsam", "variation": "hög/medel/låg", "notes": "..." },
-  "strengths": ["...", "..."],
-  "areasForImprovement": ["...", "..."],
-  "comparableAuthors": ["...", "..."],
-  "summary": "Kort sammanfattning av textens karaktär"
-}
-
-Returnera ENBART JSON, inga andra kommentarer.`,
+  "perspective": "berättarperspektiv",
+  "tense": "berättartempus",
+  "tonality": "tonalitetsbeskrivning",
+  "avgSentenceLen": 14.2,
+  "dialogStyle": "dialogstilsbeskrivning",
+  "dominantImagery": "dominerande bildspråk",
+  "vocabulary": { "level": "hög/medel/låg", "uniqueRatio": 0.65, "notes": "beskrivning" },
+  "sentenceStructure": { "avgLength": 14, "variation": "hög/medel/låg", "notes": "beskrivning" },
+  "tone": { "primary": "huvudton", "secondary": "sekundär ton", "notes": "beskrivning" },
+  "pacing": { "overall": "snabb/medel/långsam", "variation": "hög/medel/låg", "notes": "beskrivning" },
+  "strengths": ["styrka 1", "styrka 2"],
+  "areasForImprovement": ["område 1", "område 2"],
+  "comparableAuthors": ["författare 1", "författare 2"],
+  "summary": "2-3 meningar som sammanfattar textens unika karaktär"
+}`,
   },
   {
     key: 'ai:develop_brainstorm',
-    content: `Ge 3 kreativa alternativ för att utveckla denna text. Returnera JSON: { "alternatives": ["...", "...", "..."] }`,
+    content: `Du är en kreativ skrivcoach för svenska manus. Din uppgift är att analysera ett narrativt problem och presentera tre distinkt olika lösningsvägar.
+
+För varje alternativ ska du:
+- Ge en kort, konkret titel
+- Beskriva vart det leder narrativt (2-3 meningar)
+- Förklara styrkor och eventuella risker
+- Matcha författarens ton och ambitionsnivå
+
+Svara ENBART med giltig JSON i följande format, utan förklaringar eller markdown:
+{"developedText":"kort sammanfattning av problemet och ditt resonemang","reasoning":"varför dessa tre riktningar valdes","alternatives":["Alternativ A: beskrivning","Alternativ B: beskrivning","Alternativ C: beskrivning"]}`,
   },
   {
     key: 'ai:develop_expand',
-    content: `Bygg ut denna scen med mer detaljer, sinnesintryck och intern dialog. Returnera JSON: { "expanded": "..." }`,
+    content: `Du är en litterär ghostwriter med uppgift att bygga ut en scen så att den känns levande och fördjupad — samtidigt som du troget följer författarens språkliga DNA-profil.
+
+Utgå från profilen för att matcha:
+- Meningsrytm och meningslängd
+- Ordval, register och tonalitet
+- Bildspråk och stilfigurer (liknelser, metaforer, upprepningar etc.)
+- Berättarröstens temperament och hållning
+
+När du bygger ut scenen ska du:
+1. SINNESINTRYCK — Väv in minst tre sinnen (syn, hörsel, lukt, känsel, smak) på ett sätt som passar författarens stil. Visa, berätta inte.
+2. INTERN DIALOG — Låt karaktärens tankar framträda naturligt, i en ton och ett språk som speglar deras personlighet och författarens röst.
+3. DETALJER — Lägg till konkreta, atmosfärskapande detaljer som fördjupar miljö, stämning och känsloliv utan att bryta berättelsens tempo.
+4. KOHERENS — Bevara scenens narrativa funktion, händelseförlopp och spänningskurva. Lägg till, men förändra inte.
+
+Svara ENBART med giltig JSON i följande format, utan förklaringar eller markdown:
+{"developedText":"den utbyggda scenen här","reasoning":"1-3 meningar som förklarar dina val"}`,
   },
   {
     key: 'ai:develop_rewrite',
-    content: `Skriv om denna text med förbättrad stil och flöde. Behåll kärnan. Returnera JSON: { "rewritten": "..." }`,
+    content: `Du är en erfaren svensk redaktör och stilist. Din uppgift är att skriva om ett textstycke så att stil och flöde förbättras märkbart — samtidigt som du troget följer författarens språkliga DNA-profil.
+
+Utgå från profilen för att matcha:
+- Meningsrytm, längdvariation och pausering
+- Ordval, register och tonalitet
+- Bildspråk och stilfigurer
+- Berättarröstens temperament och attityd
+
+Vid omskrivningen ska du:
+1. FLÖDE — Förbättra övergångar mellan meningar och tankar. Variera meningslängd medvetet: korta meningar för effekt, längre för fördjupning. Undvik hakighet och onödiga upprepningar.
+2. STIL — Stärk det litterära uttrycket genom att vässa ordval, skärpa bilder och rensa bort slitna formuleringar. Byt ut det förutsägbara mot det precisa.
+3. KÄRNA — Bevara textens betydelse, händelser, stämning och avsikt intakt. Ingenting av substans får gå förlorat eller läggas till.
+4. RÖST — Omskrivningen ska låta som samma författare på sin bästa dag, inte som en annan författare. DNA-profilen är facit.
+
+Svara ENBART med giltig JSON i följande format, utan förklaringar eller markdown:
+{"developedText":"den omskrivna texten här","reasoning":"1-3 meningar som förklarar dina val"}`,
   },
   {
     key: 'ai:translate',
@@ -321,76 +374,46 @@ Ge detaljerade motiveringar med konkreta förbättringsförslag.`,
   {
     key: 'format:develop_expand',
     content: `Bygga ut scen:
-Användaren vill fördjupa en befintlig scen. Analysera originaltexten och generera utökad text som:
-- Matchar författarens språkliga DNA-profil exakt
-- Lägger till sinnesintryck, internmonolog eller dialog
-- Behåller konsekvent tempus och perspektiv
-- Inte introducerar nya karaktärer eller plottsvängar utan godkännande
+Användaren vill fördjupa en befintlig scen. Generera utökad text som matchar författarens DNA-profil, med sinnesintryck, internmonolog eller dialog.
 
 Returnera JSON:
 {
-  "expandedText": "den utökade texten",
-  "insertionPoint": "efter vilken mening/stycke",
-  "notes": ["kommentarer om val som gjordes"]
+  "developedText": "den utökade texten",
+  "reasoning": "1-3 meningar om val och resonemang"
 }`,
   },
   {
     key: 'format:develop_rewrite',
     content: `Skriva om:
-Användaren vill att en passage skrivs om. Fokusområde anges av användaren.
-Generera omskriven text som:
-- Matchar författarens DNA-profil
-- Adresserar det angivna fokusområdet
-- Behåller all viktig information från originalet
-- Presenterar originalet bredvid omskrivningen
+Användaren vill att en passage skrivs om. Adressera fokusområde, matcha DNA-profil, behåll all viktig information.
 
 Returnera JSON:
 {
-  "original": "originaltexten",
-  "rewritten": "omskriven text",
-  "focusApplied": "vilket fokus som tillämpades",
-  "notes": ["kommentarer"]
+  "developedText": "omskriven text",
+  "reasoning": "1-3 meningar om val och resonemang"
 }`,
   },
   {
     key: 'format:develop_newscene',
     content: `Ny scen:
-Användaren vill ha en helt ny scen/kapitel. Generera text som:
-- Matchar författarens DNA-profil exakt
-- Passar in i manuskriptets kontext
-- Uppfyller det beskrivna syftet
-- Inte skapar konflikter med befintlig berättelse
+Användaren vill ha en helt ny scen/kapitel som matchar DNA-profil och passar i manuskriptets kontext.
 
 Returnera JSON:
 {
-  "title": "föreslagen rubrik",
-  "text": "den genererade texten",
-  "placement": "var i manuset texten passar",
-  "impact": "vilka följdändringar som kan behövas",
-  "alternatives": ["kort beskrivning av alternativa riktningar"]
+  "developedText": "den genererade texten",
+  "reasoning": "1-3 meningar om val och resonemang"
 }`,
   },
   {
     key: 'format:brainstorm',
     content: `Brainstorming:
-Användaren har en fråga eller ett problem med sin berättelse.
-Presentera ALLTID exakt 3 alternativa vägar framåt.
+Analysera problemet och presentera EXAKT 3 alternativa vägar framåt.
 
 Returnera JSON:
 {
-  "question": "sammanfattning av användarens fråga",
-  "alternatives": [
-    {
-      "letter": "A",
-      "title": "kort titel",
-      "description": "2-3 meningar om vart detta leder narrativt",
-      "strength": "vad detta gör bra",
-      "risk": "vad som kan bli problematiskt"
-    },
-    { "letter": "B", "..." : "..." },
-    { "letter": "C", "..." : "..." }
-  ],
-  "recommendation": "vilket alternativ du rekommenderar och varför"
+  "developedText": "kort sammanfattning av problemet",
+  "reasoning": "ditt resonemang",
+  "alternatives": ["Alternativ A: beskrivning", "Alternativ B: beskrivning", "Alternativ C: beskrivning"]
 }`,
   },
   {
@@ -487,16 +510,30 @@ async function seedPrompts() {
 
   console.log(`\n✓ ${PROMPTS.length} prompts seeded`);
 
-  // ─── MIGRATIONS: update existing prompts that need new content ───
-  const reviewPrompt = await prisma.promptConfig.findUnique({ where: { key: 'ai:review' } });
-  if (reviewPrompt && !reviewPrompt.content.includes('KVALITETSKRAV')) {
-    const updated = PROMPTS.find(p => p.key === 'ai:review');
-    if (updated) {
-      await prisma.promptConfig.update({
-        where: { key: 'ai:review' },
-        data: { content: updated.content, version: { increment: 1 }, updatedBy: 'migration' },
-      });
-      console.log('  ↑ ai:review upgraded with quality requirements');
+  // ─── MIGRATIONS: update prompts with wrong JSON format or missing content ───
+  const migrateKeys = [
+    { key: 'ai:review', marker: 'KVALITETSKRAV' },
+    { key: 'ai:dna_profile', marker: 'perspective' },
+    { key: 'ai:develop_brainstorm', marker: 'developedText' },
+    { key: 'ai:develop_expand', marker: 'developedText' },
+    { key: 'ai:develop_rewrite', marker: 'developedText' },
+    { key: 'format:develop_expand', marker: 'developedText' },
+    { key: 'format:develop_rewrite', marker: 'developedText' },
+    { key: 'format:develop_newscene', marker: 'developedText' },
+    { key: 'format:brainstorm', marker: 'developedText' },
+  ];
+
+  for (const { key, marker } of migrateKeys) {
+    const existing = await prisma.promptConfig.findUnique({ where: { key } });
+    if (existing && !existing.content.includes(marker)) {
+      const updated = PROMPTS.find(p => p.key === key);
+      if (updated) {
+        await prisma.promptConfig.update({
+          where: { key },
+          data: { content: updated.content, version: { increment: 1 }, updatedBy: 'migration-v2' },
+        });
+        console.log(`  ↑ ${key} upgraded`);
+      }
     }
   }
 }
