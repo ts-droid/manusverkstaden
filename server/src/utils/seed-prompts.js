@@ -213,10 +213,23 @@ Returnera ett JSON-array med objekt:
   "type": "grammar" | "style" | "repetition" | "structure",
   "priority": "red" | "yellow" | "green",
   "level": 1-4,
-  "original": "den ursprungliga texten",
+  "original": "exakt citat från texten",
   "replacement": "föreslagen ersättning",
   "reason": "kort förklaring på svenska"
 }
+
+VIKTIGT om "original"-fältet:
+- "original" MÅSTE vara en EXAKT ordagrann kopia från texten, tecken för tecken
+- Kopiera texten direkt - ändra INGA ord, lägg inte till eller ta bort något
+- Inkludera tillräckligt med kontext (hela meningen eller frasen) så att citatet är unikt i texten
+- Om du inte kan citera exakt, hoppa över förslaget
+
+KVALITETSKRAV:
+- Var SÄKER på att ditt förslag verkligen är en förbättring innan du inkluderar det
+- Dubbelkolla svensk grammatik noggrant: substantivets genus styr adjektivböjningen (en dyster natt, ett dystert mörker, den/det dystra)
+- Föreslå INTE ändringar av korrekt böjda ord – verifiera genus och böjning innan du flaggar
+- Om du är osäker på om något är ett fel, hoppa över det – falska positiva är värre än att missa något
+- Prioritera tydliga, odiskutabla förbättringar framför subjektiva stilval
 
 Nivåer:
 1 = Utvecklingsredaktionellt (berättarstruktur, tempo, karaktärer)
@@ -473,6 +486,19 @@ async function seedPrompts() {
   }
 
   console.log(`\n✓ ${PROMPTS.length} prompts seeded`);
+
+  // ─── MIGRATIONS: update existing prompts that need new content ───
+  const reviewPrompt = await prisma.promptConfig.findUnique({ where: { key: 'ai:review' } });
+  if (reviewPrompt && !reviewPrompt.content.includes('KVALITETSKRAV')) {
+    const updated = PROMPTS.find(p => p.key === 'ai:review');
+    if (updated) {
+      await prisma.promptConfig.update({
+        where: { key: 'ai:review' },
+        data: { content: updated.content, version: { increment: 1 }, updatedBy: 'migration' },
+      });
+      console.log('  ↑ ai:review upgraded with quality requirements');
+    }
+  }
 }
 
 seedPrompts()
