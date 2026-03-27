@@ -5240,10 +5240,23 @@ export default function App() {
                 let newContent;
 
                 // REPLACE original text with new text (not append)
+                const norm = s => s.replace(/\s+/g, ' ').trim();
                 if (originalText && chapter.content.includes(originalText)) {
+                  // Exact match — simple replace
                   newContent = chapter.content.replace(originalText, newText);
+                } else if (originalText && norm(chapter.content).includes(norm(originalText))) {
+                  // Fuzzy match (whitespace differences) — replace by paragraph
+                  const paraIndex = oldParas.findIndex(p => norm(p.text).includes(norm(originalText)) || norm(originalText).includes(norm(p.text)));
+                  if (paraIndex >= 0) {
+                    const updatedParas = oldParas.map((p, i) =>
+                      i === paraIndex ? { ...p, text: newText } : p
+                    );
+                    newContent = updatedParas.map(p => p.text).join("\n\n");
+                  } else {
+                    newContent = chapter.content + "\n\n" + newText;
+                  }
                 } else if (paraId) {
-                  // Fallback: replace the paragraph content
+                  // Fallback: replace the specific paragraph
                   const paraIndex = oldParas.findIndex(p => p.id === paraId);
                   if (paraIndex >= 0) {
                     const updatedParas = oldParas.map((p, i) =>
