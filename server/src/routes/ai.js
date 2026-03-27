@@ -49,14 +49,33 @@ router.post('/review', async (req, res, next) => {
       where: { chapterId, status: 'PENDING' },
     });
 
-    // Filter out new suggestions that duplicate kept ones (same original text)
+    // Filter out new suggestions that duplicate kept ones (same or overlapping original text)
+    const keptOriginalsArray = [...keptOriginals];
     const newSuggestions = suggestions.filter(s => {
       const origKey = s.original?.trim().toLowerCase();
-      return origKey && !keptOriginals.has(origKey);
+      if (!origKey) return false;
+      // Exact match
+      if (keptOriginals.has(origKey)) return false;
+      // Overlap: new original is subset of kept, or kept is subset of new
+      for (const kept of keptOriginalsArray) {
+        if (origKey.includes(kept) || kept.includes(origKey)) return false;
+      }
+      return true;
     });
 
+    // Dedup within new suggestions: if two have overlapping originals, keep the longer one
+    const deduped = [];
+    for (const s of newSuggestions) {
+      const origKey = s.original?.trim().toLowerCase();
+      const isDuplicate = deduped.some(existing => {
+        const exKey = existing.original?.trim().toLowerCase();
+        return exKey && origKey && (exKey.includes(origKey) || origKey.includes(exKey));
+      });
+      if (!isDuplicate) deduped.push(s);
+    }
+
     const created = await Promise.all(
-      newSuggestions.map(s =>
+      deduped.map(s =>
         prisma.suggestion.create({
           data: {
             type: s.type,

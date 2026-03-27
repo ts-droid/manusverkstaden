@@ -58,6 +58,18 @@ Du MÅSTE vara systematisk och INTE missa problem. Gå igenom texten mening för
    - Stilistiska alternativ
    OBS: Begränsa gröna förslag till max 5 – prioritera de som gör störst skillnad.
 
+TEMPUSMEDVETENHET – KRITISKT:
+- Identifiera berättartempus (preteritum/presens) INNAN du granskar. De flesta svenska romaner använder preteritum.
+- Föreslå ALDRIG tempusbyte från preteritum till presens (eller vice versa) om inte texten har en OAVSIKTLIG tempusväxling.
+- "var", "hade", "kunde" i en preteritum-berättelse är KORREKT – flagga INTE dessa som fel.
+- Flagga bara tempus om det finns en INKONSEKVENT växling inom samma stycke/scen.
+
+CITATPRECISION – KRITISKT:
+- Varje "original"-fält MÅSTE vara unikt i texten. Inkludera tillräckligt med omgivande text.
+- Citera ALDRIG bara 2-3 ord – inkludera hela frasen eller meningen.
+- Om samma ord/fras förekommer flera gånger, inkludera mer kontext så det blir unikt.
+- Skapa ALDRIG två förslag med överlappande original-citat (ett kort och ett långt för samma ställe).
+
 VIKTIGT: Var hellre för noggrann än för mild. Det är bättre att flagga något som visar sig vara OK, än att missa ett faktiskt problem. Författaren kan alltid avvisa förslaget.
 
 PRIORITETSNIVÅER:
@@ -515,7 +527,7 @@ async function seedPrompts() {
   // ─── MIGRATIONS: update prompts with wrong JSON format or missing content ───
   const migrateKeys = [
     { key: 'ai:review', marker: 'hela meningen' },
-    { key: 'grund:base_prompt', marker: 'hela meningen' },
+    { key: 'grund:base_prompt', marker: 'TEMPUSMEDVETENHET' },
     { key: 'ai:dna_profile', marker: 'perspective' },
     { key: 'ai:develop_brainstorm', marker: 'developedText' },
     { key: 'ai:develop_expand', marker: 'developedText' },
