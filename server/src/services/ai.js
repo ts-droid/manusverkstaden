@@ -39,14 +39,28 @@ async function sendMessage({ model = 'claude-sonnet-4-20250514', max_tokens = 40
     throw new Error('Anthropic API-nyckel saknas. Ställ in ANTHROPIC_API_KEY.');
   }
 
-  const response = await client.messages.create({
-    model,
-    max_tokens,
-    system,
-    messages,
-  });
-
-  return response;
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await client.messages.create({
+        model,
+        max_tokens,
+        system,
+        messages,
+      });
+      return response;
+    } catch (err) {
+      const status = err?.status || err?.error?.status;
+      const isRetryable = status === 500 || status === 529 || err?.code === 'ECONNRESET';
+      if (isRetryable && attempt < maxRetries) {
+        const delay = 1000 * (attempt + 1); // 1s, 2s
+        console.warn(`[AI] Retryable error (${status || err.code}), attempt ${attempt + 1}/${maxRetries}, waiting ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 /**
