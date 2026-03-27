@@ -133,6 +133,13 @@ class ApiClient {
     return this.request(`/projects/${id}`, { method: 'DELETE' });
   }
 
+  async duplicateProject(id, newTitle) {
+    return this.request(`/projects/${id}/duplicate`, {
+      method: 'POST',
+      body: JSON.stringify({ title: newTitle }),
+    });
+  }
+
   async uploadManuscript(projectId, file) {
     const formData = new FormData();
     formData.append('file', file);

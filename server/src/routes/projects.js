@@ -131,4 +131,44 @@ router.post('/:id/upload', upload.single('file'), async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ─── DUPLICATE PROJECT (save as new version) ───
+router.post('/:id/duplicate', async (req, res, next) => {
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: req.params.id },
+      include: { chapters: { orderBy: { number: 'asc' } } },
+    });
+    if (!project || project.userId !== req.user.id) {
+      return res.status(404).json({ error: 'Projektet hittades inte' });
+    }
+
+    const newTitle = req.body.title || `${project.title} (kopia)`;
+
+    const newProject = await prisma.project.create({
+      data: {
+        title: newTitle,
+        genres: project.genres,
+        modules: project.modules,
+        userId: project.userId,
+      },
+    });
+
+    const newChapters = await Promise.all(
+      project.chapters.map(ch =>
+        prisma.chapter.create({
+          data: {
+            number: ch.number,
+            title: ch.title,
+            content: ch.content,
+            wordCount: ch.wordCount,
+            projectId: newProject.id,
+          },
+        })
+      )
+    );
+
+    res.json({ project: { ...newProject, chapters: newChapters } });
+  } catch (err) { next(err); }
+});
+
 export default router;

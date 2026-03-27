@@ -3980,6 +3980,8 @@ export default function App() {
   const [reReviewing, setReReviewing] = useState(false);
   const [showReReviewModal, setShowReReviewModal] = useState(false);
   const [reReviewLevel, setReReviewLevel] = useState(analysisLevel || "standard");
+  const [reReviewSelectedChapters, setReReviewSelectedChapters] = useState(new Set()); // empty = all
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   const handleReReview = async (level) => {
     if (reReviewing || batchAnalyzing) return;
@@ -4025,14 +4027,19 @@ export default function App() {
     setRejected(new Set());
     setActiveSuggestion(null);
 
-    // Re-run analysis on all chapters via backend API
-    for (let i = 0; i < chapters.length; i++) {
+    // Re-run analysis on selected chapters (or all if none selected)
+    const chaptersToReview = reReviewSelectedChapters.size > 0
+      ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
+      : chapters;
+    setReReviewSelectedChapters(new Set()); // reset selection
+
+    for (let i = 0; i < chaptersToReview.length; i++) {
       if (abortProcessingRef.current) {
         abortProcessingRef.current = false;
         break;
       }
-      const ch = chapters[i];
-      setProcessingStatus(`Granskning ${activeReviewRound + 1}: ${ch.title} (${i + 1}/${chapters.length})...`);
+      const ch = chaptersToReview[i];
+      setProcessingStatus(`Granskning ${activeReviewRound + 1}: ${ch.title} (${i + 1}/${chaptersToReview.length})...`);
 
       let success = false;
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
@@ -4062,7 +4069,7 @@ export default function App() {
         }
       }
 
-      if (i < chapters.length - 1) {
+      if (i < chaptersToReview.length - 1) {
         setProcessingStatus(`Förbereder nästa kapitel...`);
         await new Promise(r => setTimeout(r, 3000));
       }
@@ -4397,6 +4404,15 @@ export default function App() {
     return paras.some(p => p.suggestions?.length > 0);
   });
   const manuscriptFullyHandled = allChaptersReviewed && globalPendingCount === 0 && globalAllSuggestions.length > 0;
+
+  // Show completion modal when all suggestions are handled
+  const prevPendingRef = useRef(globalPendingCount);
+  useEffect(() => {
+    if (prevPendingRef.current > 0 && globalPendingCount === 0 && manuscriptFullyHandled && !reReviewing && !batchAnalyzing) {
+      setShowCompletionModal(true);
+    }
+    prevPendingRef.current = globalPendingCount;
+  }, [globalPendingCount, manuscriptFullyHandled, reReviewing, batchAnalyzing]);
 
   // ─── RENDER ───
 
@@ -5447,14 +5463,70 @@ export default function App() {
               <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Ny granskning</h3>
               <button onClick={() => setShowReReviewModal(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
             </div>
-            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 20px", lineHeight: 1.5 }}>
-              Befintliga förslag arkiveras. Godkända ändringar behålls i texten. Välj analysnivå:
+            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 16px", lineHeight: 1.5 }}>
+              Godkända ändringar behålls i texten. Redan hanterade förslag filtreras bort.
             </p>
+
+            {/* Chapter selection */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink }}>Kapitel att granska</span>
+                <button onClick={() => {
+                  if (reReviewSelectedChapters.size === chapters.length || reReviewSelectedChapters.size === 0) {
+                    setReReviewSelectedChapters(new Set());
+                  } else {
+                    setReReviewSelectedChapters(new Set(chapters.map(c => c.id)));
+                  }
+                }} style={{ fontFamily: uiFont, fontSize: 10, color: accent, background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
+                  {reReviewSelectedChapters.size > 0 && reReviewSelectedChapters.size < chapters.length ? "Välj alla" : "Alla kapitel (standard)"}
+                </button>
+              </div>
+              <div style={{ maxHeight: 150, overflowY: "auto", border: `1px solid ${border}`, borderRadius: 8, padding: "4px 0" }}>
+                {chapters.map(ch => {
+                  const isSelected = reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.has(ch.id);
+                  const hasSuggestions = (paragraphsByChapter[ch.id] || []).some(p => p.suggestions?.length > 0);
+                  return (
+                    <label key={ch.id} style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer",
+                      background: isSelected ? "#f7f4ef" : "transparent", transition: "background 0.1s",
+                    }}>
+                      <input type="checkbox" checked={isSelected}
+                        onChange={() => {
+                          setReReviewSelectedChapters(prev => {
+                            const next = new Set(prev.size === 0 ? chapters.map(c => c.id) : prev);
+                            if (next.has(ch.id)) next.delete(ch.id); else next.add(ch.id);
+                            // If all selected, reset to empty (= all)
+                            if (next.size === chapters.length) return new Set();
+                            return next;
+                          });
+                        }}
+                        style={{ accentColor: accent }}
+                      />
+                      <span style={{ fontFamily: uiFont, fontSize: 11, color: ink, flex: 1 }}>{ch.title}</span>
+                      <span style={{ fontFamily: uiFont, fontSize: 9, color: muted }}>{ch.wordCount.toLocaleString()} ord</span>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: hasSuggestions ? "#27864a" : "#c0392b", flexShrink: 0 }} />
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginTop: 4 }}>
+                {reReviewSelectedChapters.size === 0
+                  ? `Alla ${chapters.length} kapitel väljs`
+                  : `${reReviewSelectedChapters.size} av ${chapters.length} kapitel valda`}
+              </div>
+            </div>
+
+            {/* Analysis level */}
+            <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 8 }}>Analysnivå</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
               {Object.values(ANALYSIS_LEVELS).map(lvl => {
                 const active = reReviewLevel === lvl.id;
-                const words = chapters.reduce((s, c) => s + c.wordCount, 0);
-                const estMinutes = Math.ceil(chapters.length * lvl.estimatePerChapter / 60);
+                const selectedChapters = reReviewSelectedChapters.size > 0 ? reReviewSelectedChapters.size : chapters.length;
+                const words = (reReviewSelectedChapters.size > 0
+                  ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
+                  : chapters
+                ).reduce((s, c) => s + c.wordCount, 0);
+                const estMinutes = Math.ceil(selectedChapters * lvl.estimatePerChapter / 60);
                 const estCost = (words / 1000 * lvl.costPer1kWords).toFixed(0);
                 return (
                   <button key={lvl.id} onClick={() => setReReviewLevel(lvl.id)} style={{
@@ -5481,6 +5553,63 @@ export default function App() {
             >
               Starta {ANALYSIS_LEVELS[reReviewLevel].label.toLowerCase()}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLETION MODAL - all suggestions handled */}
+      {showCompletionModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={() => setShowCompletionModal(false)} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
+          <div style={{ position: "relative", background: surface, borderRadius: 16, width: 460, boxShadow: "0 24px 80px rgba(0,0,0,0.18)", padding: "32px 36px", textAlign: "center" }}>
+            <button onClick={() => setShowCompletionModal(false)} style={{ position: "absolute", top: 12, right: 16, background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted }}>✕</button>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+            <h3 style={{ fontFamily: font, fontSize: 22, fontWeight: 700, color: ink, margin: "0 0 8px", letterSpacing: "-0.02em" }}>
+              Alla förslag hanterade!
+            </h3>
+            <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 6px", lineHeight: 1.5 }}>
+              Du har gått igenom alla {globalAllSuggestions.length} förslag i manuskriptet.
+            </p>
+            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 24px", lineHeight: 1.5 }}>
+              {globalAllSuggestions.filter(s => accepted.has(s.id)).length} godkända · {globalAllSuggestions.filter(s => rejected.has(s.id)).length} avvisade
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={async () => {
+                // Save as new version (duplicate project)
+                setShowCompletionModal(false);
+                try {
+                  const date = new Date().toLocaleDateString("sv-SE");
+                  const versionName = `${chapters[0]?.title ? uploadedFile?.name?.replace(/\.[^.]+$/, '') || 'Manus' : 'Manus'} – version ${date}`;
+                  const res = await apiClient.duplicateProject(serverProjectId, versionName);
+                  if (res?.project?.id) {
+                    alert(`Ny version sparad: "${versionName}"`);
+                  }
+                } catch (e) {
+                  console.error("Save version failed:", e);
+                  alert("Kunde inte spara version. Exportera istället.");
+                }
+              }} style={{
+                padding: "13px 0", borderRadius: 9, border: `1px solid ${border}`, background: surface, color: ink,
+                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                📋 Spara som ny version
+              </button>
+              <button onClick={() => { setShowCompletionModal(false); setShowExport(true); }} style={{
+                padding: "13px 0", borderRadius: 9, border: `1px solid ${border}`, background: surface, color: ink,
+                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                📄 Exportera
+              </button>
+              <button onClick={() => { setShowCompletionModal(false); setShowReReviewModal(true); }} style={{
+                padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff",
+                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                ↻ Gör ny granskning
+              </button>
+            </div>
           </div>
         </div>
       )}
