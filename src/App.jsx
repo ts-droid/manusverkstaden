@@ -4308,7 +4308,11 @@ export default function App() {
     .sort((a, b) => {
       const aHandled = accepted.has(a.id) || rejected.has(a.id) ? 1 : 0;
       const bHandled = accepted.has(b.id) || rejected.has(b.id) ? 1 : 0;
-      return aHandled - bHandled; // pending first
+      if (aHandled !== bHandled) return aHandled - bHandled; // pending first
+      // Then sort by position in text (paragraphIndex)
+      const aIdx = a.paragraphIndex ?? 9999;
+      const bIdx = b.paragraphIndex ?? 9999;
+      return aIdx - bIdx;
     });
   const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
   const handledCount = allSuggestions.length - pendingCount;
@@ -4472,18 +4476,56 @@ export default function App() {
   const navigateToTermOccurrence = (suggestionId, terms, occIdx) => {
     const chapter = chapters.find(c => c.id === activeChapter);
     if (!chapter) return;
-    const occs = findAllTermOccurrences(chapter.content, terms);
+
+    // First try: search in chapter.content using regex
+    let occs = findAllTermOccurrences(chapter.content, terms);
+
+    // Second try: if no results from regex, use fuzzy findInText on chapter.content
+    if (occs.length === 0 && terms.length > 0) {
+      const original = terms[0]; // first term is the full original
+      const match = findInText(chapter.content, original);
+      if (match) {
+        occs = [{ term: original, index: match.idx, length: match.len, text: chapter.content.slice(match.idx, match.idx + match.len) }];
+      }
+    }
+
+    // Third try: search paragraph by paragraph using findInText
+    if (occs.length === 0 && terms.length > 0) {
+      const paras = currentParagraphs;
+      let globalOffset = 0;
+      for (const para of paras) {
+        const pText = para.content || '';
+        const match = findInText(pText, terms[0]);
+        if (match) {
+          occs = [{ term: terms[0], index: globalOffset + match.idx, length: match.len, text: pText.slice(match.idx, match.idx + match.len) }];
+          break;
+        }
+        globalOffset += pText.length + 1; // +1 for paragraph separator
+      }
+    }
+
     if (occs.length === 0) return;
     const idx = Math.min(occIdx, occs.length - 1);
     setHighlightTermState({ suggestionId, occurrenceIdx: idx, terms, occurrences: occs });
 
-    // Find the occurrence in the DOM via text scanning
+    // Find the occurrence in the DOM via data attribute or fallback to text search
     setTimeout(() => {
       const el = mainRef.current?.querySelector(`[data-term-highlight="${suggestionId}-${idx}"]`);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        // Fallback: find the suggestion's original text in DOM text nodes
+        const searchText = occs[idx]?.text || terms[0];
+        const walker = document.createTreeWalker(mainRef.current, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          if (node.textContent.includes(searchText.substring(0, 30))) {
+            node.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+            break;
+          }
+        }
       }
-    }, 50);
+    }, 80);
   };
 
   const findInText = (text, original, fromIndex = 0) => {

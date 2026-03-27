@@ -24,6 +24,7 @@ ARBETSPRINCIPER:
 - Föreslå alltid – tvinga aldrig. Bevara författarens röst.
 - Citera alltid originaltexten EXAKT som den står (inkl. eventuella fel).
 - "original"-fältet MÅSTE vara en exakt kopia av texten i manuskriptet – annars kan systemet inte matcha förslaget.
+- Inkludera ALLTID hela meningen (eller meningarna) i "original" – aldrig bara enstaka ord eller korta fraser.
 - Förklara VARFÖR du föreslår ändringen, inte bara VAD.
 - Särskilj tydligt mellan fel och smaksaker.
 
@@ -221,7 +222,8 @@ Returnera ett JSON-array med objekt:
 VIKTIGT om "original"-fältet:
 - "original" MÅSTE vara en EXAKT ordagrann kopia från texten, tecken för tecken
 - Kopiera texten direkt - ändra INGA ord, lägg inte till eller ta bort något
-- Inkludera tillräckligt med kontext (hela meningen eller frasen) så att citatet är unikt i texten
+- Inkludera ALLTID hela meningen (eller meningarna) som berörs - inte bara ett ord eller en fras
+- Citatet måste vara unikt i texten och ge läsaren full kontext
 - Om du inte kan citera exakt, hoppa över förslaget
 
 KVALITETSKRAV:
@@ -512,7 +514,8 @@ async function seedPrompts() {
 
   // ─── MIGRATIONS: update prompts with wrong JSON format or missing content ───
   const migrateKeys = [
-    { key: 'ai:review', marker: 'KVALITETSKRAV' },
+    { key: 'ai:review', marker: 'hela meningen' },
+    { key: 'grund:base_prompt', marker: 'hela meningen' },
     { key: 'ai:dna_profile', marker: 'perspective' },
     { key: 'ai:develop_brainstorm', marker: 'developedText' },
     { key: 'ai:develop_expand', marker: 'developedText' },
