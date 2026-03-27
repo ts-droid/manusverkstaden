@@ -4177,6 +4177,61 @@ export default function App() {
     });
   }, []);
 
+  // ─── BAKE IN SUGGESTION: update chapter content when accepting/undoing ───
+  const bakeInSuggestion = useCallback((chapterId, originalText, replacementText) => {
+    const chapter = chapters.find(c => c.id === chapterId);
+    if (!chapter) return;
+    const normS = s => s.replace(/\s+/g, ' ').trim();
+    let newContent;
+    if (chapter.content.includes(originalText)) {
+      newContent = chapter.content.replace(originalText, replacementText);
+    } else if (normS(chapter.content).includes(normS(originalText))) {
+      // Fuzzy: find paragraph containing the original and replace there
+      const paras = paragraphsByChapter[chapterId] || splitIntoParagraphs(chapter.content);
+      const pIdx = paras.findIndex(p => p.text.includes(originalText) || normS(p.text).includes(normS(originalText)));
+      if (pIdx >= 0) {
+        const oldParaText = paras[pIdx].text;
+        const newParaText = oldParaText.includes(originalText)
+          ? oldParaText.replace(originalText, replacementText)
+          : oldParaText; // skip if truly can't match
+        const updatedParas = paras.map((p, i) => i === pIdx ? { ...p, text: newParaText } : p);
+        newContent = updatedParas.map(p => p.text).join("\n\n");
+      } else {
+        return; // Can't find original text — don't corrupt content
+      }
+    } else {
+      return; // Can't find original text — skip bake-in
+    }
+    // Update chapters state
+    setChapters(prev => prev.map(ch =>
+      ch.id === chapterId ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
+    ));
+    // Rebuild paragraphs preserving suggestions
+    const newParas = splitIntoParagraphs(newContent);
+    const oldParas = paragraphsByChapter[chapterId] || [];
+    const enriched = newParas.map(np => {
+      const op = oldParas.find(o => normS(o.text) === normS(np.text) || o.text === np.text);
+      return op?.suggestions?.length ? { ...np, suggestions: op.suggestions } : np;
+    });
+    // Also try to carry over suggestions from paragraphs that changed (replacement text)
+    for (const op of oldParas) {
+      if (op.suggestions?.length && !enriched.some(ep => ep.suggestions === op.suggestions)) {
+        // Find the enriched para that might contain the replacement text
+        const ep = enriched.find(e => !e.suggestions?.length && (
+          e.text.includes(replacementText) || normS(e.text).includes(normS(replacementText))
+        ));
+        if (ep) {
+          ep.suggestions = op.suggestions;
+        }
+      }
+    }
+    setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enriched }));
+    // Save to DB
+    if (serverProjectId) {
+      apiClient.updateChapter(chapterId, { content: newContent }).catch(e => console.error("Bake-in save failed:", e));
+    }
+  }, [chapters, paragraphsByChapter, serverProjectId, apiClient]);
+
   // ─── GET EFFECTIVE TEXT (with accepted replacements applied) ───
   const getEffectiveText = (para) => {
     if (!para?.suggestions?.length) return para?.text || "";
@@ -4933,7 +4988,10 @@ export default function App() {
                               conventionSuggestions.forEach(s => n.add(s.id));
                               return n;
                             });
-                            conventionSuggestions.forEach(s => apiClient.updateSuggestion(s.id, "ACCEPTED").catch(() => {}));
+                            conventionSuggestions.forEach(s => {
+                              apiClient.updateSuggestion(s.id, "ACCEPTED").catch(() => {});
+                              if (s.original && s.replacement && activeChapter) bakeInSuggestion(activeChapter, s.original, s.replacement);
+                            });
                           }
                         }} style={{
                           fontFamily: uiFont, fontSize: 9.5, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
@@ -4952,7 +5010,10 @@ export default function App() {
                               filteredPending.forEach(s => n.add(s.id));
                               return n;
                             });
-                            filteredPending.forEach(s => apiClient.updateSuggestion(s.id, "ACCEPTED").catch(() => {}));
+                            filteredPending.forEach(s => {
+                              apiClient.updateSuggestion(s.id, "ACCEPTED").catch(() => {});
+                              if (s.original && s.replacement && activeChapter) bakeInSuggestion(activeChapter, s.original, s.replacement);
+                            });
                           }
                         }} style={{
                           fontFamily: uiFont, fontSize: 9.5, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
@@ -5049,27 +5110,22 @@ export default function App() {
                         currentTermIdx={highlightTermState?.suggestionId === s.id ? highlightTermState.occurrenceIdx : null}
                         onNavigateTerm={termOccs.length > 0 ? (idx) => navigateToTermOccurrence(s.id, terms, idx) : null}
                         onToggle={() => { setActiveSuggestion(activeSuggestion === s.id ? null : s.id); if (activeSuggestion !== s.id) setHighlightTermState(null); }}
-                        onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); setHighlightTermState(null); apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e)); }}
+                        onAccept={() => {
+                          setAccepted(prev => new Set([...prev, s.id]));
+                          setActiveSuggestion(null);
+                          setHighlightTermState(null);
+                          apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e));
+                          // Bake replacement into chapter content
+                          if (s.original && s.replacement && activeChapter) {
+                            bakeInSuggestion(activeChapter, s.original, s.replacement);
+                          }
+                        }}
                         onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); setHighlightTermState(null); apiClient.updateSuggestion(s.id, "REJECTED").catch(e => console.error("Save reject failed:", e)); }}
                         onUndo={() => {
-                          // For develop suggestions, restore original text
-                          if (s.type === "develop" && s.original && s.replacement && activeChapter) {
-                            const chapter = chapters.find(c => c.id === activeChapter);
-                            if (chapter && chapter.content.includes(s.replacement.substring(0, 50))) {
-                              const restoredContent = chapter.content.replace(s.replacement, s.original);
-                              setChapters(prev => prev.map(ch =>
-                                ch.id === activeChapter ? { ...ch, content: restoredContent, wordCount: countWords(restoredContent) } : ch
-                              ));
-                              const restoredParas = splitIntoParagraphs(restoredContent);
-                              // Preserve suggestions from other paragraphs
-                              const oldParas = paragraphsByChapter[activeChapter] || [];
-                              const enriched = restoredParas.map(np => {
-                                const op = oldParas.find(o => o.text === np.text);
-                                return op?.suggestions?.length ? { ...np, suggestions: op.suggestions.filter(sg => sg.id !== s.id) } : np;
-                              });
-                              setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: enriched }));
-                              if (serverProjectId) apiClient.updateChapter(activeChapter, { content: restoredContent }).catch(e => console.error("Undo develop failed:", e));
-                            }
+                          // Restore original text for ALL accepted suggestions (not just develop)
+                          if (accepted.has(s.id) && s.original && s.replacement && activeChapter) {
+                            // Undo: replace the replacement text back with original
+                            bakeInSuggestion(activeChapter, s.replacement, s.original);
                           }
                           setAccepted(prev => { const n = new Set(prev); n.delete(s.id); return n; });
                           setRejected(prev => { const n = new Set(prev); n.delete(s.id); return n; });
