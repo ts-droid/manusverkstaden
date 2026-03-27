@@ -541,10 +541,17 @@ async function seedPrompts() {
   }
 }
 
-seedPrompts()
-  .then(() => prisma.$disconnect())
-  .catch((err) => {
-    console.error(err);
-    prisma.$disconnect();
-    process.exit(1);
-  });
+// Export for use in server startup
+export { seedPrompts };
+
+// Run standalone if called directly
+const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+if (isMain) {
+  seedPrompts()
+    .then(() => prisma.$disconnect())
+    .catch((err) => {
+      console.error(err);
+      prisma.$disconnect();
+      process.exit(1);
+    });
+}
