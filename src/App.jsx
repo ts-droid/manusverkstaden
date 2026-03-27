@@ -4217,10 +4217,11 @@ export default function App() {
   };
 
   // ─── EDIT PARAGRAPH ───
-  const handleEditParagraph = (paraId, text) => {
+  const handleEditParagraph = (paraId, text, involvedParaIds = null) => {
     setEditModal({
       text,
       paraId,
+      involvedParaIds, // track all paragraphs involved in multi-para selection
       chapterTitle: currentChapter?.title || "Kapitel",
     });
     setSelectionToolbar(null);
@@ -4234,10 +4235,26 @@ export default function App() {
     const idx = paras.findIndex(p => p.id === paraId);
     if (idx === -1) return;
 
-    paras[idx] = { ...paras[idx], text: newText };
+    // Split edited text on double newlines (user may have added paragraph breaks)
+    const newParts = newText.split(/\n\s*\n/).map(t => t.trim()).filter(t => t.length > 0);
+
+    if (newParts.length <= 1) {
+      // Simple case: single paragraph — update text, clear baked-in accepted suggestions
+      const cleanedSuggestions = (paras[idx].suggestions || []).filter(s => !accepted.has(s.id));
+      paras[idx] = { ...paras[idx], text: newParts[0] || newText.trim(), suggestions: cleanedSuggestions };
+    } else {
+      // User created multiple paragraphs in the editor — split into N paragraphs
+      const newParas = newParts.map((text, i) => ({
+        id: i === 0 ? paras[idx].id : `p${Date.now()}_${i}`,
+        text,
+        suggestions: i === 0 ? (paras[idx].suggestions || []).filter(s => !accepted.has(s.id)) : [],
+      }));
+      paras.splice(idx, 1, ...newParas);
+    }
+
     setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: paras }));
 
-    // Also update the chapter content
+    // Rebuild and save chapter content
     const newContent = paras.map(p => p.text).join("\n\n");
     setChapters(prev => prev.map(ch =>
       ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
@@ -5089,8 +5106,12 @@ export default function App() {
             const paras = paragraphsByChapter[activeChapter] || [];
             const para = paras.find(p => p.id === selectionToolbar.paraId);
             if (selectedText && selectedText.includes("\n")) {
-              // Multi-paragraph selection: open modal with selected text
-              handleEditParagraph(selectionToolbar.paraId, selectedText);
+              // Multi-paragraph selection: find all involved paragraph IDs
+              const involvedIds = paras
+                .filter(p => selectedText.includes(p.text.slice(0, 40)))
+                .map(p => p.id);
+              if (involvedIds.length === 0) involvedIds.push(selectionToolbar.paraId);
+              handleEditParagraph(involvedIds[0], selectedText, involvedIds);
             } else if (para) {
               // Single paragraph: open modal with effective text (includes accepted replacements)
               handleEditParagraph(selectionToolbar.paraId, getEffectiveText(para));
@@ -5136,7 +5157,41 @@ export default function App() {
           text={editModal.text}
           paragraphId={editModal.paraId}
           chapterTitle={editModal.chapterTitle}
-          onSave={(newText) => handleSaveParagraph(editModal.paraId, newText)}
+          onSave={(newText) => {
+            // If multi-paragraph selection was edited, remove text from other involved paragraphs
+            if (editModal.involvedParaIds && editModal.involvedParaIds.length > 1) {
+              const paras = [...(paragraphsByChapter[activeChapter] || [])];
+              // Remove all involved paragraphs except the first
+              const otherIds = editModal.involvedParaIds.slice(1);
+              const cleaned = paras.filter(p => !otherIds.includes(p.id));
+              setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: cleaned }));
+              // Now save the merged text into the first paragraph
+              const firstIdx = cleaned.findIndex(p => p.id === editModal.paraId);
+              if (firstIdx !== -1) {
+                const newParts = newText.split(/\n\s*\n/).map(t => t.trim()).filter(t => t.length > 0);
+                if (newParts.length <= 1) {
+                  cleaned[firstIdx] = { ...cleaned[firstIdx], text: newParts[0] || newText.trim() };
+                } else {
+                  const newParas = newParts.map((text, i) => ({
+                    id: i === 0 ? cleaned[firstIdx].id : `p${Date.now()}_${i}`,
+                    text,
+                    suggestions: i === 0 ? (cleaned[firstIdx].suggestions || []) : [],
+                  }));
+                  cleaned.splice(firstIdx, 1, ...newParas);
+                }
+                setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: cleaned }));
+                const newContent = cleaned.map(p => p.text).join("\n\n");
+                setChapters(prev => prev.map(ch =>
+                  ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
+                ));
+                apiClient.updateChapter(activeChapter, { content: newContent }).catch(err =>
+                  console.error("Failed to save chapter to DB:", err)
+                );
+              }
+            } else {
+              handleSaveParagraph(editModal.paraId, newText);
+            }
+          }}
           onCreateChapter={(text) => handleCreateChapterFromText(text, editModal.paraId)}
           onClose={() => setEditModal(null)}
         />
