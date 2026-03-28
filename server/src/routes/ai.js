@@ -74,8 +74,16 @@ router.post('/review', async (req, res, next) => {
       if (!isDuplicate) deduped.push(s);
     }
 
+    // Filter out no-op suggestions (original ≈ replacement, or "no change needed")
+    const normS = str => str?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
+    const meaningful = deduped.filter(s => {
+      if (s.original && s.replacement && normS(s.original) === normS(s.replacement)) return false;
+      if (s.reason && /ingen ändring|korrekt form|redan korrekt|behövs inte/i.test(s.reason)) return false;
+      return true;
+    });
+
     const created = await Promise.all(
-      deduped.map(s =>
+      meaningful.map(s =>
         prisma.suggestion.create({
           data: {
             type: s.type,

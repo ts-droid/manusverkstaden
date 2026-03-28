@@ -97,7 +97,9 @@ KRITISKT om "replacement"-fältet:
 - Fältet ska ENBART innehålla den nya texten som ska ersätta originalet – inget annat.
 - ALDRIG inkludera instruktioner, parenteser med anmärkningar, eller noter som "(genomgående)", "(ändra överallt)", "(i hela texten)", "(konsekvent)" etc.
 - Om ändringen bör göras genomgående i texten, skriv det i "reason"-fältet, INTE i "replacement".
-- Replacement-fältet matas in direkt i texten vid godkännande – allt du skriver där syns ordagrant.`,
+- Replacement-fältet matas in direkt i texten vid godkännande – allt du skriver där syns ordagrant.
+- Om texten REDAN är korrekt – inkludera INTE förslaget alls. Returnera ALDRIG förslag där original och replacement är identiska eller nästan identiska.
+- Returnera ALDRIG förslag med "ingen ändring behövs", "korrekt form" eller liknande i reason om du inte faktiskt föreslår en ändring.`,
   },
 
   // ═══ GENRETILLÄGG ═══
