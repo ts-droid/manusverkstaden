@@ -60,14 +60,21 @@ async function parseTxtFile(file) {
  * Falls back to plain text extraction.
  */
 async function parseDocxFile(file) {
-  try {
-    const mammoth = await import('mammoth');
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return splitIntoChapters(cleanTextForImport(result.value));
-  } catch (error) {
-    console.error('Docx parsing failed:', error);
-    throw new Error('Kunde inte läsa .docx-filen. Kontrollera att filen inte är skadad.');
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const mammoth = await import('mammoth');
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      return splitIntoChapters(cleanTextForImport(result.value));
+    } catch (error) {
+      console.error(`Docx parsing failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw new Error('Kunde inte läsa .docx-filen. Kontrollera att filen inte är skadad.');
+    }
   }
 }
 
@@ -76,22 +83,29 @@ async function parseDocxFile(file) {
  * Extracts text from all pages.
  */
 async function parsePdfFile(file) {
-  try {
-    const pdfjsLib = await import('pdfjs-dist');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items.map(item => item.str).join(' ');
-      fullText += pageText + '\n\n';
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const pdfjsLib = await import('pdfjs-dist');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n\n';
+      }
+      return splitIntoChapters(cleanTextForImport(fullText));
+    } catch (error) {
+      console.error(`PDF parsing failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw new Error('Kunde inte läsa PDF-filen. Kontrollera att filen inte är skadad.');
     }
-    return splitIntoChapters(cleanTextForImport(fullText));
-  } catch (error) {
-    console.error('PDF parsing failed:', error);
-    throw new Error('Kunde inte läsa PDF-filen. Kontrollera att filen inte är skadad.');
   }
 }
 
