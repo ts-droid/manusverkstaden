@@ -15,6 +15,8 @@ function cleanTextForImport(text) {
     .replace(/\u2012/g, '\u2013')
     .replace(/[ \t]+$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\d{1,4}\s*$/gm, '')                  // Remove standalone page numbers
+    .replace(/\n{3,}/g, '\n\n')                      // Re-collapse after removal
     .trim();
 }
 

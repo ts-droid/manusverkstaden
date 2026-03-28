@@ -43,6 +43,8 @@ function cleanTextForImport(text) {
     .replace(/\u2012/g, '\u2013')                                          // Figure dash → en-dash
     .replace(/[ \t]+$/gm, '')                                              // Trailing whitespace per line
     .replace(/\n{3,}/g, '\n\n')                                            // 3+ newlines → 2
+    .replace(/^\d{1,4}\s*$/gm, '')                                         // Remove standalone page numbers (lines with only 1-4 digits)
+    .replace(/\n{3,}/g, '\n\n')                                            // Re-collapse after page number removal
     .trim();
 }
 

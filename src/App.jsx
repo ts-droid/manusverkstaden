@@ -4485,16 +4485,32 @@ export default function App() {
       return prev.map(c => c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c);
     });
 
-    // Save to DB outside setState (runs after state is committed)
+    // After chapter content updated, also refresh paragraphs to keep para.text in sync
     setTimeout(() => {
-      if (savedContent && serverProjectId) {
-        apiClient.updateChapter(chapterId, { content: savedContent })
-          .then(() => console.log("[Bake-in] Saved to DB"))
-          .catch(e => {
-            console.error("[Bake-in] DB save failed:", e);
-            setSaveStatus("error");
-          });
-      } else if (!savedContent) {
+      if (savedContent) {
+        // Rebuild paragraphs from new content, preserving suggestions
+        const newParas = splitIntoParagraphs(savedContent);
+        const oldParas = paragraphsByChapter[chapterId] || [];
+        const enriched = newParas.map(np => {
+          // Match by text similarity — find closest old paragraph
+          const exact = oldParas.find(op => op.text === np.text);
+          if (exact?.suggestions?.length) return { ...np, suggestions: exact.suggestions };
+          // Fuzzy: check if old paragraph text is a substring or vice versa
+          const fuzzy = oldParas.find(op => np.text.includes(op.text?.substring(0, 40)) || op.text?.includes(np.text.substring(0, 40)));
+          if (fuzzy?.suggestions?.length) return { ...np, suggestions: fuzzy.suggestions };
+          return np;
+        });
+        setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enriched }));
+
+        if (serverProjectId) {
+          apiClient.updateChapter(chapterId, { content: savedContent })
+            .then(() => console.log("[Bake-in] Saved to DB"))
+            .catch(e => {
+              console.error("[Bake-in] DB save failed:", e);
+              setSaveStatus("error");
+            });
+        }
+      } else {
         console.warn("[Bake-in] No content saved — replacement not applied");
       }
     }, 0);
