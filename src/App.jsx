@@ -4585,40 +4585,20 @@ export default function App() {
   const getEffectiveText = (para) => {
     if (!para?.suggestions?.length) return para?.text || "";
     let text = para.text;
-    // Apply accepted replacements in reverse position order (to preserve indices)
-    const norm = (s) => s.replace(/\s+/g, ' ');
-    const findMatch = (haystack, needle) => {
-      const exact = haystack.indexOf(needle);
-      if (exact !== -1) return { idx: exact, len: needle.length };
-      const hNorm = norm(haystack);
-      const nNorm = norm(needle);
-      const normIdx = hNorm.indexOf(nNorm);
-      if (normIdx !== -1) {
-        // Map back to original positions
-        let realIdx = 0, np = 0;
-        while (np < normIdx && realIdx < haystack.length) {
-          if (/\s/.test(haystack[realIdx]) && realIdx > 0 && /\s/.test(haystack[realIdx - 1])) { realIdx++; continue; }
-          realIdx++; np++;
-        }
-        let realEnd = realIdx, ne = normIdx;
-        while (ne < normIdx + nNorm.length && realEnd < haystack.length) {
-          if (/\s/.test(haystack[realEnd]) && realEnd > realIdx && /\s/.test(haystack[realEnd - 1])) { realEnd++; continue; }
-          realEnd++; ne++;
-        }
-        return { idx: realIdx, len: realEnd - realIdx };
-      }
-      return null;
-    };
-    const withPos = para.suggestions
-      .filter(s => accepted.has(s.id) && s.original && s.replacement)
-      .map(s => ({ s, match: findMatch(text, s.original) }))
-      .filter(x => x.match)
-      .sort((a, b) => b.match.idx - a.match.idx); // reverse order to preserve indices
+    // Apply accepted replacements — use same findInText as renderText for consistency
+    const acceptedSuggestions = (para.suggestions || []).filter(s => accepted.has(s.id) && s.original && s.replacement);
+    if (acceptedSuggestions.length === 0) return text;
+    // Sort by position (reverse) to apply from end to start
+    const withPos = acceptedSuggestions.map(s => {
+      const match = findInText(text, s.original);
+      return { s, match };
+    }).filter(x => x.match).sort((a, b) => b.match.idx - a.match.idx);
     for (const { s, match } of withPos) {
       text = text.slice(0, match.idx) + s.replacement + text.slice(match.idx + match.len);
     }
     return text;
   };
+
 
   // ─── EDIT PARAGRAPH ───
   const handleEditParagraph = (paraId, text, involvedParaIds = null) => {
