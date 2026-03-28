@@ -2255,8 +2255,9 @@ function RestorePrompt({ timestamp, onRestore, onDiscard }) {
   );
 }
 
-// ─── AUTH PAGE ───
-function AuthPage({ onLogin, onRegister, error: externalError }) {
+// ─── LANDING PAGE ───
+function LandingPage({ onLogin, onRegister }) {
+  const [authModal, setAuthModal] = useState(null); // null | "login" | "register"
   const [tab, setTab] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -2265,41 +2266,24 @@ function AuthPage({ onLogin, onRegister, error: externalError }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  const openAuth = (mode) => { setAuthModal(mode); setTab(mode); setError(null); setEmail(""); setPassword(""); setName(""); setConfirmPassword(""); };
+  const closeAuth = () => { setAuthModal(null); setError(null); };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    try {
-      await onLogin(email, password);
-    } catch (err) {
-      setError(err.message || "Inloggning misslyckades");
-    } finally {
-      setLoading(false);
-    }
+    try { await onLogin(email, password); } catch (err) { setError(err.message || "Inloggning misslyckades"); } finally { setLoading(false); }
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setError(null);
-    if (password !== confirmPassword) {
-      setError("Lösenorden matchar inte");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Lösenordet måste vara minst 6 tecken");
-      return;
-    }
+    if (password !== confirmPassword) { setError("Lösenorden matchar inte"); return; }
+    if (password.length < 6) { setError("Lösenordet måste vara minst 6 tecken"); return; }
     setLoading(true);
-    try {
-      await onRegister(email, password, name);
-    } catch (err) {
-      setError(err.message || "Registrering misslyckades");
-    } finally {
-      setLoading(false);
-    }
+    try { await onRegister(email, password, name); } catch (err) { setError(err.message || "Registrering misslyckades"); } finally { setLoading(false); }
   };
-
-  const displayError = error || externalError;
 
   const inputStyle = {
     width: "100%", padding: "11px 14px", borderRadius: 8, border: `1px solid ${border}`,
@@ -2308,78 +2292,221 @@ function AuthPage({ onLogin, onRegister, error: externalError }) {
   };
   const labelStyle = { fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: muted, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.04em" };
 
+  const sectionStyle = { maxWidth: 960, margin: "0 auto", padding: "0 24px" };
+  const accentLight = "#f5ebe0";
+
+  const features = [
+    { icon: "\u{1F4DD}", title: "Grundgranskning", desc: "Stavfel, grammatik och interpunktion \u2014 vi hittar det mesta redan i f\u00f6rsta genomg\u00e5ngen." },
+    { icon: "\u2728", title: "Standardgranskning", desc: "Upprepningar, stilbrott och tempo \u2014 din text lyfts till n\u00e4sta niv\u00e5." },
+    { icon: "\u{1F50D}", title: "Djupgranskning", desc: "Dramaturgi, karakt\u00e4rsutveckling och tematik \u2014 som att ha en utvecklingsredakt\u00f6r." },
+  ];
+
+  const steps = [
+    { num: "1", text: "Ladda upp ditt manus (.docx/.pdf/.txt)" },
+    { num: "2", text: "V\u00e4lj analysniv\u00e5" },
+    { num: "3", text: "Granska och redigera med AI-st\u00f6d" },
+  ];
+
+  const extras = [
+    { icon: "\u{1F9EC}", title: "Skrivutveckling", desc: "DNA-profil och scenutbyggnad som st\u00e4rker ditt ber\u00e4ttande." },
+    { icon: "\u{1F310}", title: "\u00d6vers\u00e4ttning", desc: "Professionell AI-\u00f6vers\u00e4ttning med parallellvy och ordlista." },
+    { icon: "\u{1F4C4}", title: "Export med Track Changes", desc: "Exportera till .docx med riktiga \u00e4ndringsmarkeringar." },
+  ];
+
   return (
-    <div style={{ minHeight: "100vh", background: bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: font }}>
+    <div style={{ minHeight: "100vh", background: bg, fontFamily: font, color: ink }}>
       <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <style>{`
+        @keyframes landingFadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 720px) {
+          .lp-features-grid, .lp-steps-grid, .lp-extras-grid { grid-template-columns: 1fr !important; }
+          .lp-hero-heading { font-size: 36px !important; }
+          .lp-nav-inner { padding: 0 16px !important; }
+          .lp-hero { padding: 100px 16px 64px !important; }
+        }
+      `}</style>
 
-      {/* Logo */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <div style={{ width: 36, height: 36, background: ink, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 18, fontWeight: 700 }}>M</div>
-        <span style={{ fontSize: 24, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
-      </div>
-      <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 32px", textAlign: "center" }}>AI-stödd manusgranskning for författare, redaktörer och förlag</p>
-
-      <div style={{ width: "100%", maxWidth: 420, background: surface, borderRadius: 16, padding: "32px 36px", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
-        {/* Tabs */}
-        <div style={{ display: "flex", gap: 0, marginBottom: 28, borderBottom: `2px solid ${border}` }}>
-          {[{ id: "login", label: "Logga in" }, { id: "register", label: "Skapa konto" }].map(t => (
-            <button key={t.id} onClick={() => { setTab(t.id); setError(null); }} style={{
-              flex: 1, padding: "10px 0", border: "none", background: "none", fontFamily: uiFont,
-              fontSize: 13, fontWeight: 600, cursor: "pointer", color: tab === t.id ? accent : muted,
-              borderBottom: tab === t.id ? `2px solid ${accent}` : "2px solid transparent",
-              marginBottom: -2, transition: "all 0.2s",
-            }}>{t.label}</button>
-          ))}
-        </div>
-
-        {displayError && (
-          <div style={{ marginBottom: 16, padding: "10px 14px", background: "#fdf0ef", borderRadius: 8, borderLeft: `3px solid #c0392b`, fontFamily: uiFont, fontSize: 12, color: "#c0392b" }}>
-            {displayError}
+      {/* ── NAV ── */}
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(247,244,239,0.92)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${border}` }}>
+        <div className="lp-nav-inner" style={{ maxWidth: 1080, margin: "0 auto", padding: "0 32px", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, background: ink, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 16, fontWeight: 700, fontFamily: font }}>M</div>
+            <span style={{ fontSize: 18, fontWeight: 700, color: ink, letterSpacing: "-0.02em", fontFamily: font }}>Manusverkstaden</span>
           </div>
-        )}
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button onClick={() => openAuth("login")} style={{ padding: "8px 18px", borderRadius: 7, border: `1px solid ${border}`, background: "transparent", color: ink, fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: uiFont, transition: "all 0.2s" }}>Logga in</button>
+            <button onClick={() => openAuth("register")} style={{ padding: "8px 18px", borderRadius: 7, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont, transition: "all 0.2s" }}>Skapa konto</button>
+          </div>
+        </div>
+      </nav>
 
-        {tab === "login" ? (
-          <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>E-post</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
+      {/* ── HERO ── */}
+      <section className="lp-hero" style={{ padding: "140px 24px 80px", textAlign: "center", animation: "landingFadeIn 0.7s ease-out" }}>
+        <div style={sectionStyle}>
+          <h1 className="lp-hero-heading" style={{ fontFamily: font, fontSize: 52, fontWeight: 700, color: ink, letterSpacing: "-0.03em", lineHeight: 1.12, margin: "0 0 20px", maxWidth: 700, marginLeft: "auto", marginRight: "auto" }}>
+            Din personliga redakt&ouml;r &mdash; driven av AI
+          </h1>
+          <p style={{ fontFamily: uiFont, fontSize: 17, color: muted, lineHeight: 1.6, margin: "0 auto 36px", maxWidth: 560 }}>
+            Manusverkstaden granskar ditt bokmanuskript med samma precision som en professionell redakt&ouml;r. Fr&aring;n stavfel till dramaturgi.
+          </p>
+          <button onClick={() => openAuth("register")} style={{ padding: "14px 36px", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: uiFont, transition: "all 0.2s", boxShadow: "0 4px 16px rgba(160,82,45,0.25)" }}>
+            Kom ig&aring;ng gratis
+          </button>
+        </div>
+      </section>
+
+      {/* ── FEATURES ── */}
+      <section style={{ padding: "64px 24px 72px" }}>
+        <div style={sectionStyle}>
+          <h2 style={{ fontFamily: font, fontSize: 32, fontWeight: 700, color: ink, textAlign: "center", letterSpacing: "-0.02em", margin: "0 0 12px" }}>Tre niv&aring;er av granskning</h2>
+          <p style={{ fontFamily: uiFont, fontSize: 14, color: muted, textAlign: "center", margin: "0 0 44px" }}>V&auml;lj den niv&aring; som passar ditt manus b&auml;st.</p>
+          <div className="lp-features-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+            {features.map((f, i) => (
+              <div key={i} style={{ background: surface, borderRadius: 14, padding: "32px 28px", border: `1px solid ${border}`, transition: "box-shadow 0.2s" }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, background: accentLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginBottom: 18 }}>{f.icon}</div>
+                <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 600, color: ink, margin: "0 0 8px", letterSpacing: "-0.01em" }}>{f.title}</h3>
+                <p style={{ fontFamily: uiFont, fontSize: 13.5, color: muted, lineHeight: 1.55, margin: 0 }}>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ── */}
+      <section style={{ padding: "64px 24px 72px", background: surface }}>
+        <div style={sectionStyle}>
+          <h2 style={{ fontFamily: font, fontSize: 32, fontWeight: 700, color: ink, textAlign: "center", letterSpacing: "-0.02em", margin: "0 0 44px" }}>S&aring; fungerar det</h2>
+          <div className="lp-steps-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+            {steps.map((s, i) => (
+              <div key={i} style={{ textAlign: "center", padding: "24px 16px" }}>
+                <div style={{ width: 52, height: 52, borderRadius: "50%", background: ink, color: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, fontFamily: font, margin: "0 auto 16px" }}>{s.num}</div>
+                <p style={{ fontFamily: uiFont, fontSize: 14, color: ink, lineHeight: 1.5, margin: 0, fontWeight: 500 }}>{s.text}</p>
+                {i < steps.length - 1 && <div style={{ display: "none" }} />}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── EXTRA FEATURES ── */}
+      <section style={{ padding: "64px 24px 72px" }}>
+        <div style={sectionStyle}>
+          <h2 style={{ fontFamily: font, fontSize: 32, fontWeight: 700, color: ink, textAlign: "center", letterSpacing: "-0.02em", margin: "0 0 12px" }}>Mer &auml;n bara granskning</h2>
+          <p style={{ fontFamily: uiFont, fontSize: 14, color: muted, textAlign: "center", margin: "0 0 44px" }}>Verktyg som hj&auml;lper dig genom hela skrivprocessen.</p>
+          <div className="lp-extras-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+            {extras.map((f, i) => (
+              <div key={i} style={{ background: surface, borderRadius: 14, padding: "28px 24px", border: `1px solid ${border}` }}>
+                <div style={{ fontSize: 24, marginBottom: 14 }}>{f.icon}</div>
+                <h3 style={{ fontFamily: font, fontSize: 17, fontWeight: 600, color: ink, margin: "0 0 6px" }}>{f.title}</h3>
+                <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, lineHeight: 1.5, margin: 0 }}>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <section style={{ padding: "72px 24px 80px", background: ink, textAlign: "center" }}>
+        <div style={sectionStyle}>
+          <h2 style={{ fontFamily: font, fontSize: 32, fontWeight: 700, color: bg, letterSpacing: "-0.02em", margin: "0 0 16px" }}>Redo att f&ouml;rb&auml;ttra ditt manus?</h2>
+          <p style={{ fontFamily: uiFont, fontSize: 15, color: "rgba(247,244,239,0.65)", margin: "0 0 32px" }}>Prova Manusverkstaden gratis &mdash; inga kortuppgifter kr&auml;vs.</p>
+          <button onClick={() => openAuth("register")} style={{ padding: "14px 36px", borderRadius: 9, border: `2px solid ${accent}`, background: accent, color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: uiFont, transition: "all 0.2s" }}>
+            Skapa konto gratis
+          </button>
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer style={{ padding: "32px 24px", background: ink, borderTop: "1px solid rgba(247,244,239,0.1)" }}>
+        <div style={{ ...sectionStyle, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+          <span style={{ fontFamily: uiFont, fontSize: 12, color: "rgba(247,244,239,0.45)" }}>&copy; 2026 Manusverkstaden</span>
+          <div style={{ display: "flex", gap: 24 }}>
+            {["Villkor", "Integritet", "Kontakt"].map(link => (
+              <a key={link} href="#" onClick={e => e.preventDefault()} style={{ fontFamily: uiFont, fontSize: 12, color: "rgba(247,244,239,0.45)", textDecoration: "none", transition: "color 0.2s" }}
+                onMouseEnter={e => e.target.style.color = "rgba(247,244,239,0.8)"}
+                onMouseLeave={e => e.target.style.color = "rgba(247,244,239,0.45)"}
+              >{link}</a>
+            ))}
+          </div>
+        </div>
+      </footer>
+
+      {/* ── AUTH MODAL ── */}
+      {authModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={closeAuth} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.5)", backdropFilter: "blur(6px)" }} />
+          <div style={{ position: "relative", background: surface, borderRadius: 16, padding: "32px 36px", maxWidth: 420, width: "calc(100% - 48px)", boxShadow: "0 24px 80px rgba(0,0,0,0.2)", animation: "landingFadeIn 0.3s ease-out" }}>
+            {/* Close button */}
+            <button onClick={closeAuth} style={{ position: "absolute", top: 14, right: 14, width: 28, height: 28, borderRadius: "50%", border: "none", background: bg, color: muted, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>&times;</button>
+
+            {/* Logo */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 20 }}>
+              <div style={{ width: 28, height: 28, background: ink, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 14, fontWeight: 700 }}>M</div>
+              <span style={{ fontSize: 17, fontWeight: 700, color: ink, letterSpacing: "-0.02em", fontFamily: font }}>Manusverkstaden</span>
             </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Lösenord</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Ditt lösenord" style={inputStyle} />
+
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: `2px solid ${border}` }}>
+              {[{ id: "login", label: "Logga in" }, { id: "register", label: "Skapa konto" }].map(t => (
+                <button key={t.id} onClick={() => { setTab(t.id); setError(null); }} style={{
+                  flex: 1, padding: "10px 0", border: "none", background: "none", fontFamily: uiFont,
+                  fontSize: 13, fontWeight: 600, cursor: "pointer", color: tab === t.id ? accent : muted,
+                  borderBottom: tab === t.id ? `2px solid ${accent}` : "2px solid transparent",
+                  marginBottom: -2, transition: "all 0.2s",
+                }}>{t.label}</button>
+              ))}
             </div>
-            <button type="submit" disabled={loading} style={{
-              width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
-              background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
-              cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
-            }}>{loading ? "Loggar in..." : "Logga in"}</button>
-          </form>
-        ) : (
-          <form onSubmit={handleRegister}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Namn</label>
-              <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Ditt namn" style={inputStyle} />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>E-post</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Lösenord</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Minst 6 tecken" style={inputStyle} />
-            </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Bekräfta lösenord</label>
-              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required placeholder="Upprepa lösenord" style={inputStyle} />
-            </div>
-            <button type="submit" disabled={loading} style={{
-              width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
-              background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
-              cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
-            }}>{loading ? "Skapar konto..." : "Skapa konto"}</button>
-          </form>
-        )}
-      </div>
+
+            {error && (
+              <div style={{ marginBottom: 16, padding: "10px 14px", background: "#fdf0ef", borderRadius: 8, borderLeft: `3px solid #c0392b`, fontFamily: uiFont, fontSize: 12, color: "#c0392b" }}>
+                {error}
+              </div>
+            )}
+
+            {tab === "login" ? (
+              <form onSubmit={handleLogin}>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>E-post</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 24 }}>
+                  <label style={labelStyle}>L&ouml;senord</label>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Ditt l\u00f6senord" style={inputStyle} />
+                </div>
+                <button type="submit" disabled={loading} style={{
+                  width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
+                  background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
+                  cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
+                }}>{loading ? "Loggar in..." : "Logga in"}</button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister}>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>Namn</label>
+                  <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Ditt namn" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>E-post</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>L&ouml;senord</label>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Minst 6 tecken" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 24 }}>
+                  <label style={labelStyle}>Bekr&auml;fta l&ouml;senord</label>
+                  <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required placeholder="Upprepa l\u00f6senord" style={inputStyle} />
+                </div>
+                <button type="submit" disabled={loading} style={{
+                  width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
+                  background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
+                  cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
+                }}>{loading ? "Skapar konto..." : "Skapa konto"}</button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4599,9 +4726,9 @@ export default function App() {
     </div>
   );
 
-  // Not authenticated → show auth page
+  // Not authenticated → show landing page
   if (!isAuthenticated) return (
-    <AuthPage onLogin={login} onRegister={register} />
+    <LandingPage onLogin={login} onRegister={register} />
   );
 
   // Dashboard (also handles "loading" state after auth is settled)
