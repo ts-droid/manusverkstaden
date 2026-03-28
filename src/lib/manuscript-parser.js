@@ -106,6 +106,13 @@ function splitIntoChapters(text) {
   // Swedish ordinal words for chapter matching
   const SWEDISH_ORDINALS = "f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugonde|tjugof[öo]rsta|tjugoandra|tjugotredje|tjugofj[äa]rde|tjugofemte|tjugosjätte|tjugosjunde|tjugoåttonde|tjugonionde|trettionde";
 
+  // Map ordinal words to numbers for display
+  const ordinalToNumber = (word) => {
+    const w = word.toLowerCase().replace(/ö/g, 'o').replace(/ä/g, 'a').replace(/å/g, 'a');
+    const map = { forsta: 1, andra: 2, tredje: 3, fjarde: 4, femte: 5, sjatte: 6, sjunde: 7, attonde: 8, nionde: 9, tionde: 10, elfte: 11, tolfte: 12, trettonde: 13, fjortonde: 14, femtonde: 15, sextonde: 16, sjuttonde: 17, artonde: 18, nittonde: 19, tjugonde: 20, tjugoforsta: 21, tjugoandra: 22, tjugotredje: 23, tjugofjarde: 24, tjugofemte: 25, tjugosjatte: 26, tjugosjunde: 27, tjugoattonde: 28, tjugonionde: 29, trettionde: 30 };
+    return map[w] || null;
+  };
+
   // Pre-process: ensure chapter headings get their own line.
   // Mammoth/PDF extractors may merge headings with body text, losing the \n boundary.
   const chapterWordPattern = new RegExp(`([^\\n])((?:${SWEDISH_ORDINALS})\\s+kapitlet)`, 'gi');
@@ -159,10 +166,19 @@ function splitIntoChapters(text) {
 
     if (content.length === 0) continue; // Skip empty chapters (heading-only)
 
+    // Map ordinal chapter names to "Kapitel N" for display
+    let displayTitle = title;
+    const ordinalMatch = title.match(new RegExp(`^(${SWEDISH_ORDINALS})\\s+kapitlet`, 'i'));
+    if (ordinalMatch) {
+      const num = ordinalToNumber(ordinalMatch[1]);
+      if (num) displayTitle = `Kapitel ${num}`;
+    }
+
     chapters.push({
       id: i + 1,
       number: i + 1,
-      title,
+      title: displayTitle,
+      originalTitle: title, // preserve author's chapter naming in manuscript text
       content,
       wordCount: countWords(content),
       status: 'pending',
