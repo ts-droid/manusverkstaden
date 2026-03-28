@@ -101,7 +101,14 @@ async function parsePdfFile(file) {
  */
 function splitIntoChapters(text) {
   // Normalize line breaks and clean up whitespace
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Pre-process: ensure chapter headings get their own line.
+  // Mammoth/PDF extractors may merge headings with body text, losing the \n boundary.
+  // Insert \n before known chapter patterns if not already at line start.
+  normalized = normalized
+    .replace(/([^\n])(KAPITEL\s+\d+)/gi, '$1\n$2')
+    .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2');
 
   // Common chapter heading patterns - order matters, most specific first
   // The key fix: match KAPITEL/Chapter headings even if not at absolute line start

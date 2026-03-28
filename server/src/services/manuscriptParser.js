@@ -42,6 +42,12 @@ export async function parseUploadedFile(file) {
  * Split text into chapters based on Swedish chapter markers.
  */
 function splitIntoChapters(text) {
+  // Pre-process: ensure chapter headings get their own line
+  // Mammoth may merge headings with body text, losing line boundaries
+  text = text
+    .replace(/([^\n])(KAPITEL\s+\d+)/gi, '$1\n$2')
+    .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2');
+
   const chapterPattern = /^(KAPITEL|Kapitel|kapitel|CHAPTER|Chapter)\s+(\d+)/gm;
   const markers = [];
   let match;
