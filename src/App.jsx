@@ -8,17 +8,7 @@ import { useAuth } from "./contexts/AuthContext";
 import { apiClient, AuthError } from "./lib/api-client";
 
 // ─── DATA ───
-const GENRES = [
-  { id: "realistic", icon: "📖", label: "Realistisk fiktion", desc: "Samtidsroman, vardagsskildring" },
-  { id: "crime", icon: "🔍", label: "Deckare / Thriller", desc: "Brott, utredning, spänning" },
-  { id: "fantasy", icon: "🐉", label: "Fantasy / Sci-fi", desc: "Fiktiva världar, magi, framtid" },
-  { id: "romance", icon: "💕", label: "Romantik / Feelgood", desc: "Kärleksrelationer, personlig utveckling" },
-  { id: "horror", icon: "👻", label: "Skräck / Gothic", desc: "Obehag, rädsla, existentiell ångest" },
-  { id: "historical", icon: "📚", label: "Historisk roman", desc: "Avgränsad historisk period" },
-  { id: "ya", icon: "👶", label: "Barn & Ungdom", desc: "Upp till 18 år" },
-  { id: "memoir", icon: "📝", label: "Memoar / Sakprosa", desc: "Icke-fiktivt, berättande" },
-  { id: "poetry", icon: "🎭", label: "Lyrik / Poesi", desc: "Dikt, prosalyrik, versepos" },
-];
+import { GENRES } from "./data/genres";
 
 const LANGUAGES = [
   { id: "en", flag: "🇬🇧", label: "Engelska", sub: "British English" },
