@@ -103,20 +103,24 @@ function splitIntoChapters(text) {
   // Normalize line breaks and clean up whitespace
   let normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
+  // Swedish ordinal words for chapter matching
+  const SWEDISH_ORDINALS = "f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugonde|tjugof[öo]rsta|tjugoandra|tjugotredje|tjugofj[äa]rde|tjugofemte|tjugosjätte|tjugosjunde|tjugoåttonde|tjugonionde|trettionde";
+
   // Pre-process: ensure chapter headings get their own line.
   // Mammoth/PDF extractors may merge headings with body text, losing the \n boundary.
-  // Insert \n before known chapter patterns if not already at line start.
+  const chapterWordPattern = new RegExp(`([^\\n])((?:${SWEDISH_ORDINALS})\\s+kapitlet)`, 'gi');
   normalized = normalized
     .replace(/([^\n])(KAPITEL\s+\d+)/gi, '$1\n$2')
-    .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2');
+    .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2')
+    .replace(chapterWordPattern, '$1\n$2');
 
   // Common chapter heading patterns - order matters, most specific first
-  // The key fix: match KAPITEL/Chapter headings even if not at absolute line start
-  // (mammoth/pdf extractors may add spaces or merge lines)
+  const ordinalChapterPattern = new RegExp(`(?:^|\\n)\\s*((${SWEDISH_ORDINALS})\\s+kapitlet[^\\n]*)`, 'gi');
   const chapterPatterns = [
     /(?:^|\n)\s*(KAPITEL\s+\d+[^\n]*)/gi,
     /(?:^|\n)\s*(Kapitel\s+\d+[^\n]*)/g,
     /(?:^|\n)\s*(Chapter\s+\d+[^\n]*)/gi,
+    ordinalChapterPattern, // "Första kapitlet", "Tionde kapitlet", etc.
     /(?:^|\n)\s*(\d+\.\s+[A-ZÅÄÖ][^\n]*)/g,
     /^(#{1,2}\s+[^\n]+)/gm, // Markdown headings
   ];

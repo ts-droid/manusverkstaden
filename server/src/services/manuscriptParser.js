@@ -41,13 +41,47 @@ export async function parseUploadedFile(file) {
 /**
  * Split text into chapters based on Swedish chapter markers.
  */
+/**
+ * Build chapter objects from detected heading markers.
+ */
+function buildChaptersFromMarkers(text, markers) {
+  const chapters = [];
+  for (let i = 0; i < markers.length; i++) {
+    const headingEnd = markers[i].index + markers[i].title.length;
+    const contentStart = text.indexOf('\n', headingEnd);
+    const start = contentStart !== -1 ? contentStart + 1 : headingEnd;
+    const end = i + 1 < markers.length ? markers[i + 1].index : text.length;
+    const content = text.slice(start, end).trim();
+    const words = content.split(/\s+/).filter(w => w).length;
+    if (content.length === 0) continue;
+    chapters.push({ title: markers[i].title, content, wordCount: words });
+  }
+  return chapters.length > 0 ? chapters : splitByWordCount(text, 5000);
+}
+
 function splitIntoChapters(text) {
+  // Swedish ordinal words for chapter matching
+  const SWEDISH_ORDINALS = "f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugonde|tjugof[öo]rsta|tjugoandra|tjugotredje|tjugofj[äa]rde|tjugofemte|tjugosjätte|tjugosjunde|tjugoåttonde|tjugonionde|trettionde";
+
   // Pre-process: ensure chapter headings get their own line
-  // Mammoth may merge headings with body text, losing line boundaries
+  const chapterWordPattern = new RegExp(`([^\\n])((?:${SWEDISH_ORDINALS})\\s+kapitlet)`, 'gi');
   text = text
     .replace(/([^\n])(KAPITEL\s+\d+)/gi, '$1\n$2')
-    .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2');
+    .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2')
+    .replace(chapterWordPattern, '$1\n$2');
 
+  // Try Swedish ordinal pattern first: "Första kapitlet", "Tionde kapitlet"
+  const ordinalPattern = new RegExp(`^((?:${SWEDISH_ORDINALS})\\s+kapitlet.*)$`, 'gim');
+  const ordinalMarkers = [];
+  let ordMatch;
+  while ((ordMatch = ordinalPattern.exec(text)) !== null) {
+    ordinalMarkers.push({ index: ordMatch.index, title: ordMatch[0].trim() });
+  }
+  if (ordinalMarkers.length >= 2) {
+    return buildChaptersFromMarkers(text, ordinalMarkers);
+  }
+
+  // Fallback: numeric pattern "KAPITEL 1", "Kapitel 2", etc.
   const chapterPattern = /^(KAPITEL|Kapitel|kapitel|CHAPTER|Chapter)\s+(\d+)/gm;
   const markers = [];
   let match;
@@ -57,29 +91,10 @@ function splitIntoChapters(text) {
   }
 
   if (markers.length === 0) {
-    // No chapter markers found – split by word count
     return splitByWordCount(text, 5000);
   }
 
-  const chapters = [];
-  for (let i = 0; i < markers.length; i++) {
-    const headingEnd = markers[i].index + markers[i].title.length;
-    const contentStart = text.indexOf('\n', headingEnd);
-    const start = contentStart !== -1 ? contentStart + 1 : headingEnd;
-    const end = i + 1 < markers.length ? markers[i + 1].index : text.length;
-    const content = text.slice(start, end).trim();
-    const words = content.split(/\s+/).filter(w => w).length;
-
-    if (content.length === 0) continue; // Skip heading-only entries
-
-    chapters.push({
-      title: markers[i].title,
-      content,
-      wordCount: words,
-    });
-  }
-
-  return chapters;
+  return buildChaptersFromMarkers(text, markers);
 }
 
 /**
