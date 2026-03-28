@@ -436,7 +436,7 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, paragraphsByChapte
 }
 
 // ─── SEARCH BAR ───
-function SearchBar({ chapters, activeChapter, onReplace, onReplaceAll, onClose }) {
+function SearchBar({ chapters, activeChapter, onReplace, onReplaceAll, onClose, onSearchChange }) {
   const [query, setQuery] = useState("");
   const [replaceText, setReplaceText] = useState("");
   const [showReplace, setShowReplace] = useState(false);
@@ -461,6 +461,13 @@ function SearchBar({ chapters, activeChapter, onReplace, onReplaceAll, onClose }
       idx = found + 1;
     }
   }
+
+  // Report search state to parent for text highlighting
+  useEffect(() => {
+    if (onSearchChange) {
+      onSearchChange(query.length >= 2 ? { query, matches, activeMatchIdx, caseSensitive } : null);
+    }
+  }, [query, matches.length, activeMatchIdx, caseSensitive]);
 
   // Scroll to active match
   useEffect(() => {
@@ -3602,6 +3609,7 @@ export default function App() {
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [searchState, setSearchState] = useState(null); // { query, matches, activeMatchIdx, caseSensitive }
 
   // Keyboard shortcuts: Ctrl/Cmd+F → search, Escape → close
   useEffect(() => {
@@ -5028,21 +5036,62 @@ export default function App() {
   const renderText = (para, paraGlobalOffset) => {
     const { text, suggestions } = para;
 
+    // Helper: apply search highlights to a text fragment
+    const applySearchHighlights = (fragment, keyPrefix, globalStart) => {
+      if (!searchState || !fragment || !searchState.query) return renderFormatted(fragment, keyPrefix);
+      const { query: sq, activeMatchIdx: sIdx, caseSensitive: sCase } = searchState;
+      const fragLower = sCase ? fragment : fragment.toLowerCase();
+      const sqLower = sCase ? sq : sq.toLowerCase();
+      const fragMatches = [];
+      let si = 0;
+      while (si < fragLower.length) {
+        const found = fragLower.indexOf(sqLower, si);
+        if (found === -1) break;
+        // Map to global index to determine match number
+        const globalIdx = globalStart + found;
+        const matchNum = searchState.matches.findIndex(m => m.index === globalIdx);
+        fragMatches.push({ localIdx: found, length: sq.length, matchNum });
+        si = found + 1;
+      }
+      if (fragMatches.length === 0) return renderFormatted(fragment, keyPrefix);
+      const parts = [];
+      let pos = 0;
+      for (const fm of fragMatches) {
+        if (fm.localIdx > pos) parts.push(<span key={`${keyPrefix}s${pos}`}>{renderFormatted(fragment.slice(pos, fm.localIdx), `${keyPrefix}s${pos}`)}</span>);
+        const isActive = fm.matchNum === sIdx;
+        parts.push(
+          <mark key={`${keyPrefix}sm${fm.matchNum}`}
+            data-search-match={fm.matchNum}
+            style={{
+              background: isActive ? "#e8a83880" : "#e8a83830",
+              borderBottom: isActive ? "2px solid #c87000" : "1px solid #c8700060",
+              padding: "1px 2px", borderRadius: 3,
+              outline: isActive ? "2px solid #c8700050" : "none", outlineOffset: 1,
+            }}>
+            {renderFormatted(fragment.slice(fm.localIdx, fm.localIdx + fm.length), `${keyPrefix}sm${fm.matchNum}`)}
+          </mark>
+        );
+        pos = fm.localIdx + fm.length;
+      }
+      if (pos < fragment.length) parts.push(<span key={`${keyPrefix}se`}>{renderFormatted(fragment.slice(pos), `${keyPrefix}se`)}</span>);
+      return parts;
+    };
+
     // Helper: apply term highlights to a text fragment
     const applyTermHighlights = (fragment, keyPrefix, globalStart) => {
-      if (!highlightTermState || !fragment) return renderFormatted(fragment, keyPrefix);
+      if (!highlightTermState || !fragment) return applySearchHighlights(fragment, keyPrefix, globalStart);
       const { suggestionId, occurrenceIdx, occurrences } = highlightTermState;
       // Find occurrences that fall within this fragment's global range
       const fragEnd = globalStart + fragment.length;
       const matching = occurrences.map((occ, i) => ({ ...occ, occIdx: i }))
         .filter(occ => occ.index >= globalStart && occ.index + occ.length <= fragEnd);
-      if (matching.length === 0) return renderFormatted(fragment, keyPrefix);
+      if (matching.length === 0) return applySearchHighlights(fragment, keyPrefix, globalStart);
 
       const parts = [];
       let pos = 0;
       for (const occ of matching) {
         const localIdx = occ.index - globalStart;
-        if (localIdx > pos) parts.push(<span key={`${keyPrefix}t${pos}`}>{...renderFormatted(fragment.slice(pos, localIdx), `${keyPrefix}t${pos}`)}</span>);
+        if (localIdx > pos) parts.push(<span key={`${keyPrefix}t${pos}`}>{...applySearchHighlights(fragment.slice(pos, localIdx), `${keyPrefix}t${pos}`, globalStart + pos)}</span>);
         const isCurrentOcc = occ.occIdx === occurrenceIdx;
         parts.push(
           <mark key={`${keyPrefix}h${occ.occIdx}`}
@@ -5059,7 +5108,7 @@ export default function App() {
         );
         pos = localIdx + occ.length;
       }
-      if (pos < fragment.length) parts.push(<span key={`${keyPrefix}e`}>{...renderFormatted(fragment.slice(pos), `${keyPrefix}e`)}</span>);
+      if (pos < fragment.length) parts.push(<span key={`${keyPrefix}e`}>{...applySearchHighlights(fragment.slice(pos), `${keyPrefix}e`, globalStart + pos)}</span>);
       return parts;
     };
 
@@ -5252,7 +5301,8 @@ export default function App() {
                 }, 0);
               }
             }}
-            onClose={() => setShowSearch(false)}
+            onClose={() => { setShowSearch(false); setSearchState(null); }}
+            onSearchChange={setSearchState}
           />
         )}
 
