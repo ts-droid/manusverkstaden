@@ -139,6 +139,7 @@ Applikationen har en medveten **editorial/literary estetik** – INTE generisk S
 - Stripe-integration för prenumerationer
 - API för förlagsintegrationer
 - Fler översättningsspråk
+- **Manusverkstaden Dramatik** — avknoppning för film/teater-manus (act-struktur, beats, formatregler, dialog-fokus)
 
 ## AI-promptarkitektur
 
