@@ -4471,11 +4471,18 @@ export default function App() {
   };
 
   const applyReplacementToContent = (chapterId, originalText, replacementText) => {
+    // Safety: if replacement text already exists in the chapter, skip (prevent duplication)
     let savedContent = null;
 
     setChapters(prev => {
       const ch = prev.find(c => c.id === chapterId);
       if (!ch) return prev;
+      // If replacement already exists in text, skip (prevent double-application)
+      const normCheck = s => s.replace(/\s+/g, ' ').trim();
+      if (replacementText && normCheck(ch.content).includes(normCheck(replacementText)) && normCheck(originalText) !== normCheck(replacementText)) {
+        console.log("[Bake-in] Replacement already in text, skipping:", replacementText.slice(0, 60));
+        return prev;
+      }
       const newContent = fuzzyReplaceInText(ch.content, originalText, replacementText);
       if (!newContent || newContent === ch.content) {
         console.warn("[Bake-in] Could not find original text in chapter:", originalText.slice(0, 80));
