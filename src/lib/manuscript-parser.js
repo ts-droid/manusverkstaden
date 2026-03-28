@@ -28,12 +28,31 @@ export async function parseManuscript(file) {
 }
 
 /**
+ * Clean imported text — remove invisible Unicode characters, normalize
+ * whitespace, and ensure consistent formatting BEFORE chapter splitting.
+ * This prevents offset-drift in search, AI matching issues, and hidden chars.
+ */
+function cleanTextForImport(text) {
+  return text
+    .replace(/\r\n/g, '\n').replace(/\r/g, '\n')                          // Normalize line endings
+    .replace(/\t/g, ' ')                                                    // Tabs → spaces
+    .replace(/[\u200B\u200C\u200D\u00AD\uFEFF\u2060\u200E\u200F]/g, '')   // Remove invisible chars
+    .replace(/\u00A0/g, ' ')                                                // Non-breaking → regular space
+    .replace(/([^\n]) {2,}/g, '$1 ')                                       // Collapse multiple spaces
+    .replace(/[\u2010\u2011]/g, '-')                                       // Hyphen variants → regular
+    .replace(/\u2012/g, '\u2013')                                          // Figure dash → en-dash
+    .replace(/[ \t]+$/gm, '')                                              // Trailing whitespace per line
+    .replace(/\n{3,}/g, '\n\n')                                            // 3+ newlines → 2
+    .trim();
+}
+
+/**
  * Parse a plain text file.
  * Splits on common chapter markers.
  */
 async function parseTxtFile(file) {
   const text = await file.text();
-  return splitIntoChapters(text);
+  return splitIntoChapters(cleanTextForImport(text));
 }
 
 /**
@@ -42,11 +61,10 @@ async function parseTxtFile(file) {
  */
 async function parseDocxFile(file) {
   try {
-    // Dynamic import of mammoth for docx parsing
     const mammoth = await import('mammoth');
     const arrayBuffer = await file.arrayBuffer();
     const result = await mammoth.extractRawText({ arrayBuffer });
-    return splitIntoChapters(result.value);
+    return splitIntoChapters(cleanTextForImport(result.value));
   } catch (error) {
     console.error('Docx parsing failed:', error);
     throw new Error('Kunde inte läsa .docx-filen. Kontrollera att filen inte är skadad.');
@@ -70,7 +88,7 @@ async function parsePdfFile(file) {
       const pageText = content.items.map(item => item.str).join(' ');
       fullText += pageText + '\n\n';
     }
-    return splitIntoChapters(fullText);
+    return splitIntoChapters(cleanTextForImport(fullText));
   } catch (error) {
     console.error('PDF parsing failed:', error);
     throw new Error('Kunde inte läsa PDF-filen. Kontrollera att filen inte är skadad.');

@@ -1,6 +1,24 @@
 import mammoth from 'mammoth';
 
 /**
+ * Clean imported text — remove invisible Unicode characters, normalize
+ * whitespace, and ensure consistent formatting BEFORE chapter splitting.
+ */
+function cleanTextForImport(text) {
+  return text
+    .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .replace(/\t/g, ' ')
+    .replace(/[\u200B\u200C\u200D\u00AD\uFEFF\u2060\u200E\u200F]/g, '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/([^\n]) {2,}/g, '$1 ')
+    .replace(/[\u2010\u2011]/g, '-')
+    .replace(/\u2012/g, '\u2013')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
  * Parse an uploaded file (from multer) into chapters.
  */
 export async function parseUploadedFile(file) {
@@ -17,7 +35,7 @@ export async function parseUploadedFile(file) {
     throw new Error(`Filtypen .${ext} stöds inte. Använd .docx eller .txt`);
   }
 
-  return splitIntoChapters(text);
+  return splitIntoChapters(cleanTextForImport(text));
 }
 
 /**
