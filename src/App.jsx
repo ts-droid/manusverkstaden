@@ -5061,25 +5061,25 @@ export default function App() {
     const { text, suggestions } = para;
 
     // Helper: apply search highlights to a text fragment
+    // Uses searchState.matches (which reference chapter.content offsets) mapped to paragraph text
     const applySearchHighlights = (fragment, keyPrefix, globalStart) => {
-      if (!searchState || !fragment || !searchState.query) return renderFormatted(fragment, keyPrefix);
-      const { query: sq, activeMatchIdx: sIdx, caseSensitive: sCase, matches: allMatches } = searchState;
-      const fragLower = sCase ? fragment : fragment.toLowerCase();
-      const sqLower = sCase ? sq : sq.toLowerCase();
+      if (!searchState || !fragment || !searchState.query || !searchState.matches?.length) return renderFormatted(fragment, keyPrefix);
+      const { activeMatchIdx: sIdx, matches: chapterMatches } = searchState;
+      const fragEnd = globalStart + fragment.length;
+      // Find which chapter-level matches fall within this fragment
       const fragMatches = [];
-      let si = 0;
-      while (si < fragLower.length) {
-        const found = fragLower.indexOf(sqLower, si);
-        if (found === -1) break;
-        // Find closest match by global index (allow small offset differences)
-        const globalIdx = globalStart + found;
-        let matchNum = allMatches.findIndex(m => Math.abs(m.index - globalIdx) <= 2);
-        if (matchNum === -1) {
-          // Fallback: count how many matches are before this one in the full text
-          matchNum = allMatches.filter(m => m.index < globalIdx - 1).length;
+      for (let mi = 0; mi < chapterMatches.length; mi++) {
+        const m = chapterMatches[mi];
+        // Check if match overlaps with this fragment (using tolerance for offset drift)
+        const mEnd = m.index + m.length;
+        // Try direct: match falls within fragment's global range
+        if (m.index >= globalStart - 2 && mEnd <= fragEnd + 2) {
+          const localIdx = Math.max(0, m.index - globalStart);
+          const localEnd = Math.min(fragment.length, mEnd - globalStart);
+          if (localIdx < fragment.length && localEnd > localIdx) {
+            fragMatches.push({ localIdx, length: localEnd - localIdx, matchNum: mi });
+          }
         }
-        fragMatches.push({ localIdx: found, length: sq.length, matchNum });
-        si = found + 1;
       }
       if (fragMatches.length === 0) return renderFormatted(fragment, keyPrefix);
       const parts = [];
