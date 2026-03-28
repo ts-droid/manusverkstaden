@@ -133,13 +133,14 @@ Utöver grundgranskningen, bevaka särskilt:
   },
   {
     key: 'genre:romance',
-    content: `GENRETILLÄGG – ROMANTIK / FEELGOOD:
+    content: `GENRETILLÄGG – ROMANTIK:
 Utöver grundgranskningen, bevaka särskilt:
 - Kemins trovärdighet (gradvis uppbyggnad, pinch points)
 - Hinder och stakes (genuina, inte artificiella missförstånd)
 - Balans mellan protagonisterna (båda ska utvecklas)
 - Emotionell pay-off (tillräcklig uppbyggnad för slutets effekt)
-- Ton och värme (varm utan att bli sockersöt)`,
+- Intimitet och känslomässig sårbarhet
+- Subgenrekonventioner (HEA/HFN)`,
   },
   {
     key: 'genre:horror',
@@ -191,6 +192,51 @@ Utöver grundgranskningen, bevaka särskilt:
 - Radbrytningens dramaturgi (avsiktlig och meningsskapande?)
 - Formmedvetenhet (hålls formen eller bryts med intention?)
 - Avslutets effekt`,
+  },
+
+  {
+    key: 'genre:adventure',
+    content: `GENRETILLÄGG – ÄVENTYR / ACTION:
+Utöver grundgranskningen, bevaka särskilt:
+- Tempo och actionscener (flöde, tydlighet, intensitet)
+- Miljöbeskrivning (exotiska platser, trovärdiga detaljer)
+- Fysisk trovärdighet (stunts, resor, överlevnad)
+- Protagonistens drivkraft och stakes (vad står på spel?)
+- Sidokaraktärers funktion (comic relief, mentor, rival)
+- Balans action/karaktärsutveckling (undvik actionscener utan emotionell investering)`,
+  },
+  {
+    key: 'genre:feelgood',
+    content: `GENRETILLÄGG – FEELGOOD:
+Utöver grundgranskningen, bevaka särskilt:
+- Ton och värme (varm utan att bli sockersöt eller naiv)
+- Personlig utveckling (protagonistens resa och tillväxt)
+- Vänskap och community (trovärdiga relationer)
+- Humoristiska inslag (timing, passande för tonen)
+- Emotionell pay-off (hoppfull avslutning som känns förtjänad)
+- Balans lätthet/djup (undvik att bli ytlig)`,
+  },
+  {
+    key: 'genre:nonfiction',
+    content: `GENRETILLÄGG – FAKTA / POPULÄRVETENSKAP:
+Utöver grundgranskningen, bevaka särskilt:
+- Källhantering och trovärdighet (påståenden, generaliseringar)
+- Tillgänglighet (förklara utan att förenkla för mycket)
+- Struktur och röd tråd (logisk progression av argument/ämne)
+- Balans fakta/berättelse (undvik ren listning, väv in narrativ)
+- Målgruppsanpassning (för allmänhet, experter, studenter?)
+- Slutsatser och argumentation (logiska, underbyggda)`,
+  },
+  {
+    key: 'genre:erotica',
+    content: `GENRETILLÄGG – EROTIK:
+Utöver grundgranskningen, bevaka särskilt:
+- Samtycke och maktdynamik (tydligt, trovärdigt)
+- Balans scen/berättelse (erotiska scener ska driva handlingen)
+- Anatomisk trovärdighet (undvik orealistiska beskrivningar)
+- Emotionell dimension (koppling mellan fysisk och emotionell intimitet)
+- Variation i språk och scener (undvik repetitiva mönster)
+- Genrekonventioner (heat level, readers förväntan)`,
   },
 
   // ═══ MODULER ═══
