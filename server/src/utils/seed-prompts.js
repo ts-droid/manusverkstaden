@@ -228,6 +228,28 @@ Utöver grundgranskningen, bevaka särskilt:
 - Slutsatser och argumentation (logiska, underbyggda)`,
   },
   {
+    key: 'genre:truecrime',
+    content: `GENRETILLÄGG – DOKUMENTÄRT / TRUE CRIME:
+Utöver grundgranskningen, bevaka särskilt:
+- Faktakontroll och källhänvisning (verifierbara påståenden)
+- Etisk hantering av verkliga personer (integritet, rättvisa porträtt)
+- Narrativ struktur i verklighetsbaserat material (dramatisk båge utan fabricering)
+- Balans objektivitet/berättarröst (journalistisk trovärdighet vs personlig vinkel)
+- Kronologi och tidslinje (konsekvent, begriplig tidshantering)
+- Dramatisering utan att fabricera (rekonstruerade scener, dialog från källor)`,
+  },
+  {
+    key: 'genre:humor',
+    content: `GENRETILLÄGG – HUMOR / SATIR:
+Utöver grundgranskningen, bevaka särskilt:
+- Timing och komisk rytm (pausering, punchlines, uppbyggnad)
+- Satirisk udd (träffsäkerhet, undvik platt eller elak humor)
+- Konsekvent ton (farsen vs subtil ironi vs svart humor)
+- Karaktärskomik vs situationskomik (balans och variation)
+- Balans humor/hjärta (undvik att bli enbart skämt utan substans)
+- Målgruppsmedvetenhet (vad är roligt för målgruppen?)`,
+  },
+  {
     key: 'genre:erotica',
     content: `GENRETILLÄGG – EROTIK:
 Utöver grundgranskningen, bevaka särskilt:
