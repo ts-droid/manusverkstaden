@@ -4134,31 +4134,56 @@ export default function App() {
   // ─── SCROLL TO SUGGESTION IN TEXT ───
   useEffect(() => {
     if (!activeSuggestion || !mainRef.current) return;
-    // Try inline highlight first
+    const normS = s => s.replace(/\s+/g, ' ').trim();
+
+    const flashElement = (el, color = "#a0522d30", duration = 1500) => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.style.transition = "background 0.3s, outline 0.3s";
+      el.style.background = color;
+      el.style.outline = "2px solid #a0522d40";
+      el.style.outlineOffset = "4px";
+      el.style.borderRadius = "4px";
+      setTimeout(() => { el.style.background = "transparent"; el.style.outline = "none"; }, duration);
+    };
+
+    // 1. Try inline highlight first (exact match already rendered)
     let el = mainRef.current.querySelector(`[data-suggestion-id="${activeSuggestion}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       el.style.transition = "background 0.15s";
-      const original = el.style.background;
+      const orig = el.style.background;
       el.style.background = "#a0522d30";
-      setTimeout(() => { el.style.background = original; }, 800);
+      setTimeout(() => { el.style.background = orig; }, 800);
       return;
     }
-    // Fallback: find the paragraph that owns this suggestion
+
+    // 2. Try paragraph that owns this suggestion
     const paraEl = mainRef.current.querySelector(`[data-para-suggestion-ids*="${activeSuggestion}"]`);
-    if (paraEl) {
-      paraEl.scrollIntoView({ behavior: "smooth", block: "center" });
-      paraEl.style.transition = "background 0.3s, outline 0.3s";
-      paraEl.style.background = "#a0522d12";
-      paraEl.style.outline = "2px solid #a0522d40";
-      paraEl.style.outlineOffset = "4px";
-      paraEl.style.borderRadius = "4px";
-      setTimeout(() => {
-        paraEl.style.background = "transparent";
-        paraEl.style.outline = "none";
-      }, 1500);
+    if (paraEl) { flashElement(paraEl); return; }
+
+    // 3. Search for original text across all visible paragraphs
+    const paras = paragraphsByChapter[activeChapter] || [];
+    const sugg = paras.flatMap(p => p.suggestions || []).find(s => s.id === activeSuggestion);
+    if (sugg?.original) {
+      const normOrig = normS(sugg.original);
+      // Find the paragraph element containing this text
+      const allParaEls = mainRef.current.querySelectorAll("[data-para-id]");
+      for (const pEl of allParaEls) {
+        if (normS(pEl.textContent).includes(normOrig) || normOrig.includes(normS(pEl.textContent).slice(0, 50))) {
+          flashElement(pEl, "#a0522d18");
+          return;
+        }
+      }
+      // 4. Last resort: search with shorter prefix (first 40 chars)
+      const shortOrig = normOrig.slice(0, 40);
+      for (const pEl of allParaEls) {
+        if (normS(pEl.textContent).includes(shortOrig)) {
+          flashElement(pEl, "#a0522d12");
+          return;
+        }
+      }
     }
-  }, [activeSuggestion]);
+  }, [activeSuggestion, activeChapter, paragraphsByChapter]);
 
   // ─── TEXT SELECTION HANDLER ───
   const handleTextSelection = useCallback(() => {
@@ -4186,30 +4211,46 @@ export default function App() {
 
   // ─── BAKE IN: apply text replacement to chapter content + save to DB ───
   // Uses setChapters(prev => ...) to always read CURRENT state (no stale closures)
-  const applyReplacementToContent = (chapterId, originalText, replacementText) => {
+  // Helper: fuzzy replace (handles whitespace differences between AI original and actual text)
+  const fuzzyReplaceInText = (text, original, replacement) => {
     const normS = s => s.replace(/\s+/g, ' ').trim();
+    // Exact match
+    if (text.includes(original)) return text.replace(original, replacement);
+    // Normalized match: find position in normalized string, map back to original
+    const normText = normS(text);
+    const normOrig = normS(original);
+    const normIdx = normText.indexOf(normOrig);
+    if (normIdx === -1) return null;
+    // Map normalized index back to original text position
+    let origStart = -1, origEnd = -1, ni = 0, ti = 0;
+    // Skip leading whitespace in original text
+    while (ti < text.length && /\s/.test(text[ti]) && ni === 0) ti++;
+    while (ti <= text.length && ni <= normIdx + normOrig.length) {
+      if (ni === normIdx && origStart === -1) origStart = ti;
+      if (ni === normIdx + normOrig.length) { origEnd = ti; break; }
+      if (ti >= text.length) break;
+      if (/\s/.test(text[ti])) {
+        while (ti < text.length && /\s/.test(text[ti])) ti++;
+        ni++;
+      } else {
+        ti++; ni++;
+      }
+    }
+    if (origEnd === -1) origEnd = text.length;
+    if (origStart === -1) return null;
+    return text.slice(0, origStart) + replacement + text.slice(origEnd);
+  };
+
+  const applyReplacementToContent = (chapterId, originalText, replacementText) => {
     let savedContent = null;
 
     setChapters(prev => {
       const ch = prev.find(c => c.id === chapterId);
       if (!ch) return prev;
-      let newContent;
-      if (ch.content.includes(originalText)) {
-        newContent = ch.content.replace(originalText, replacementText);
-      } else if (normS(ch.content).includes(normS(originalText))) {
-        // Fuzzy: try paragraph-level replacement
-        const paras = ch.content.split(/\n\s*\n/).filter(p => p.trim());
-        const pIdx = paras.findIndex(p => p.includes(originalText) || normS(p).includes(normS(originalText)));
-        if (pIdx >= 0) {
-          paras[pIdx] = paras[pIdx].includes(originalText)
-            ? paras[pIdx].replace(originalText, replacementText)
-            : paras[pIdx];
-          newContent = paras.join("\n\n");
-        } else {
-          return prev; // Can't find — don't corrupt
-        }
-      } else {
-        return prev; // Can't find — skip
+      const newContent = fuzzyReplaceInText(ch.content, originalText, replacementText);
+      if (!newContent || newContent === ch.content) {
+        console.warn("[Bake-in] Could not find original text in chapter:", originalText.slice(0, 80));
+        return prev;
       }
       savedContent = newContent;
       return prev.map(c => c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c);
@@ -4224,33 +4265,33 @@ export default function App() {
             console.error("[Bake-in] DB save failed:", e);
             setSaveStatus("error");
           });
+      } else if (!savedContent) {
+        console.warn("[Bake-in] No content saved — replacement not applied");
       }
     }, 0);
   };
 
   // Batch version: apply multiple replacements in ONE state update
   const applyBatchReplacements = (chapterId, replacements) => {
-    const normS = s => s.replace(/\s+/g, ' ').trim();
     let savedContent = null;
 
     setChapters(prev => {
       const ch = prev.find(c => c.id === chapterId);
       if (!ch) return prev;
       let content = ch.content;
+      let applied = 0;
       for (const { original, replacement } of replacements) {
         if (!original || !replacement) continue;
-        if (content.includes(original)) {
-          content = content.replace(original, replacement);
-        } else if (normS(content).includes(normS(original))) {
-          const paras = content.split(/\n\s*\n/).filter(p => p.trim());
-          const pIdx = paras.findIndex(p => p.includes(original) || normS(p).includes(normS(original)));
-          if (pIdx >= 0) {
-            paras[pIdx] = paras[pIdx].includes(original) ? paras[pIdx].replace(original, replacement) : paras[pIdx];
-            content = paras.join("\n\n");
-          }
+        const result = fuzzyReplaceInText(content, original, replacement);
+        if (result && result !== content) {
+          content = result;
+          applied++;
+        } else {
+          console.warn("[Batch bake-in] Could not find:", original.slice(0, 60));
         }
       }
-      if (content === ch.content) return prev; // Nothing changed
+      if (content === ch.content) return prev;
+      console.log(`[Batch bake-in] Applied ${applied}/${replacements.length} replacements`);
       savedContent = content;
       return prev.map(c => c.id === chapterId ? { ...c, content, wordCount: countWords(content) } : c);
     });
@@ -4416,7 +4457,16 @@ export default function App() {
       const aHandled = accepted.has(a.id) || rejected.has(a.id) ? 1 : 0;
       const bHandled = accepted.has(b.id) || rejected.has(b.id) ? 1 : 0;
       if (aHandled !== bHandled) return aHandled - bHandled; // pending first
-      // Then sort by position in text (paragraphIndex)
+      // Sort by actual position in chapter text
+      const chapter = chapters.find(c => c.id === activeChapter);
+      if (chapter) {
+        const aPos = a.original ? chapter.content.indexOf(a.original) : -1;
+        const bPos = b.original ? chapter.content.indexOf(b.original) : -1;
+        if (aPos !== -1 && bPos !== -1) return aPos - bPos;
+        if (aPos !== -1) return -1;
+        if (bPos !== -1) return 1;
+      }
+      // Fallback: paragraphIndex
       const aIdx = a.paragraphIndex ?? 9999;
       const bIdx = b.paragraphIndex ?? 9999;
       return aIdx - bIdx;
@@ -5505,13 +5555,16 @@ export default function App() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink }}>Kapitel att granska</span>
                 <button onClick={() => {
-                  if (reReviewSelectedChapters.size === chapters.length || reReviewSelectedChapters.size === 0) {
-                    setReReviewSelectedChapters(new Set());
+                  const allSelected = reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.size === chapters.length;
+                  if (allSelected) {
+                    // Currently all selected → deselect all
+                    setReReviewSelectedChapters(new Set(["__none__"])); // sentinel: nothing selected
                   } else {
-                    setReReviewSelectedChapters(new Set(chapters.map(c => c.id)));
+                    // Not all selected → select all
+                    setReReviewSelectedChapters(new Set());
                   }
                 }} style={{ fontFamily: uiFont, fontSize: 10, color: accent, background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
-                  {reReviewSelectedChapters.size > 0 && reReviewSelectedChapters.size < chapters.length ? "Välj alla" : "Alla kapitel (standard)"}
+                  {reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.size === chapters.length ? "Avmarkera alla" : "Alla kapitel"}
                 </button>
               </div>
               <div style={{ maxHeight: 150, overflowY: "auto", border: `1px solid ${border}`, borderRadius: 8, padding: "4px 0" }}>

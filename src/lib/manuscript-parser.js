@@ -204,12 +204,21 @@ export function countWords(text) {
  * Split chapter text into paragraphs for the editor.
  */
 export function splitIntoParagraphs(chapterContent) {
-  return chapterContent
+  const raw = chapterContent
     .split(/\n\s*\n/)
-    .map((text, index) => ({
-      id: `p${index}`,
-      text: text.trim(),
-      suggestions: [],
-    }))
-    .filter((p) => p.text.length > 0);
+    .map((text) => text.trim())
+    .filter((text) => text.length > 0);
+
+  // Dedup consecutive identical paragraphs (from develop-insert bugs)
+  const deduped = [];
+  for (let i = 0; i < raw.length; i++) {
+    if (i > 0 && raw[i] === raw[i - 1]) continue;
+    deduped.push(raw[i]);
+  }
+
+  return deduped.map((text, index) => ({
+    id: `p${index}`,
+    text,
+    suggestions: [],
+  }));
 }
