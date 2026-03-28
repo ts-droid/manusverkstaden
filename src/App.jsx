@@ -5163,28 +5163,7 @@ export default function App() {
             </span>
           )}
           <button onClick={() => { if (window.confirm("Vill du börja om med ett nytt manus? Allt osparat arbete försvinner.")) handleStartFresh(); }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer", fontWeight: 500 }}>Nytt manus</button>
-          {/* Analyze unreviewed button */}
-          {(() => {
-            const unreviewedCount = chapters.filter(ch => {
-              const paras = paragraphsByChapter[ch.id] || [];
-              return !paras.some(p => p.suggestions?.length > 0);
-            }).length;
-            return unreviewedCount > 0 ? (
-              <button
-                onClick={handleAnalyzeUnreviewed}
-                disabled={batchAnalyzing}
-                title="Analysera alla ogranskade kapitel i följd"
-                style={{
-                  fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: "none",
-                  background: batchAnalyzing ? "#d4c8bb" : accent, color: "#fff", cursor: batchAnalyzing ? "default" : "pointer",
-                  fontWeight: 600, display: "flex", alignItems: "center", gap: 5,
-                }}
-              >
-                {batchAnalyzing ? `Analyserar...` : `Analysera alla (${unreviewedCount} kvar)`}
-              </button>
-            ) : null;
-          })()}
-          {/* Re-review button */}
+          {/* Review button */}
           <button
             onClick={() => reReviewing ? null : setShowReReviewModal(true)}
             disabled={reReviewing}
