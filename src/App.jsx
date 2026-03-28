@@ -5354,9 +5354,9 @@ export default function App() {
               <span>{allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length} förslag kvar</span>
             </div>
           </div>
-          {(() => { let _globalOff = 0; return currentParagraphs.map(para => {
+          {(() => { let _globalOff = 0; return currentParagraphs.map((para, paraIdx) => {
             const paraGlobalOffset = _globalOff;
-            _globalOff += para.text.length + 1; // +1 for paragraph separator
+            _globalOff += para.text.length + 2; // +2 for \n\n paragraph separator in chapter.content
             const isInserted = insertedParaIds.has(para.id);
             const hasAcceptedChanges = (para.suggestions || []).some(s => accepted.has(s.id));
             const hasPendingChanges = (para.suggestions || []).some(s => !accepted.has(s.id) && !rejected.has(s.id));
