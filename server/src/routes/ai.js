@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
-import { reviewChapter, generateDNAProfile, developText, translateText, finalCheck } from '../services/ai.js';
+import { reviewChapter, reviewChapterMultiPass, generateDNAProfile, developText, translateText, finalCheck } from '../services/ai.js';
 import { checkUsageLimit, recordUsage } from '../services/usage.js';
 
 const router = Router();
@@ -109,6 +109,128 @@ router.post('/review', async (req, res, next) => {
       }
     } catch (resetErr) {
       console.error('[AI Review] Failed to reset chapter status:', resetErr.message);
+    }
+    next(err);
+  }
+});
+
+// ─── MULTI-PASS REVIEW ───
+router.post('/review-multi', async (req, res, next) => {
+  try {
+    const chapterId = String(req.body.chapterId);
+    const { projectId, level = 'basic' } = req.body;
+
+    const chapter = await prisma.chapter.findFirst({
+      where: { id: chapterId, project: { userId: req.user.id } },
+      include: { project: { include: { chapters: { orderBy: { number: 'asc' } } } } },
+    });
+    if (!chapter) return res.status(404).json({ error: 'Kapitlet hittades inte' });
+
+    const allowed = await checkUsageLimit(req.user.id);
+    if (!allowed) return res.status(429).json({ error: 'API-gräns nådd för denna månad.' });
+
+    // Update chapter status
+    await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWING' } });
+
+    // Get all text for DNA generation
+    const allText = chapter.project.chapters.map(c => c.content).join('\n\n');
+    const existingDna = chapter.project.dnaProfile;
+
+    // Run multi-pass analysis
+    const { result: suggestions, meta, dnaProfile, passCount } = await reviewChapterMultiPass(
+      chapter.content,
+      {
+        genres: chapter.project.genres || [],
+        level,
+        dnaProfile: existingDna,
+        allText,
+      }
+    );
+
+    console.log(`[Multi-pass] ${level}: ${passCount} passes, ${suggestions.length} suggestions for chapter ${chapterId}`);
+
+    // Save DNA if newly generated
+    if (dnaProfile && !existingDna) {
+      await prisma.project.update({
+        where: { id: chapter.projectId },
+        data: { dnaProfile },
+      });
+    }
+
+    // Save suggestions — preserve accepted/rejected, only replace pending
+    const existing = await prisma.suggestion.findMany({ where: { chapterId } });
+    const kept = existing.filter(s => s.status === 'ACCEPTED' || s.status === 'REJECTED');
+    const keptOriginals = new Set(kept.map(s => s.original?.trim().toLowerCase()).filter(Boolean));
+    const keptOriginalsArray = [...keptOriginals];
+
+    await prisma.suggestion.deleteMany({ where: { chapterId, status: 'PENDING' } });
+
+    // Filter duplicates against kept + internal dedup
+    const newSuggestions = suggestions.filter(s => {
+      const origKey = s.original?.trim().toLowerCase();
+      if (!origKey) return false;
+      if (keptOriginals.has(origKey)) return false;
+      for (const k of keptOriginalsArray) {
+        if (origKey.includes(k) || k.includes(origKey)) return false;
+      }
+      return true;
+    });
+
+    const deduped = [];
+    for (const s of newSuggestions) {
+      const origKey = s.original?.trim().toLowerCase();
+      const isDup = deduped.some(e => {
+        const eKey = e.original?.trim().toLowerCase();
+        return eKey && origKey && (eKey.includes(origKey) || origKey.includes(eKey));
+      });
+      if (!isDup) deduped.push(s);
+    }
+
+    const created = await Promise.all(
+      deduped.map(s =>
+        prisma.suggestion.create({
+          data: {
+            chapterId,
+            type: s.type || 'grammar',
+            priority: s.priority || 'yellow',
+            level: s.level || 3,
+            original: s.original || '',
+            replacement: s.replacement || '',
+            reason: s.reason || '',
+            status: 'PENDING',
+          },
+        })
+      )
+    );
+
+    await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWED' } });
+
+    // Record usage
+    await recordUsage({
+      userId: req.user.id,
+      type: `review-multi-${level}`,
+      model: meta.model,
+      inputTokens: meta.inputTokens,
+      outputTokens: meta.outputTokens,
+      chapterId,
+    });
+
+    const allSuggestions = [...kept, ...created];
+    res.json({
+      suggestions: allSuggestions,
+      dnaProfile,
+      passCount,
+      level,
+      stats: { total: allSuggestions.length, new: created.length, kept: kept.length, validated: suggestions.length },
+    });
+  } catch (err) {
+    try {
+      const chapterId = String(req.body?.chapterId);
+      if (chapterId) {
+        await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'ERROR' } });
+      }
+    } catch (resetErr) {
+      console.error('[Multi-pass] Failed to reset status:', resetErr.message);
     }
     next(err);
   }

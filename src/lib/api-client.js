@@ -158,6 +158,13 @@ class ApiClient {
     });
   }
 
+  async reviewChapterMulti(chapterId, projectId, level = 'basic') {
+    return this.request('/ai/review-multi', {
+      method: 'POST',
+      body: JSON.stringify({ chapterId, projectId, level }),
+    });
+  }
+
   async generateDNAProfile(projectId) {
     return this.request('/ai/dna-profile', {
       method: 'POST',

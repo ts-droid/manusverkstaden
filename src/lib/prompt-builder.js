@@ -269,38 +269,32 @@ Om texten blandar konventioner inkonsekvent, prioritera detta som 🔴 (måste �
  * Controls model selection, max tokens, and prompt behavior.
  */
 export const ANALYSIS_LEVELS = {
-  quick: {
-    id: 'quick',
-    label: 'Snabbanalys',
+  basic: {
+    id: 'basic',
+    label: 'Grundgranskning',
     description: 'Stavfel, grammatik och uppenbara problem',
     icon: '⚡',
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 4096,
-    focusPrompt: 'Fokusera ENBART på nivå 3-4 (språkgranskning + korrektur). Ignorera stilistik och struktur. Hitta stavfel, grammatikfel, syftningsfel, och skiljetecken. Var snabb och effektiv.',
-    estimatePerChapter: 8, // seconds
-    costPer1kWords: 0.50,
+    passes: '2 pass + validering',
+    estimatePerChapter: 20, // seconds
+    costPerChapter: '~1 kr',
   },
   standard: {
     id: 'standard',
-    label: 'Standardanalys',
-    description: 'Alla nivåer – korrektur, stil, struktur',
+    label: 'Standardgranskning',
+    description: 'Alla nivåer — korrektur, stil, struktur',
     icon: '📝',
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 8192,
-    focusPrompt: null, // uses full base prompt as-is
-    estimatePerChapter: 25,
-    costPer1kWords: 2.50,
+    passes: '3 pass + validering',
+    estimatePerChapter: 35,
+    costPerChapter: '~1.40 kr',
   },
   deep: {
     id: 'deep',
-    label: 'Djupanalys',
+    label: 'Djupgranskning',
     description: 'Grundlig redaktionell granskning med dramaturgi och tematik',
     icon: '🔍',
-    model: 'claude-opus-4-20250514',
-    max_tokens: 16384,
-    focusPrompt: 'Gör en EXTRA grundlig analys. Utöver alla 4 nivåer, analysera även:\n- Dramaturgisk båge och spänningskurva\n- Tematisk koherens med övriga kapitel\n- Karaktärsutveckling och konsistens\n- Subtextnivå och underliggande motiv\n- Scenpacing och rytmvariation\nGe detaljerade motiveringar med konkreta förbättringsförslag.',
-    estimatePerChapter: 45,
-    costPer1kWords: 5.00,
+    passes: '4 pass + validering',
+    estimatePerChapter: 55,
+    costPerChapter: '~1.80 kr',
   },
 };
 

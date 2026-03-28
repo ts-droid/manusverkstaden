@@ -283,10 +283,8 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
             </p>
             {Object.values(ANALYSIS_LEVELS).map(lvl => {
               const active = analysisLevel === lvl.id;
-              const words = totalWords || 60000;
               const chaps = chapterCount || 20;
               const estMinutes = Math.ceil(chaps * lvl.estimatePerChapter / 60);
-              const estCost = (words / 1000 * lvl.costPer1kWords).toFixed(0);
               return (
                 <button key={lvl.id} onClick={() => setAnalysisLevel(lvl.id)} style={{
                   padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
@@ -297,10 +295,11 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
                   <div style={{ flex: 1 }}>
                     <div style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{lvl.label}</div>
                     <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>{lvl.description}</div>
+                    <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 3, fontStyle: "italic" }}>{lvl.passes}</div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <div style={{ fontFamily: uiFont, fontSize: 11, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
-                    <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>ca {estCost} kr</div>
+                    <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>{lvl.costPerChapter}/kap</div>
                   </div>
                 </button>
               );
@@ -384,9 +383,7 @@ function ProcessingView({ chapters, statusText, onAbort }) {
 
 // ─── EDITOR COMPONENTS ───
 
-function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, onReanalyze, onDeepAnalyze, paragraphsByChapter }) {
-  const [splitTarget, setSplitTarget] = useState(null);
-
+function Sidebar({ chapters, activeChapter, setActiveChapter, paragraphsByChapter }) {
   const chapterHasSuggestions = (chId) => {
     const paras = paragraphsByChapter?.[chId] || [];
     return paras.some(p => p.suggestions?.length > 0);
@@ -406,48 +403,6 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35, flex: 1 }}>{ch.title}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                  {activeChapter === ch.id && onDeepAnalyze && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); onDeepAnalyze(ch.id); }}
-                      title="Djupanalys (Opus)"
-                      style={{
-                        fontSize: 11, color: muted, cursor: "pointer",
-                        padding: "2px 5px", lineHeight: 1, borderRadius: 4,
-                        background: "transparent", transition: "all 0.15s",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "#7a4700"; e.currentTarget.style.background = "#fdf6e3"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = muted; e.currentTarget.style.background = "transparent"; }}
-                    >🔍</span>
-                  )}
-                  {activeChapter === ch.id && onReanalyze && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); onReanalyze(ch.id); }}
-                      title={chapterHasSuggestions(ch.id) ? "Analysera om detta kapitel" : "Analysera detta kapitel"}
-                      style={{
-                        fontSize: 12, color: muted, cursor: "pointer",
-                        padding: "2px 5px", lineHeight: 1, borderRadius: 4,
-                        background: "transparent", transition: "all 0.15s",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = accent; e.currentTarget.style.background = accentLight; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = muted; e.currentTarget.style.background = "transparent"; }}
-                    >🔄</span>
-                  )}
-                  {activeChapter === ch.id && onSplitChapter && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); setSplitTarget(splitTarget === ch.id ? null : ch.id); }}
-                      title="Dela kapitel"
-                      style={{
-                        fontSize: 15, color: splitTarget === ch.id ? accent : muted, cursor: "pointer",
-                        padding: "2px 6px", flexShrink: 0, lineHeight: 1, borderRadius: 4,
-                        background: splitTarget === ch.id ? accentLight : "transparent",
-                        transition: "all 0.15s", display: "flex", alignItems: "center",
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = accent}
-                      onMouseLeave={(e) => { if (splitTarget !== ch.id) e.currentTarget.style.color = muted; }}
-                    >✂</span>
-                  )}
-                </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: uiFont, fontSize: 10, color: muted }}>
                 <span>{ch.wordCount.toLocaleString()} ord</span>
@@ -468,13 +423,6 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
                 }} />
               </div>
             </button>
-            {splitTarget === ch.id && (
-              <SplitChapterPopover
-                chapter={ch}
-                onSplit={(lineIndex) => { onSplitChapter(ch.id, lineIndex); setSplitTarget(null); }}
-                onClose={() => setSplitTarget(null)}
-              />
-            )}
           </div>
         ))}
       </div>
@@ -484,6 +432,121 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
         </div>
       </div>
     </aside>
+  );
+}
+
+// ─── SEARCH BAR ───
+function SearchBar({ chapters, activeChapter, onReplace, onReplaceAll, onClose }) {
+  const [query, setQuery] = useState("");
+  const [replaceText, setReplaceText] = useState("");
+  const [showReplace, setShowReplace] = useState(false);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Find all matches in active chapter
+  const chapter = chapters.find(c => c.id === activeChapter);
+  const matches = [];
+  if (query.length >= 2 && chapter?.content) {
+    const text = chapter.content;
+    const searchStr = caseSensitive ? query : query.toLowerCase();
+    const searchIn = caseSensitive ? text : text.toLowerCase();
+    let idx = 0;
+    while (idx < searchIn.length) {
+      const found = searchIn.indexOf(searchStr, idx);
+      if (found === -1) break;
+      matches.push({ index: found, length: query.length });
+      idx = found + 1;
+    }
+  }
+
+  // Scroll to active match
+  useEffect(() => {
+    if (matches.length === 0 || !query) return;
+    const els = document.querySelectorAll("[data-search-match]");
+    const target = els[activeMatchIdx];
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeMatchIdx, matches.length, query]);
+
+  const handleNext = () => setActiveMatchIdx(prev => (prev + 1) % Math.max(matches.length, 1));
+  const handlePrev = () => setActiveMatchIdx(prev => (prev - 1 + matches.length) % Math.max(matches.length, 1));
+
+  const handleReplace = () => {
+    if (matches.length > 0 && onReplace) {
+      const m = matches[activeMatchIdx];
+      if (m) {
+        const orig = chapter.content.slice(m.index, m.index + m.length);
+        onReplace(orig, replaceText);
+      }
+    }
+  };
+
+  const handleReplaceAll = () => {
+    if (matches.length > 0 && onReplaceAll && query) {
+      onReplaceAll(query, replaceText, caseSensitive);
+    }
+  };
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", gap: 6, padding: "8px 16px",
+      background: surface, borderBottom: `1px solid ${border}`, fontFamily: uiFont,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setActiveMatchIdx(0); }}
+          onKeyDown={e => { if (e.key === "Enter") handleNext(); if (e.key === "Escape") onClose(); }}
+          placeholder="Sök i kapitlet..."
+          style={{
+            flex: 1, padding: "5px 10px", borderRadius: 6, border: `1px solid ${border}`,
+            fontFamily: uiFont, fontSize: 12, background: bg, color: ink, outline: "none",
+          }}
+        />
+        <span style={{ fontSize: 10, color: muted, minWidth: 50, textAlign: "center" }}>
+          {query.length >= 2 ? `${matches.length > 0 ? activeMatchIdx + 1 : 0} / ${matches.length}` : ""}
+        </span>
+        <button onClick={handlePrev} disabled={matches.length === 0} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface, cursor: "pointer", fontSize: 11, color: muted }}>←</button>
+        <button onClick={handleNext} disabled={matches.length === 0} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface, cursor: "pointer", fontSize: 11, color: muted }}>→</button>
+        <button onClick={() => setCaseSensitive(!caseSensitive)} style={{
+          padding: "3px 8px", borderRadius: 4, border: `1px solid ${caseSensitive ? accent : border}`,
+          background: caseSensitive ? accentLight : surface, cursor: "pointer", fontSize: 10, fontWeight: 600,
+          color: caseSensitive ? accent : muted,
+        }}>Aa</button>
+        <button onClick={() => setShowReplace(!showReplace)} style={{
+          padding: "3px 8px", borderRadius: 4, border: `1px solid ${showReplace ? accent : border}`,
+          background: showReplace ? accentLight : surface, cursor: "pointer", fontSize: 10, color: showReplace ? accent : muted,
+        }}>Ersätt</button>
+        <button onClick={onClose} style={{ padding: "3px 6px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: muted }}>×</button>
+      </div>
+      {showReplace && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            value={replaceText}
+            onChange={e => setReplaceText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleReplace(); }}
+            placeholder="Ersätt med..."
+            style={{
+              flex: 1, padding: "5px 10px", borderRadius: 6, border: `1px solid ${border}`,
+              fontFamily: uiFont, fontSize: 12, background: bg, color: ink, outline: "none",
+            }}
+          />
+          <button onClick={handleReplace} disabled={matches.length === 0} style={{
+            padding: "4px 12px", borderRadius: 5, border: "none", background: accent, color: "#fff",
+            cursor: matches.length > 0 ? "pointer" : "default", fontSize: 11, fontWeight: 500,
+            opacity: matches.length > 0 ? 1 : 0.5,
+          }}>Ersätt</button>
+          <button onClick={handleReplaceAll} disabled={matches.length === 0} style={{
+            padding: "4px 12px", borderRadius: 5, border: `1px solid ${accent}`, background: surface,
+            color: accent, cursor: matches.length > 0 ? "pointer" : "default", fontSize: 11, fontWeight: 500,
+            opacity: matches.length > 0 ? 1 : 0.5,
+          }}>Alla ({matches.length})</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3411,6 +3474,23 @@ export default function App() {
   const [showFinalCheckPrompt, setShowFinalCheckPrompt] = useState(false);
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+
+  // Keyboard shortcuts: Ctrl/Cmd+F → search, Escape → close
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f" && view === "editor") {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "h" && view === "editor") {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [view]);
   const [developResult, setDevelopResult] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -3849,12 +3929,13 @@ export default function App() {
     const chapter = chapters.find(c => c.id === chapterId);
     if (!chapter || reanalyzingChapter) return;
 
+    const analysisLevel = level || analysisLevelRef.current || "basic";
     setReanalyzingChapter(chapterId);
     setProcessingStatus(`Analyserar ${chapter.title}...`);
 
     const freshParas = splitIntoParagraphs(chapter.content);
 
-    // Mark as active but keep existing accepted/rejected suggestions visible
+    // Mark as active
     setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "active" } : c));
 
     let success = false;
@@ -3866,9 +3947,12 @@ export default function App() {
           setProcessingStatus(`Bearbetar ${chapter.title}... (försök ${attempt + 1})`);
           await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
         }
-        // Use backend API – backend preserves accepted/rejected, returns all
-        const result = await apiClient.reviewChapter(chapterId, serverProjectId);
+        // Use multi-pass backend API
+        const result = await apiClient.reviewChapterMulti(chapterId, serverProjectId, analysisLevel);
         const suggestions = result?.suggestions || [];
+
+        // Update DNA profile if returned
+        if (result?.dnaProfile) setDnaProfile(result.dnaProfile);
 
         // Restore accepted/rejected state from DB status
         const restoredAccepted = new Set(accepted);
@@ -3885,6 +3969,11 @@ export default function App() {
           setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enrichedParas }));
         } else {
           setParagraphsByChapter(prev => ({ ...prev, [chapterId]: freshParas }));
+        }
+
+        const stats = result?.stats;
+        if (stats) {
+          console.log(`[Multi-pass] ${chapter.title}: ${stats.new} nya, ${stats.kept} bevarade, ${stats.total} totalt`);
         }
         success = true;
       } catch (err) {
@@ -3903,6 +3992,10 @@ export default function App() {
     setProcessingStatus("");
     setReanalyzingChapter(null);
   };
+
+  // Ref to track current analysis level (avoids stale closures)
+  const analysisLevelRef = useRef(analysisLevel);
+  useEffect(() => { analysisLevelRef.current = analysisLevel; }, [analysisLevel]);
 
   // Split chapter at a paragraph boundary
   // ─── ANALYZE ALL UNREVIEWED CHAPTERS ───
@@ -3945,9 +4038,10 @@ export default function App() {
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
-          // Use backend API – suggestions saved to DB automatically
-          const result = await apiClient.reviewChapter(ch.id, serverProjectId);
+          // Use multi-pass backend API
+          const result = await apiClient.reviewChapterMulti(ch.id, serverProjectId, analysisLevelRef.current || "basic");
           const suggestions = result?.suggestions || [];
+          if (result?.dnaProfile && !dnaProfile) setDnaProfile(result.dnaProfile);
 
           if (suggestions.length > 0) {
             const enrichedParas = attachSuggestionsToParagraphs(paras, suggestions, ch.id);
@@ -4982,7 +5076,51 @@ export default function App() {
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* LEFT SIDEBAR */}
-        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} onSplitChapter={handleSplitChapter} onReanalyze={handleReanalyzeChapter} onDeepAnalyze={(id) => handleReanalyzeChapter(id, "deep")} paragraphsByChapter={paragraphsByChapter} />
+        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} paragraphsByChapter={paragraphsByChapter} />
+
+        {/* SEARCH BAR */}
+        {showSearch && (
+          <SearchBar
+            chapters={chapters}
+            activeChapter={activeChapter}
+            onReplace={(original, replacement) => {
+              if (activeChapter) {
+                applyReplacementToContent(activeChapter, original, replacement);
+              }
+            }}
+            onReplaceAll={(query, replacement, caseSensitive) => {
+              if (activeChapter) {
+                setChapters(prev => {
+                  const ch = prev.find(c => c.id === activeChapter);
+                  if (!ch) return prev;
+                  const flags = caseSensitive ? 'g' : 'gi';
+                  const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+                  const newContent = ch.content.replace(regex, replacement);
+                  if (newContent === ch.content) return prev;
+                  if (serverProjectId) apiClient.updateChapter(activeChapter, { content: newContent }).catch(e => console.error("Replace all save failed:", e));
+                  return prev.map(c => c.id === activeChapter ? { ...c, content: newContent, wordCount: countWords(newContent) } : c);
+                });
+                // Refresh paragraphs
+                setTimeout(() => {
+                  setChapters(prev => {
+                    const ch = prev.find(c => c.id === activeChapter);
+                    if (ch) {
+                      const newParas = splitIntoParagraphs(ch.content);
+                      const oldParas = paragraphsByChapter[activeChapter] || [];
+                      const enriched = newParas.map(np => {
+                        const op = oldParas.find(o => o.text === np.text);
+                        return op?.suggestions?.length ? { ...np, suggestions: op.suggestions } : np;
+                      });
+                      setParagraphsByChapter(prev2 => ({ ...prev2, [activeChapter]: enriched }));
+                    }
+                    return prev;
+                  });
+                }, 0);
+              }
+            }}
+            onClose={() => setShowSearch(false)}
+          />
+        )}
 
         {/* MAIN TEXT */}
         <main ref={mainRef} onMouseUp={handleTextSelection} style={{ flex: 1, overflowY: "auto", padding: "36px 52px", maxWidth: 680, margin: "0 auto", position: "relative" }}>
@@ -5607,13 +5745,8 @@ export default function App() {
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
               {Object.values(ANALYSIS_LEVELS).map(lvl => {
                 const active = reReviewLevel === lvl.id;
-                const selectedChapters = reReviewSelectedChapters.size > 0 ? reReviewSelectedChapters.size : chapters.length;
-                const words = (reReviewSelectedChapters.size > 0
-                  ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
-                  : chapters
-                ).reduce((s, c) => s + c.wordCount, 0);
+                const selectedChapters = reReviewSelectedChapters.size > 0 && !reReviewSelectedChapters.has("__none__") ? reReviewSelectedChapters.size : chapters.length;
                 const estMinutes = Math.ceil(selectedChapters * lvl.estimatePerChapter / 60);
-                const estCost = (words / 1000 * lvl.costPer1kWords).toFixed(0);
                 return (
                   <button key={lvl.id} onClick={() => setReReviewLevel(lvl.id)} style={{
                     padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
@@ -5624,10 +5757,11 @@ export default function App() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>{lvl.label}</div>
                       <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>{lvl.description}</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 2, fontStyle: "italic" }}>{lvl.passes}</div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>ca {estCost} kr</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>{lvl.costPerChapter}/kap</div>
                     </div>
                   </button>
                 );
