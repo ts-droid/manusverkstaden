@@ -104,7 +104,9 @@ function splitIntoChapters(text) {
   let normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
   // Swedish ordinal words for chapter matching
-  const SWEDISH_ORDINALS = "f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugonde|tjugof[öo]rsta|tjugoandra|tjugotredje|tjugofj[äa]rde|tjugofemte|tjugosjätte|tjugosjunde|tjugoåttonde|tjugonionde|trettionde";
+  // Swedish ordinal words — LONGEST FIRST to prevent partial matching
+  // (e.g. "tjugoförsta" must match before "första")
+  const SWEDISH_ORDINALS = "trettionde|tjugonionde|tjugo[åa]ttonde|tjugosjunde|tjugosj[äa]tte|tjugofemte|tjugofj[äa]rde|tjugotredje|tjugoandra|tjugof[öo]rsta|tjugonde|nittonde|artonde|sjuttonde|sextonde|femtonde|fjortonde|trettonde|tolfte|elfte|tionde|nionde|[åa]ttonde|sjunde|sj[äa]tte|femte|fj[äa]rde|tredje|andra|f[öo]rsta";
 
   // Map ordinal words to numbers for display
   const ordinalToNumber = (word) => {

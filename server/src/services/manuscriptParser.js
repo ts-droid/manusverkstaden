@@ -61,7 +61,8 @@ function buildChaptersFromMarkers(text, markers) {
 
 function splitIntoChapters(text) {
   // Swedish ordinal words for chapter matching
-  const SWEDISH_ORDINALS = "f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugonde|tjugof[öo]rsta|tjugoandra|tjugotredje|tjugofj[äa]rde|tjugofemte|tjugosjätte|tjugosjunde|tjugoåttonde|tjugonionde|trettionde";
+  // LONGEST FIRST to prevent partial matching (e.g. "tjugoförsta" before "första")
+  const SWEDISH_ORDINALS = "trettionde|tjugonionde|tjugo[åa]ttonde|tjugosjunde|tjugosj[äa]tte|tjugofemte|tjugofj[äa]rde|tjugotredje|tjugoandra|tjugof[öo]rsta|tjugonde|nittonde|artonde|sjuttonde|sextonde|femtonde|fjortonde|trettonde|tolfte|elfte|tionde|nionde|[åa]ttonde|sjunde|sj[äa]tte|femte|fj[äa]rde|tredje|andra|f[öo]rsta";
 
   // Pre-process: ensure chapter headings get their own line
   const chapterWordPattern = new RegExp(`([^\\n])((?:${SWEDISH_ORDINALS})\\s+kapitlet)`, 'gi');
