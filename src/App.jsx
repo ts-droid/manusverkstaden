@@ -5038,6 +5038,13 @@ export default function App() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setShowSearch(s => !s)}
+            title={`Sök i text (${navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}+F)`}
+            style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 12px", borderRadius: 7, border: `1px solid ${showSearch ? accent : border}`, background: showSearch ? accentLight : surface, color: showSearch ? accent : ink, cursor: "pointer", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
+          >
+            <span style={{ fontSize: 13 }}>⌕</span> Sök
+          </button>
           <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
           <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Inställningar</button>
         </div>
