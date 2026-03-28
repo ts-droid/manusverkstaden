@@ -4911,15 +4911,18 @@ export default function App() {
     // Third try: search paragraph by paragraph using findInText
     if (occs.length === 0 && terms.length > 0) {
       const paras = currentParagraphs;
-      let globalOffset = 0;
+      const chContent = currentChapter?.content || "";
+      let searchFrom = 0;
       for (const para of paras) {
-        const pText = para.content || '';
+        const pText = para.content || para.text || '';
+        const paraStart = chContent.indexOf(pText, searchFrom);
+        const globalOffset = paraStart >= 0 ? paraStart : searchFrom;
         const match = findInText(pText, terms[0]);
         if (match) {
           occs = [{ term: terms[0], index: globalOffset + match.idx, length: match.len, text: pText.slice(match.idx, match.idx + match.len) }];
           break;
         }
-        globalOffset += pText.length + 2; // +2 for \n\n paragraph separator in chapter.content
+        searchFrom = globalOffset + pText.length;
       }
     }
 
@@ -5354,9 +5357,18 @@ export default function App() {
               <span>{allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length} förslag kvar</span>
             </div>
           </div>
-          {(() => { let _globalOff = 0; return currentParagraphs.map((para, paraIdx) => {
-            const paraGlobalOffset = _globalOff;
-            _globalOff += para.text.length + 2; // +2 for \n\n paragraph separator in chapter.content
+          {(() => {
+            // Build accurate offsets by finding each paragraph in chapter.content
+            const chContent = currentChapter?.content || "";
+            const paraOffsets = [];
+            let searchFrom = 0;
+            for (const p of currentParagraphs) {
+              const idx = chContent.indexOf(p.text, searchFrom);
+              paraOffsets.push(idx >= 0 ? idx : searchFrom);
+              searchFrom = (idx >= 0 ? idx : searchFrom) + p.text.length;
+            }
+            return currentParagraphs.map((para, paraIdx) => {
+            const paraGlobalOffset = paraOffsets[paraIdx] || 0;
             const isInserted = insertedParaIds.has(para.id);
             const hasAcceptedChanges = (para.suggestions || []).some(s => accepted.has(s.id));
             const hasPendingChanges = (para.suggestions || []).some(s => !accepted.has(s.id) && !rejected.has(s.id));
