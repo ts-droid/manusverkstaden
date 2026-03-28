@@ -2317,7 +2317,7 @@ function LandingPage({ onLogin, onRegister }) {
   const extras = [
     { icon: "\u{1F9EC}", title: "Skrivutveckling", desc: "DNA-profil och scenutbyggnad som st\u00e4rker ditt ber\u00e4ttande." },
     { icon: "\u{1F310}", title: "\u00d6vers\u00e4ttning", desc: "Professionell AI-\u00f6vers\u00e4ttning med parallellvy och ordlista." },
-    { icon: "\u{1F4C4}", title: "Export med Track Changes", desc: "Exportera till .docx med riktiga \u00e4ndringsmarkeringar." },
+    { icon: "\u{1F4C4}", title: "Export till .docx", desc: "Exportera ditt manus med alla \u00e4ndringar applicerade, redo f\u00f6r tryck." },
   ];
 
   return (
