@@ -5364,14 +5364,19 @@ export default function App() {
               <div style={{ padding: "12px 14px", borderBottom: `1px solid ${border}` }}>
                 <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Förslag</div>
                 <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                  {["all", "red", "yellow", "green"].map(p => (
+                  {["all", "red", "yellow", "green"].map(p => {
+                    const count = p === "all"
+                      ? allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length
+                      : allSuggestions.filter(s => s.priority === p && !accepted.has(s.id) && !rejected.has(s.id)).length;
+                    return (
                     <button key={p} onClick={() => setFilterPriority(p)} style={{
                       fontFamily: uiFont, fontSize: 10, padding: "3px 9px", borderRadius: 10, cursor: "pointer",
                       border: filterPriority === p ? "none" : `1px solid ${border}`,
                       background: filterPriority === p ? (p === "all" ? ink : PRIORITY[p]?.color) : surface,
                       color: filterPriority === p ? "#fff" : muted, fontWeight: 500,
-                    }}>{p === "all" ? "Alla" : PRIORITY[p].label}</button>
-                  ))}
+                    }}>{p === "all" ? "Alla" : PRIORITY[p].label}{count > 0 ? ` (${count})` : ""}</button>
+                    );
+                  })}
                 </div>
                 {/* Batch actions */}
                 {(() => {
