@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { parseManuscript, splitIntoParagraphs, countWords } from "./lib/manuscript-parser";
 import { sendMessage, extractText, parseJsonResponse } from "./lib/ai-client";
 import { buildPrompt, buildReviewRequest, ANALYSIS_LEVELS } from "./lib/prompt-builder";
@@ -436,65 +436,99 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, paragraphsByChapte
 }
 
 // ─── SEARCH BAR ───
-function SearchBar({ chapters, activeChapter, onReplace, onReplaceAll, onClose, onSearchChange }) {
+function SearchBar({ chapters, activeChapter, setActiveChapter, onReplace, onReplaceAll, onClose, onSearchChange }) {
   const [query, setQuery] = useState("");
   const [replaceText, setReplaceText] = useState("");
   const [showReplace, setShowReplace] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const [searchAll, setSearchAll] = useState(true); // default: search entire manuscript
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
   const inputRef = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Find all matches in active chapter
-  const chapter = chapters.find(c => c.id === activeChapter);
-  const matches = [];
-  if (query.length >= 2 && chapter?.content) {
-    const text = chapter.content;
+  // Find all matches — in active chapter or entire manuscript
+  const allMatches = useMemo(() => {
+    if (query.length < 2) return [];
     const searchStr = caseSensitive ? query : query.toLowerCase();
-    const searchIn = caseSensitive ? text : text.toLowerCase();
-    let idx = 0;
-    while (idx < searchIn.length) {
-      const found = searchIn.indexOf(searchStr, idx);
-      if (found === -1) break;
-      matches.push({ index: found, length: query.length });
-      idx = found + 1;
+    const result = [];
+    const searchChapters = searchAll ? chapters : chapters.filter(c => c.id === activeChapter);
+    for (const ch of searchChapters) {
+      if (!ch.content) continue;
+      const searchIn = caseSensitive ? ch.content : ch.content.toLowerCase();
+      let idx = 0;
+      while (idx < searchIn.length) {
+        const found = searchIn.indexOf(searchStr, idx);
+        if (found === -1) break;
+        result.push({ index: found, length: query.length, chapterId: ch.id, chapterTitle: ch.title });
+        idx = found + 1;
+      }
     }
-  }
+    return result;
+  }, [query, caseSensitive, searchAll, chapters, activeChapter]);
 
-  // Report search state to parent for text highlighting
+  // Matches in current chapter (for text highlighting)
+  const currentChapterMatches = allMatches.filter(m => m.chapterId === activeChapter);
+
+  // Report search state to parent for text highlighting (only current chapter matches)
   useEffect(() => {
     if (onSearchChange) {
-      onSearchChange(query.length >= 2 ? { query, matches, activeMatchIdx, caseSensitive } : null);
+      const activeGlobal = allMatches[activeMatchIdx];
+      const localIdx = activeGlobal ? currentChapterMatches.findIndex(m => m.index === activeGlobal.index && m.chapterId === activeGlobal.chapterId) : -1;
+      onSearchChange(query.length >= 2 ? { query, matches: currentChapterMatches, activeMatchIdx: localIdx, caseSensitive } : null);
     }
-  }, [query, matches.length, activeMatchIdx, caseSensitive]);
+  }, [query, currentChapterMatches.length, activeMatchIdx, caseSensitive, activeChapter]);
 
-  // Scroll to active match
+  // Navigate to match — switch chapter if needed, then scroll
   useEffect(() => {
-    if (matches.length === 0 || !query) return;
-    const els = document.querySelectorAll("[data-search-match]");
-    const target = els[activeMatchIdx];
-    if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeMatchIdx, matches.length, query]);
+    if (allMatches.length === 0 || !query) return;
+    const match = allMatches[activeMatchIdx];
+    if (!match) return;
+    // Switch chapter if needed
+    if (match.chapterId !== activeChapter && setActiveChapter) {
+      setActiveChapter(match.chapterId);
+      // Wait for chapter to render before scrolling
+      setTimeout(() => {
+        const els = document.querySelectorAll("[data-search-match]");
+        if (els[0]) els[0].scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 150);
+    } else {
+      // Same chapter — scroll to match
+      setTimeout(() => {
+        const localIdx = currentChapterMatches.findIndex(m => m.index === match.index);
+        const els = document.querySelectorAll("[data-search-match]");
+        const target = els[localIdx >= 0 ? localIdx : 0];
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+    }
+  }, [activeMatchIdx, allMatches.length, query]);
 
-  const handleNext = () => setActiveMatchIdx(prev => (prev + 1) % Math.max(matches.length, 1));
-  const handlePrev = () => setActiveMatchIdx(prev => (prev - 1 + matches.length) % Math.max(matches.length, 1));
+  const handleNext = () => setActiveMatchIdx(prev => (prev + 1) % Math.max(allMatches.length, 1));
+  const handlePrev = () => setActiveMatchIdx(prev => (prev - 1 + allMatches.length) % Math.max(allMatches.length, 1));
 
   const handleReplace = () => {
-    if (matches.length > 0 && onReplace) {
-      const m = matches[activeMatchIdx];
+    if (allMatches.length > 0 && onReplace) {
+      const m = allMatches[activeMatchIdx];
       if (m) {
-        const orig = chapter.content.slice(m.index, m.index + m.length);
-        onReplace(orig, replaceText);
+        // Switch to chapter first if needed
+        if (m.chapterId !== activeChapter && setActiveChapter) setActiveChapter(m.chapterId);
+        const ch = chapters.find(c => c.id === m.chapterId);
+        if (ch) {
+          const orig = ch.content.slice(m.index, m.index + m.length);
+          onReplace(orig, replaceText, m.chapterId);
+        }
       }
     }
   };
 
   const handleReplaceAll = () => {
-    if (matches.length > 0 && onReplaceAll && query) {
-      onReplaceAll(query, replaceText, caseSensitive);
+    if (allMatches.length > 0 && onReplaceAll && query) {
+      onReplaceAll(query, replaceText, caseSensitive, searchAll);
     }
   };
+
+  // Current match chapter info
+  const currentMatch = allMatches[activeMatchIdx];
 
   return (
     <div style={{
@@ -507,28 +541,38 @@ function SearchBar({ chapters, activeChapter, onReplace, onReplaceAll, onClose, 
           value={query}
           onChange={e => { setQuery(e.target.value); setActiveMatchIdx(0); }}
           onKeyDown={e => { if (e.key === "Enter") handleNext(); if (e.key === "Escape") onClose(); }}
-          placeholder="Sök i kapitlet..."
+          placeholder={searchAll ? "Sök i hela manuset..." : "Sök i kapitlet..."}
           style={{
             flex: 1, padding: "5px 10px", borderRadius: 6, border: `1px solid ${border}`,
             fontFamily: uiFont, fontSize: 12, background: bg, color: ink, outline: "none",
           }}
         />
         <span style={{ fontSize: 10, color: muted, minWidth: 50, textAlign: "center" }}>
-          {query.length >= 2 ? `${matches.length > 0 ? activeMatchIdx + 1 : 0} / ${matches.length}` : ""}
+          {query.length >= 2 ? `${allMatches.length > 0 ? activeMatchIdx + 1 : 0} / ${allMatches.length}` : ""}
         </span>
-        <button onClick={handlePrev} disabled={matches.length === 0} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface, cursor: "pointer", fontSize: 11, color: muted }}>←</button>
-        <button onClick={handleNext} disabled={matches.length === 0} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface, cursor: "pointer", fontSize: 11, color: muted }}>→</button>
-        <button onClick={() => setCaseSensitive(!caseSensitive)} style={{
+        <button onClick={handlePrev} disabled={allMatches.length === 0} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface, cursor: "pointer", fontSize: 11, color: muted }}>←</button>
+        <button onClick={handleNext} disabled={allMatches.length === 0} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface, cursor: "pointer", fontSize: 11, color: muted }}>→</button>
+        <button onClick={() => setCaseSensitive(!caseSensitive)} title="Skiftlägeskänslig sökning" style={{
           padding: "3px 8px", borderRadius: 4, border: `1px solid ${caseSensitive ? accent : border}`,
           background: caseSensitive ? accentLight : surface, cursor: "pointer", fontSize: 10, fontWeight: 600,
           color: caseSensitive ? accent : muted,
         }}>Aa</button>
+        <button onClick={() => { setSearchAll(!searchAll); setActiveMatchIdx(0); }} title={searchAll ? "Söker i hela manuset" : "Söker i aktivt kapitel"} style={{
+          padding: "3px 8px", borderRadius: 4, border: `1px solid ${searchAll ? accent : border}`,
+          background: searchAll ? accentLight : surface, cursor: "pointer", fontSize: 10, fontWeight: 600,
+          color: searchAll ? accent : muted,
+        }}>{searchAll ? "Alla" : "Kap"}</button>
         <button onClick={() => setShowReplace(!showReplace)} style={{
           padding: "3px 8px", borderRadius: 4, border: `1px solid ${showReplace ? accent : border}`,
           background: showReplace ? accentLight : surface, cursor: "pointer", fontSize: 10, color: showReplace ? accent : muted,
         }}>Ersätt</button>
         <button onClick={onClose} style={{ padding: "3px 6px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: muted }}>×</button>
       </div>
+      {searchAll && currentMatch && allMatches.length > 0 && (
+        <div style={{ fontSize: 10, color: accent, fontWeight: 500, paddingLeft: 2 }}>
+          📍 {currentMatch.chapterTitle || "Kapitel"}
+        </div>
+      )}
       {showReplace && (
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <input
@@ -5270,40 +5314,48 @@ export default function App() {
           <SearchBar
             chapters={chapters}
             activeChapter={activeChapter}
-            onReplace={(original, replacement) => {
-              if (activeChapter) {
-                applyReplacementToContent(activeChapter, original, replacement);
+            setActiveChapter={setActiveChapter}
+            onReplace={(original, replacement, chapterId) => {
+              const targetChapter = chapterId || activeChapter;
+              if (targetChapter) {
+                applyReplacementToContent(targetChapter, original, replacement);
               }
             }}
-            onReplaceAll={(query, replacement, caseSensitive) => {
-              if (activeChapter) {
-                setChapters(prev => {
-                  const ch = prev.find(c => c.id === activeChapter);
-                  if (!ch) return prev;
+            onReplaceAll={(query, replacement, caseSensitive, searchAllChapters) => {
+              const targetChapters = searchAllChapters ? chapters : chapters.filter(c => c.id === activeChapter);
+              setChapters(prev => {
+                let updated = prev;
+                for (const tc of targetChapters) {
+                  const ch = updated.find(c => c.id === tc.id);
+                  if (!ch) continue;
                   const flags = caseSensitive ? 'g' : 'gi';
                   const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
                   const newContent = ch.content.replace(regex, replacement);
-                  if (newContent === ch.content) return prev;
-                  if (serverProjectId) apiClient.updateChapter(activeChapter, { content: newContent }).catch(e => console.error("Replace all save failed:", e));
-                  return prev.map(c => c.id === activeChapter ? { ...c, content: newContent, wordCount: countWords(newContent) } : c);
-                });
-                // Refresh paragraphs
-                setTimeout(() => {
+                  if (newContent === ch.content) continue;
+                  if (serverProjectId) apiClient.updateChapter(tc.id, { content: newContent }).catch(e => console.error("Replace all save failed:", e));
+                  updated = updated.map(c => c.id === tc.id ? { ...c, content: newContent, wordCount: countWords(newContent) } : c);
+                }
+                return updated;
+              });
+              // Refresh paragraphs for all affected chapters
+              setTimeout(() => {
+                const affectedIds = searchAllChapters ? chapters.map(c => c.id) : [activeChapter];
+                for (const chId of affectedIds) {
                   setChapters(prev => {
-                    const ch = prev.find(c => c.id === activeChapter);
+                    const ch = prev.find(c => c.id === chId);
                     if (ch) {
                       const newParas = splitIntoParagraphs(ch.content);
-                      const oldParas = paragraphsByChapter[activeChapter] || [];
+                      const oldParas = paragraphsByChapter[chId] || [];
                       const enriched = newParas.map(np => {
                         const op = oldParas.find(o => o.text === np.text);
                         return op?.suggestions?.length ? { ...np, suggestions: op.suggestions } : np;
                       });
-                      setParagraphsByChapter(prev2 => ({ ...prev2, [activeChapter]: enriched }));
+                      setParagraphsByChapter(prev2 => ({ ...prev2, [chId]: enriched }));
                     }
                     return prev;
                   });
-                }, 0);
-              }
+                }
+              }, 0);
             }}
             onClose={() => { setShowSearch(false); setSearchState(null); }}
             onSearchChange={setSearchState}
