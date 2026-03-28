@@ -79,6 +79,20 @@ router.post('/review', async (req, res, next) => {
     const meaningful = deduped.filter(s => {
       if (s.original && s.replacement && normS(s.original) === normS(s.replacement)) return false;
       if (s.reason && /ingen ändring|korrekt form|redan korrekt|behövs inte/i.test(s.reason)) return false;
+      // Verify original text actually exists in the chapter — reject hallucinated quotes
+      if (s.original && chapter?.content) {
+        const chapterContent = chapter.content;
+        const origNorm = normS(s.original);
+        const contentNorm = normS(chapterContent);
+        if (!contentNorm.includes(origNorm)) {
+          // Try shorter prefix match (AI may have truncated)
+          const prefix = origNorm.substring(0, 30);
+          if (prefix.length >= 10 && !contentNorm.includes(prefix)) {
+            console.warn(`[AI Filter] Rejected hallucinated suggestion — original not found: "${s.original.slice(0, 60)}..."`);
+            return false;
+          }
+        }
+      }
       return true;
     });
 
