@@ -5099,11 +5099,13 @@ export default function App() {
       return parts;
     };
 
-    if (!suggestions || !suggestions.length) return applyTermHighlights(text, `p${para.id}`, paraGlobalOffset);
+    // Filter out suggestions flagged as no-inline (unmatched, placed for panel visibility only)
+    const inlineSuggestions = (suggestions || []).filter(s => !s._noInline);
+    if (!inlineSuggestions.length) return applyTermHighlights(text, `p${para.id}`, paraGlobalOffset);
     const parts = [];
     let last = 0;
     // Pre-compute positions for sorting
-    const withPos = suggestions.filter(s => s.original).map(s => {
+    const withPos = inlineSuggestions.filter(s => s.original).map(s => {
       const match = findInText(text, s.original);
       return { s, match };
     }).filter(x => x.match).sort((a, b) => a.match.idx - b.match.idx);
@@ -6052,13 +6054,42 @@ function attachSuggestionsToParagraphs(paragraphs, suggestions, chapterId) {
     return { ...para, suggestions: matchingSuggestions };
   });
 
-  // Attach unmatched suggestions to first paragraph so they still appear in the panel
-  const unmatched = suggestions.filter((s, i) => !matched.has(i)).map((s, i) => ({
-    ...s,
-    id: s.id || `${chapterId}_unmatched_${i}`,
-  }));
-  if (unmatched.length > 0 && result.length > 0) {
-    result[0] = { ...result[0], suggestions: [...(result[0].suggestions || []), ...unmatched] };
+  // Attach unmatched suggestions — try to find the right paragraph by searching all paragraphs
+  const unmatched = suggestions.filter((s, i) => !matched.has(i));
+  for (const s of unmatched) {
+    const suggestion = { ...s, id: s.id || `${chapterId}_unmatched_${unmatched.indexOf(s)}` };
+    let placed = false;
+    if (s.original) {
+      // Search each paragraph for the original text
+      const norm = str => str.replace(/\s+/g, ' ').toLowerCase();
+      const normOrig = norm(s.original);
+      for (let pi = 0; pi < result.length; pi++) {
+        if (norm(result[pi].text).includes(normOrig) || normOrig.includes(norm(result[pi].text).substring(0, 40))) {
+          result[pi] = { ...result[pi], suggestions: [...(result[pi].suggestions || []), suggestion] };
+          placed = true;
+          break;
+        }
+      }
+      // Try partial match — first 30 chars of original
+      if (!placed && normOrig.length > 30) {
+        const prefix = normOrig.substring(0, 30);
+        for (let pi = 0; pi < result.length; pi++) {
+          if (norm(result[pi].text).includes(prefix)) {
+            result[pi] = { ...result[pi], suggestions: [...(result[pi].suggestions || []), suggestion] };
+            placed = true;
+            break;
+          }
+        }
+      }
+    }
+    // Last resort: attach to last paragraph (not first/title) with noInlineHighlight flag
+    if (!placed && result.length > 1) {
+      suggestion._noInline = true;
+      result[result.length - 1] = { ...result[result.length - 1], suggestions: [...(result[result.length - 1].suggestions || []), suggestion] };
+    } else if (!placed && result.length > 0) {
+      suggestion._noInline = true;
+      result[0] = { ...result[0], suggestions: [...(result[0].suggestions || []), suggestion] };
+    }
   }
   return result;
 }
