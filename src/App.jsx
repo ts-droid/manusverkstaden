@@ -4919,7 +4919,7 @@ export default function App() {
           occs = [{ term: terms[0], index: globalOffset + match.idx, length: match.len, text: pText.slice(match.idx, match.idx + match.len) }];
           break;
         }
-        globalOffset += pText.length + 1; // +1 for paragraph separator
+        globalOffset += pText.length + 2; // +2 for \n\n paragraph separator in chapter.content
       }
     }
 
