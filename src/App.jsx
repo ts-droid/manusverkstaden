@@ -174,7 +174,6 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
   const [genres, setGenres] = useState([]);
   const [modules, setModules] = useState([]);
   const [transLangs, setTransLangs] = useState(["en"]);
-  const [analysisLevel, setAnalysisLevel] = useState("standard");
 
   const toggle = (arr, setArr, id) => setArr(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
@@ -210,7 +209,7 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
                 }}>
                   <div style={{ fontSize: 18, marginBottom: 4 }}>{g.icon}</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: ink }}>{g.label}</div>
-                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{g.desc}</div>
+                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{g.description}</div>
                 </button>
               );
             })}
@@ -274,41 +273,8 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
           </section>
         )}
 
-        {/* Analysis level */}
-        <section style={{ marginBottom: 28 }}>
-          <h3 style={{ fontFamily: uiFont, fontSize: 12, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 12px" }}>Analysnivå</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <p style={{ fontFamily: uiFont, fontSize: 10, color: muted, margin: "0 0 8px", fontStyle: "italic" }}>
-              Ungefärlig tid och kostnad baserat på ditt manus ({(totalWords || 0).toLocaleString()} ord, {chapterCount || 0} kapitel)
-            </p>
-            {Object.values(ANALYSIS_LEVELS).map(lvl => {
-              const active = analysisLevel === lvl.id;
-              const chaps = chapterCount || 20;
-              const estMinutes = Math.ceil(chaps * lvl.estimatePerChapter / 60);
-              return (
-                <button key={lvl.id} onClick={() => setAnalysisLevel(lvl.id)} style={{
-                  padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
-                  border: active ? `2px solid ${accent}` : `1px solid ${border}`,
-                  background: active ? accentLight : surface, display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
-                }}>
-                  <span style={{ fontSize: 22 }}>{lvl.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{lvl.label}</div>
-                    <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>{lvl.description}</div>
-                    <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 3, fontStyle: "italic" }}>{lvl.passes}</div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontFamily: uiFont, fontSize: 11, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
-                    <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>{lvl.costPerChapter}/kap</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
         <button
-          onClick={() => onStart({ genres, modules, transLangs, analysisLevel })}
+          onClick={() => onStart({ genres, modules, transLangs, analysisLevel: "standard" })}
           style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
         >
           Spara och öppna manus
@@ -1016,7 +982,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
                 }}>
                   <div style={{ fontSize: 18, marginBottom: 4 }}>{g.icon}</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: ink }}>{g.label}</div>
-                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{g.desc}</div>
+                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{g.description}</div>
                 </button>
               );
             })}
@@ -5238,7 +5204,7 @@ export default function App() {
               display: "flex", alignItems: "center", gap: 4,
             }}
           >
-            {reReviewing ? "Granskar..." : `↻ Ny granskning`}
+            {reReviewing ? "Granskar..." : `↻ Granska`}
             {reviewHistory.length > 0 && (
               <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 8, background: accentLight, color: accent, fontWeight: 600 }}>
                 #{activeReviewRound}
