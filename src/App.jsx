@@ -5039,7 +5039,7 @@ export default function App() {
     // Helper: apply search highlights to a text fragment
     const applySearchHighlights = (fragment, keyPrefix, globalStart) => {
       if (!searchState || !fragment || !searchState.query) return renderFormatted(fragment, keyPrefix);
-      const { query: sq, activeMatchIdx: sIdx, caseSensitive: sCase } = searchState;
+      const { query: sq, activeMatchIdx: sIdx, caseSensitive: sCase, matches: allMatches } = searchState;
       const fragLower = sCase ? fragment : fragment.toLowerCase();
       const sqLower = sCase ? sq : sq.toLowerCase();
       const fragMatches = [];
@@ -5047,9 +5047,13 @@ export default function App() {
       while (si < fragLower.length) {
         const found = fragLower.indexOf(sqLower, si);
         if (found === -1) break;
-        // Map to global index to determine match number
+        // Find closest match by global index (allow small offset differences)
         const globalIdx = globalStart + found;
-        const matchNum = searchState.matches.findIndex(m => m.index === globalIdx);
+        let matchNum = allMatches.findIndex(m => Math.abs(m.index - globalIdx) <= 2);
+        if (matchNum === -1) {
+          // Fallback: count how many matches are before this one in the full text
+          matchNum = allMatches.filter(m => m.index < globalIdx - 1).length;
+        }
         fragMatches.push({ localIdx: found, length: sq.length, matchNum });
         si = found + 1;
       }
