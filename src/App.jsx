@@ -370,7 +370,7 @@ function ProcessingView({ chapters, statusText, onAbort }) {
                 }}>
                   {ch.status === "done" ? "✓" : ch.status === "active" ? "..." : ""}
                 </span>
-                <span style={{ color: ch.status === "pending" ? muted : ink, flex: 1 }}>{ch.title}</span>
+                <span style={{ color: ch.status === "pending" ? muted : ink, flex: 1 }}>{`Kapitel ${i + 1}`}</span>
                 <span style={{ fontSize: 10, color: muted }}>{ch.wordCount.toLocaleString()} ord</span>
               </div>
             ))}
@@ -397,14 +397,14 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
         <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Kapitel</div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 6 }}>
-        {chapters.map(ch => (
+        {chapters.map((ch, idx) => (
           <div key={ch.id} style={{ position: "relative" }}>
             <button onClick={() => setActiveChapter(ch.id)} style={{
               width: "100%", textAlign: "left", padding: "9px 10px", borderRadius: 7, border: "none",
               background: activeChapter === ch.id ? "#ede8e0" : "transparent", cursor: "pointer", fontFamily: font, marginBottom: 1,
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35, flex: 1 }}>{ch.title}</div>
+                <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35, flex: 1 }}>{`Kapitel ${idx + 1}`}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
                   {activeChapter === ch.id && onDeepAnalyze && (
                     <span
@@ -2008,9 +2008,9 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
         <OptionGroup label="Vad vill du exportera?">
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <Chip active={exportScope === "all"} onClick={() => setExportScope("all")}>Hela boken</Chip>
-            {chapters.map(ch => (
+            {chapters.map((ch, idx) => (
               <Chip key={ch.id} active={exportScope === ch.id} onClick={() => setExportScope(ch.id)}>
-                {ch.title || `Kapitel ${ch.number}`}
+                {`Kapitel ${idx + 1}`}
               </Chip>
             ))}
           </div>
@@ -3959,6 +3959,9 @@ export default function App() {
     setRejected(new Set());
     setActiveSuggestion(null);
 
+    // Mark all chapters as pending for the new review round
+    setChapters(prev => prev.map(c => ({ ...c, status: "pending" })));
+
     // Re-run analysis on all chapters via backend API
     for (let i = 0; i < chapters.length; i++) {
       if (abortProcessingRef.current) {
@@ -3966,13 +3969,14 @@ export default function App() {
         break;
       }
       const ch = chapters[i];
-      setProcessingStatus(`Granskning ${activeReviewRound + 1}: ${ch.title} (${i + 1}/${chapters.length})...`);
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
+      setProcessingStatus(`Granskning ${activeReviewRound + 1}: Kapitel ${i + 1} (${i + 1}/${chapters.length})...`);
 
       let success = false;
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            setProcessingStatus(`Bearbetar ${ch.title}... (försök ${attempt + 1})`);
+            setProcessingStatus(`Bearbetar Kapitel ${i + 1}... (försök ${attempt + 1})`);
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
@@ -3988,13 +3992,15 @@ export default function App() {
           }
           success = true;
         } catch (err) {
-          console.error(`Re-review failed for ${ch.title}:`, err);
+          console.error(`Re-review failed for Kapitel ${i + 1}:`, err);
           if (attempt === 2) {
-            setProcessingStatus(`${ch.title} hoppades över – analyseras vid nästa genomgång`);
+            setProcessingStatus(`Kapitel ${i + 1} hoppades över – analyseras vid nästa genomgång`);
             await new Promise(r => setTimeout(r, 1500));
           }
         }
       }
+
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "done" } : c));
 
       if (i < chapters.length - 1) {
         setProcessingStatus(`Förbereder nästa kapitel...`);
@@ -4179,11 +4185,13 @@ export default function App() {
   const allSuggestions = currentParagraphs.flatMap(p => p.suggestions || []);
   // Show all suggestions: pending first, then handled. Filter by priority.
   const filtered = allSuggestions
+    .map((s, idx) => ({ ...s, _textOrder: idx }))
     .filter(s => filterPriority === "all" || s.priority === filterPriority)
     .sort((a, b) => {
       const aHandled = accepted.has(a.id) || rejected.has(a.id) ? 1 : 0;
       const bHandled = accepted.has(b.id) || rejected.has(b.id) ? 1 : 0;
-      return aHandled - bHandled; // pending first
+      if (aHandled !== bHandled) return aHandled - bHandled; // pending first
+      return a._textOrder - b._textOrder; // preserve text order within group
     });
   const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
 

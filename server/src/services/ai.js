@@ -77,6 +77,37 @@ function parseJsonResponse(text) {
 }
 
 /**
+ * Validate suggestions against the actual chapter text.
+ * Filters out false positives where the AI's reasoning doesn't match reality.
+ */
+function validateSuggestions(suggestions, chapterContent) {
+  return suggestions.filter(s => {
+    if (!s.original || !s.replacement) return false;
+    if (s.original.trim() === s.replacement.trim()) return false;
+    if (!chapterContent.includes(s.original)) {
+      const prefix = s.original.substring(0, 30).trim();
+      if (prefix.length < 10 || !chapterContent.includes(prefix)) return false;
+    }
+    const origTrimmed = s.original.trim();
+    const replTrimmed = s.replacement.trim();
+    const origLastChar = origTrimmed.slice(-1);
+    const replLastChar = replTrimmed.slice(-1);
+    const isPunctuationChange = origTrimmed.slice(0, -1) === replTrimmed.slice(0, -1)
+      && /[.,;:!?]/.test(origLastChar) && /[.,;:!?]/.test(replLastChar);
+    if (isPunctuationChange) {
+      const pos = chapterContent.indexOf(origTrimmed);
+      if (pos >= 0) {
+        const after = chapterContent.slice(pos + origTrimmed.length).replace(/^\s+/, '');
+        const nextChar = after.charAt(0);
+        if (origLastChar === ',' && replLastChar === '.' && nextChar && /[a-zåäö]/.test(nextChar)) return false;
+        if (origLastChar === '.' && replLastChar === ',' && nextChar && /[A-ZÅÄÖ]/.test(nextChar)) return false;
+      }
+    }
+    return true;
+  });
+}
+
+/**
  * Review a chapter and return suggestions.
  */
 export async function reviewChapter(content, { genres = [], modules = [] } = {}) {
@@ -112,7 +143,9 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
   const meta = extractMeta(response);
   const text = extractText(response);
   try {
-    return { result: parseJsonResponse(text), meta };
+    const parsed = parseJsonResponse(text);
+    const validated = validateSuggestions(Array.isArray(parsed) ? parsed : [], content);
+    return { result: validated, meta };
   } catch {
     console.error('Failed to parse review response:', text.slice(0, 200));
     return { result: [], meta };
