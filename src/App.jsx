@@ -356,14 +356,17 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
                 {ch.status === "error" && (
                   <span title={ch.errorMessage || 'Okänt fel'} style={{ fontSize: 9, color: "#c0392b", cursor: "help" }}>analys misslyckades</span>
                 )}
-                {!chapterHasSuggestions(ch.id) && ch.status !== "active" && ch.status !== "error" && (
+                {!chapterHasSuggestions(ch.id) && ch.status !== "active" && ch.status !== "error" && ch.status !== "done" && ch.status !== "reviewed" && (
                   <span style={{ fontSize: 9, color: "#b8860b" }}>ej analyserad</span>
+                )}
+                {!chapterHasSuggestions(ch.id) && ch.status === "done" && (
+                  <span style={{ fontSize: 9, color: "#27864a" }}>inga förslag</span>
                 )}
                 <span style={{
                   width: ch.status === "active" ? 14 : 10,
                   height: ch.status === "active" ? 14 : 10,
                   borderRadius: "50%", marginLeft: "auto", flexShrink: 0,
-                  background: ch.status === "active" ? "#b8860b" : ch.status === "reviewed" ? "#d4a017" : chapterHasSuggestions(ch.id) ? "#27864a" : "#c0392b",
+                  background: ch.status === "active" ? "#b8860b" : ch.status === "reviewed" ? "#d4a017" : (ch.status === "done" || chapterHasSuggestions(ch.id)) ? "#27864a" : "#c0392b",
                   animation: ch.status === "active" ? "pulse 1.5s ease-in-out infinite" : "none",
                   boxShadow: ch.status === "active" ? "0 0 8px rgba(184,134,11,0.6)" : "none",
                   transition: "all 0.3s ease",
@@ -4451,6 +4454,66 @@ export default function App() {
         await new Promise(r => setTimeout(r, 3000));
       }
     }
+
+    // Auto-retry failed chapters from pass 2
+    const failedInPass2 = chaptersToReview.filter(ch => {
+      const paras = clearedParas[ch.id] || [];
+      const hasSugg = paras.some(p => p.suggestions?.length > 0);
+      // Find current status — chapters that stayed "pending" failed
+      return !hasSugg && clearedParas[ch.id] !== undefined;
+    }).filter(ch => {
+      // Check actual chapter status — only retry those that are still pending (failed)
+      const current = chapters.find(c => c.id === ch.id);
+      return current && current.status !== "done" && current.status !== "reviewed";
+    });
+
+    if (failedInPass2.length > 0 && !abortProcessingRef.current) {
+      setProcessingStatus(`Omanalyserar ${failedInPass2.length} missade kapitel...`);
+      await new Promise(r => setTimeout(r, 5000));
+
+      for (let fi = 0; fi < failedInPass2.length; fi++) {
+        if (abortProcessingRef.current) { abortProcessingRef.current = false; break; }
+        const ch = failedInPass2[fi];
+        setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
+        setProcessingStatus(`Omanalyserar ${ch.title} (${fi + 1}/${failedInPass2.length})...`);
+
+        let retrySuccess = false;
+        let lastError = null;
+        for (let attempt = 0; attempt < 3 && !retrySuccess; attempt++) {
+          try {
+            if (attempt > 0) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
+            const result = await apiClient.reviewChapter(ch.id, serverProjectId, useLevel || 'standard');
+            const suggestions = result?.suggestions || [];
+            if (suggestions.length > 0) {
+              const paras = clearedParas[ch.id] || splitIntoParagraphs(ch.content);
+              const enriched = attachSuggestionsToParagraphs(paras, suggestions, ch.id);
+              clearedParas[ch.id] = enriched;
+              setParagraphsByChapter({ ...clearedParas });
+            }
+            retrySuccess = true;
+          } catch (err) {
+            lastError = err;
+            const msg = err?.response?.data?.error || err?.message || 'Okänt fel';
+            console.error(`[Retry] ${ch.title} försök ${attempt + 1}/3: ${msg}`, err);
+          }
+        }
+
+        if (!retrySuccess) {
+          const errorMsg = lastError?.response?.data?.error || lastError?.message || 'Granskning misslyckades';
+          console.error(`[Review] ${ch.title} misslyckades slutgiltigt efter retry: ${errorMsg}`);
+        }
+        setChapters(prev => prev.map(c => c.id === ch.id ? {
+          ...c,
+          status: retrySuccess ? "done" : "error",
+          errorMessage: retrySuccess ? undefined : (lastError?.response?.data?.error || lastError?.message || 'Granskning misslyckades'),
+        } : c));
+
+        if (fi < failedInPass2.length - 1) await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+
+    // All chapters processed — now mark reviewed chapters as done
+    setChapters(prev => prev.map(c => c.status === "reviewed" ? { ...c, status: "done" } : c));
     setProcessingStatus("");
     setReReviewing(false);
   };
@@ -5576,6 +5639,12 @@ export default function App() {
                         }} />
                         <div style={{ color: ink, fontWeight: 500 }}>Analyserar kapitlet...</div>
                         <div style={{ fontSize: 11, marginTop: 4, color: muted }}>Förslag visas här när analysen är klar</div>
+                      </div>
+                    ) : currentChapter?.status === "done" && allSuggestions.length === 0 ? (
+                      <div>
+                        <div style={{ fontSize: 20, marginBottom: 8 }}>✓</div>
+                        <div style={{ color: "#27864a", fontWeight: 500 }}>Inga förslag</div>
+                        <div style={{ fontSize: 11, marginTop: 4, color: muted }}>Kapitlet ser bra ut — inga problem hittades</div>
                       </div>
                     ) : (
                       allSuggestions.length === 0 ? "Inga förslag för detta kapitel än." : "Inga förslag matchar filtret."
