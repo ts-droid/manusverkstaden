@@ -4284,7 +4284,7 @@ export default function App() {
     setReReviewing(true);
     const useLevel = level || reReviewLevel;
 
-    // Archive current review round
+    // Archive current review round (only if there are existing suggestions)
     const currentRoundSuggestions = [];
     for (const ch of chapters) {
       const paras = paragraphsByChapter[ch.id] || [];
@@ -4300,16 +4300,20 @@ export default function App() {
       }
     }
 
-    setReviewHistory(prev => [...prev, {
-      round: activeReviewRound,
-      date: new Date().toISOString(),
-      suggestions: currentRoundSuggestions,
-      totalCount: currentRoundSuggestions.length,
-      acceptedCount: currentRoundSuggestions.filter(s => s.status === "accepted").length,
-      rejectedCount: currentRoundSuggestions.filter(s => s.status === "rejected").length,
-    }]);
+    const isFirstReview = currentRoundSuggestions.length === 0 && reviewHistory.length === 0;
 
-    setActiveReviewRound(prev => prev + 1);
+    if (!isFirstReview) {
+      setReviewHistory(prev => [...prev, {
+        round: activeReviewRound,
+        date: new Date().toISOString(),
+        suggestions: currentRoundSuggestions,
+        totalCount: currentRoundSuggestions.length,
+        acceptedCount: currentRoundSuggestions.filter(s => s.status === "accepted").length,
+        rejectedCount: currentRoundSuggestions.filter(s => s.status === "rejected").length,
+      }]);
+
+      setActiveReviewRound(prev => prev + 1);
+    }
 
     // Clear old suggestions but keep accepted changes applied to content
     const clearedParas = {};
@@ -4341,7 +4345,8 @@ export default function App() {
       const ch = chaptersToReview[i];
       const chIdx = chapters.indexOf(ch);
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
-      setProcessingStatus(`Granskning ${activeReviewRound + 1}: Kapitel ${chIdx + 1} (${i + 1}/${chaptersToReview.length})...`);
+      const displayRound = isFirstReview ? 1 : activeReviewRound + 1;
+      setProcessingStatus(`Granskning ${displayRound}: Kapitel ${chIdx + 1} (${i + 1}/${chaptersToReview.length})...`);
 
 
       let success = false;
