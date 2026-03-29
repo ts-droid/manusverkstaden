@@ -4326,7 +4326,63 @@ export default function App() {
     setRejected(new Set());
     setActiveSuggestion(null);
 
-    // Generate DNA profile first if not available (ensures all chapters benefit from DNA)
+    // Determine chapters to review
+    const chaptersToReview = reReviewSelectedChapters.size > 0
+      ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
+      : chapters;
+    setReReviewSelectedChapters(new Set());
+
+    // Mark all chapters as pending
+    setChapters(prev => prev.map(c =>
+      chaptersToReview.some(cr => cr.id === c.id) ? { ...c, status: "pending" } : c
+    ));
+
+    // ═══════════════════════════════════════════════════════════════
+    // PASS 1: GRUNDGRANSKNING — scan all chapters + build DNA
+    // No chapters marked as done, no suggestion cards shown yet
+    // ═══════════════════════════════════════════════════════════════
+    const pass1Results = {}; // chapterId → raw suggestions from first pass
+    const displayRound = isFirstReview ? 1 : activeReviewRound + 1;
+
+    for (let i = 0; i < chaptersToReview.length; i++) {
+      if (abortProcessingRef.current) { abortProcessingRef.current = false; break; }
+      const ch = chaptersToReview[i];
+      const chIdx = chapters.indexOf(ch);
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
+      setProcessingStatus(`Grundgranskning: ${ch.title} (${i + 1}/${chaptersToReview.length})...`);
+
+      let success = false;
+      for (let attempt = 0; attempt < 3 && !success; attempt++) {
+        try {
+          if (attempt > 0) {
+            setProcessingStatus(`Bearbetar ${ch.title}... (försök ${attempt + 1})`);
+            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
+          }
+          const result = await apiClient.reviewChapter(ch.id, serverProjectId, 'basic');
+          pass1Results[ch.id] = result?.suggestions || [];
+          success = true;
+        } catch (err) {
+          console.error(`[Pass 1] ${ch.title} försök ${attempt + 1}/3:`, err);
+        }
+      }
+
+      // Yellow dot — scanned but not verified yet
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: success ? "reviewed" : "pending" } : c));
+
+      if (i < chaptersToReview.length - 1) {
+        setProcessingStatus(`Förbereder nästa kapitel...`);
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+
+    if (abortProcessingRef.current) {
+      abortProcessingRef.current = false;
+      setReReviewing(false);
+      setProcessingStatus("");
+      return;
+    }
+
+    // Generate DNA profile from full manuscript (after scanning all chapters)
     if (!dnaProfile && serverProjectId) {
       setProcessingStatus("Bygger språklig DNA-profil (analyserar hela manuset)...");
       try {
@@ -4346,38 +4402,28 @@ export default function App() {
       return;
     }
 
-    // Re-run analysis on selected chapters (or all if none selected)
-    const chaptersToReview = reReviewSelectedChapters.size > 0
-      ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
-      : chapters;
-    setReReviewSelectedChapters(new Set());
-
-    // Mark chapters to review as pending
-    setChapters(prev => prev.map(c =>
-      chaptersToReview.some(cr => cr.id === c.id) ? { ...c, status: "pending" } : c
-    ));
+    // ═══════════════════════════════════════════════════════════════
+    // PASS 2: VERIFIERING MED DNA — re-review with DNA, verify errors
+    // Chapters marked done one by one, suggestion cards shown
+    // ═══════════════════════════════════════════════════════════════
+    setProcessingStatus("Startar verifiering med DNA-profil...");
+    await new Promise(r => setTimeout(r, 1500));
 
     for (let i = 0; i < chaptersToReview.length; i++) {
-      if (abortProcessingRef.current) {
-        abortProcessingRef.current = false;
-        break;
-      }
+      if (abortProcessingRef.current) { abortProcessingRef.current = false; break; }
       const ch = chaptersToReview[i];
       const chIdx = chapters.indexOf(ch);
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
-      const displayRound = isFirstReview ? 1 : activeReviewRound + 1;
-      setProcessingStatus(`Granskning ${displayRound}: Kapitel ${chIdx + 1} (${i + 1}/${chaptersToReview.length})...`);
-
+      setProcessingStatus(`Verifiering med DNA: ${ch.title} (${i + 1}/${chaptersToReview.length})...`);
 
       let success = false;
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            setProcessingStatus(`Bearbetar Kapitel ${chIdx + 1}... (försök ${attempt + 1})`);
+            setProcessingStatus(`Verifierar ${ch.title}... (försök ${attempt + 1})`);
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
-
-          // Use backend API – suggestions saved to DB automatically
+          // Full review with DNA available in backend — verifies against pass 1 findings
           const result = await apiClient.reviewChapter(ch.id, serverProjectId, useLevel || 'standard');
           const suggestions = result?.suggestions || [];
 
@@ -4389,26 +4435,22 @@ export default function App() {
           }
           success = true;
         } catch (err) {
-          console.error(`Re-review failed for Kapitel ${chIdx + 1}:`, err);
+          console.error(`[Pass 2] ${ch.title} försök ${attempt + 1}/3:`, err);
           if (attempt === 2) {
-            setProcessingStatus(`Kapitel ${chIdx + 1} hoppades över – analyseras vid nästa genomgång`);
+            setProcessingStatus(`${ch.title} hoppades över – analyseras vid nästa genomgång`);
             await new Promise(r => setTimeout(r, 1500));
           }
         }
       }
 
-      // Mark as reviewed (not "done" yet — wait until all chapters are complete)
-      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: success ? "reviewed" : "pending" } : c));
+      // Green dot — verified and done. Cards now visible for this chapter.
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: success ? "done" : "pending" } : c));
 
       if (i < chaptersToReview.length - 1) {
-
         setProcessingStatus(`Förbereder nästa kapitel...`);
         await new Promise(r => setTimeout(r, 3000));
       }
     }
-
-    // All chapters processed — now mark reviewed chapters as done
-    setChapters(prev => prev.map(c => c.status === "reviewed" ? { ...c, status: "done" } : c));
     setProcessingStatus("");
     setReReviewing(false);
   };
