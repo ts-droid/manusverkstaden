@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
-import { reviewChapter, generateDNAProfile, developText, translateText, finalCheck } from '../services/ai.js';
+import { reviewChapter, reviewChapterMultiPass, generateDNAProfile, developText, translateText, finalCheck } from '../services/ai.js';
 import { checkUsageLimit, recordUsage } from '../services/usage.js';
 
 const router = Router();
@@ -13,7 +13,7 @@ router.use(requireAuth);
 router.post('/review', async (req, res, next) => {
   try {
     const chapterId = String(req.body.chapterId);
-    const { projectId } = req.body;
+    const { projectId, level = 'standard' } = req.body;
 
     // Verify ownership
     const chapter = await prisma.chapter.findUnique({
@@ -33,16 +33,82 @@ router.post('/review', async (req, res, next) => {
     // Update status
     await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWING' } });
 
-    // Call AI
-    const { result: suggestions, meta } = await reviewChapter(chapter.content, {
+    // Get all chapter text for DNA profiling (sample first 3 chapters)
+    const allChapters = await prisma.chapter.findMany({
+      where: { projectId: chapter.projectId },
+      select: { content: true },
+      take: 3,
+      orderBy: { number: 'asc' },
+    });
+    const allText = allChapters.map(c => c.content).join('\n\n');
+
+    // Call AI — multi-pass analysis
+    console.log(`[AI Review] Starting ${level} analysis for chapter ${chapterId} (${chapter.wordCount} words)`);
+    const { result: suggestions, meta, dnaProfile: dna } = await reviewChapterMultiPass(chapter.content, {
       genres: chapter.project.genres,
-      modules: chapter.project.modules,
+      level,
+      allText,
     });
 
-    // Save suggestions
-    await prisma.suggestion.deleteMany({ where: { chapterId } });
+    // Save suggestions – preserve accepted/rejected, only replace pending
+    const existing = await prisma.suggestion.findMany({ where: { chapterId } });
+    const kept = existing.filter(s => s.status === 'ACCEPTED' || s.status === 'REJECTED');
+    const keptOriginals = new Set(kept.map(s => s.original?.trim().toLowerCase()).filter(Boolean));
+
+    // Delete only pending suggestions
+    await prisma.suggestion.deleteMany({
+      where: { chapterId, status: 'PENDING' },
+    });
+
+    // Filter out new suggestions that duplicate kept ones (same or overlapping original text)
+    const keptOriginalsArray = [...keptOriginals];
+    const newSuggestions = suggestions.filter(s => {
+      const origKey = s.original?.trim().toLowerCase();
+      if (!origKey) return false;
+      // Exact match
+      if (keptOriginals.has(origKey)) return false;
+      // Overlap: new original is subset of kept, or kept is subset of new
+      for (const kept of keptOriginalsArray) {
+        if (origKey.includes(kept) || kept.includes(origKey)) return false;
+      }
+      return true;
+    });
+
+    // Dedup within new suggestions: if two have overlapping originals, keep the longer one
+    const deduped = [];
+    for (const s of newSuggestions) {
+      const origKey = s.original?.trim().toLowerCase();
+      const isDuplicate = deduped.some(existing => {
+        const exKey = existing.original?.trim().toLowerCase();
+        return exKey && origKey && (exKey.includes(origKey) || origKey.includes(exKey));
+      });
+      if (!isDuplicate) deduped.push(s);
+    }
+
+    // Filter out no-op suggestions (original ≈ replacement, or "no change needed")
+    const normS = str => str?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
+    const meaningful = deduped.filter(s => {
+      if (s.original && s.replacement && normS(s.original) === normS(s.replacement)) return false;
+      if (s.reason && /ingen ändring|korrekt form|redan korrekt|behövs inte/i.test(s.reason)) return false;
+      // Verify original text actually exists in the chapter — reject hallucinated quotes
+      if (s.original && chapter?.content) {
+        const chapterContent = chapter.content;
+        const origNorm = normS(s.original);
+        const contentNorm = normS(chapterContent);
+        if (!contentNorm.includes(origNorm)) {
+          // Try shorter prefix match (AI may have truncated)
+          const prefix = origNorm.substring(0, 30);
+          if (prefix.length >= 10 && !contentNorm.includes(prefix)) {
+            console.warn(`[AI Filter] Rejected hallucinated suggestion — original not found: "${s.original.slice(0, 60)}..."`);
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+
     const created = await Promise.all(
-      suggestions.map(s =>
+      meaningful.map(s =>
         prisma.suggestion.create({
           data: {
             type: s.type,
@@ -62,8 +128,138 @@ router.post('/review', async (req, res, next) => {
     // Record usage with real API cost
     await recordUsage(req.user.id, 'review', chapter.wordCount, meta);
 
-    res.json({ suggestions: created });
-  } catch (err) { next(err); }
+    // Return ALL suggestions (kept + new) so frontend has full picture
+    res.json({ suggestions: [...kept, ...created] });
+  } catch (err) {
+    console.error(`[AI Review Error] Chapter ${req.body?.chapterId}:`, err.message);
+    // Reset chapter status so it doesn't stay stuck in REVIEWING
+    try {
+      if (req.body?.chapterId) {
+        await prisma.chapter.update({
+          where: { id: String(req.body.chapterId) },
+          data: { status: 'PENDING' },
+        });
+      }
+    } catch (resetErr) {
+      console.error('[AI Review] Failed to reset chapter status:', resetErr.message);
+    }
+    next(err);
+  }
+});
+
+// ─── MULTI-PASS REVIEW ───
+router.post('/review-multi', async (req, res, next) => {
+  try {
+    const chapterId = String(req.body.chapterId);
+    const { projectId, level = 'basic' } = req.body;
+
+    const chapter = await prisma.chapter.findFirst({
+      where: { id: chapterId, project: { userId: req.user.id } },
+      include: { project: { include: { chapters: { orderBy: { number: 'asc' } } } } },
+    });
+    if (!chapter) return res.status(404).json({ error: 'Kapitlet hittades inte' });
+
+    const allowed = await checkUsageLimit(req.user.id);
+    if (!allowed) return res.status(429).json({ error: 'API-gräns nådd för denna månad.' });
+
+    // Update chapter status
+    await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWING' } });
+
+    // Get all text for DNA generation
+    const allText = chapter.project.chapters.map(c => c.content).join('\n\n');
+    const existingDna = chapter.project.dnaProfile;
+
+    // Run multi-pass analysis
+    const { result: suggestions, meta, dnaProfile, passCount } = await reviewChapterMultiPass(
+      chapter.content,
+      {
+        genres: chapter.project.genres || [],
+        level,
+        dnaProfile: existingDna,
+        allText,
+      }
+    );
+
+    console.log(`[Multi-pass] ${level}: ${passCount} passes, ${suggestions.length} suggestions for chapter ${chapterId}`);
+
+    // Save DNA if newly generated
+    if (dnaProfile && !existingDna) {
+      await prisma.project.update({
+        where: { id: chapter.projectId },
+        data: { dnaProfile },
+      });
+    }
+
+    // Save suggestions — preserve accepted/rejected, only replace pending
+    const existing = await prisma.suggestion.findMany({ where: { chapterId } });
+    const kept = existing.filter(s => s.status === 'ACCEPTED' || s.status === 'REJECTED');
+    const keptOriginals = new Set(kept.map(s => s.original?.trim().toLowerCase()).filter(Boolean));
+    const keptOriginalsArray = [...keptOriginals];
+
+    await prisma.suggestion.deleteMany({ where: { chapterId, status: 'PENDING' } });
+
+    // Filter duplicates against kept + internal dedup
+    const newSuggestions = suggestions.filter(s => {
+      const origKey = s.original?.trim().toLowerCase();
+      if (!origKey) return false;
+      if (keptOriginals.has(origKey)) return false;
+      for (const k of keptOriginalsArray) {
+        if (origKey.includes(k) || k.includes(origKey)) return false;
+      }
+      return true;
+    });
+
+    const deduped = [];
+    for (const s of newSuggestions) {
+      const origKey = s.original?.trim().toLowerCase();
+      const isDup = deduped.some(e => {
+        const eKey = e.original?.trim().toLowerCase();
+        return eKey && origKey && (eKey.includes(origKey) || origKey.includes(eKey));
+      });
+      if (!isDup) deduped.push(s);
+    }
+
+    const created = await Promise.all(
+      deduped.map(s =>
+        prisma.suggestion.create({
+          data: {
+            chapterId,
+            type: s.type || 'grammar',
+            priority: s.priority || 'yellow',
+            level: s.level || 3,
+            original: s.original || '',
+            replacement: s.replacement || '',
+            reason: s.reason || '',
+            status: 'PENDING',
+          },
+        })
+      )
+    );
+
+    await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWED' } });
+
+    // Record usage
+    await recordUsage(req.user.id, `review-${level}`, chapter.wordCount, meta);
+
+    const allSuggestions = [...kept, ...created];
+    res.json({
+      suggestions: allSuggestions,
+      dnaProfile,
+      passCount,
+      level,
+      stats: { total: allSuggestions.length, new: created.length, kept: kept.length, validated: suggestions.length },
+    });
+  } catch (err) {
+    try {
+      const chapterId = String(req.body?.chapterId);
+      if (chapterId) {
+        await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'PENDING' } });
+      }
+    } catch (resetErr) {
+      console.error('[Multi-pass] Failed to reset status:', resetErr.message);
+    }
+    next(err);
+  }
 });
 
 // ─── DNA PROFILE ───
@@ -96,7 +292,7 @@ router.post('/dna-profile', async (req, res, next) => {
 // ─── DEVELOP TEXT ───
 router.post('/develop', async (req, res, next) => {
   try {
-    const { mode, input, context } = req.body;
+    const { mode, input, context, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus } = req.body;
     const chapterId = req.body.chapterId ? String(req.body.chapterId) : null;
 
     if (chapterId) {
@@ -115,7 +311,9 @@ router.post('/develop', async (req, res, next) => {
       return res.status(429).json({ error: limit.reason, usage: limit });
     }
 
-    const { result, meta } = await developText(mode, input, context);
+    const { result, meta } = await developText(mode, input, {
+      context, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus,
+    });
     await recordUsage(req.user.id, 'develop', wordCount, meta);
 
     res.json({ result });

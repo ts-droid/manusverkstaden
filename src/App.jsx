@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { parseManuscript, splitIntoParagraphs, countWords } from "./lib/manuscript-parser";
 import { sendMessage, extractText, parseJsonResponse } from "./lib/ai-client";
 import { buildPrompt, buildReviewRequest, ANALYSIS_LEVELS } from "./lib/prompt-builder";
@@ -8,17 +8,7 @@ import { useAuth } from "./contexts/AuthContext";
 import { apiClient, AuthError } from "./lib/api-client";
 
 // ─── DATA ───
-const GENRES = [
-  { id: "realistic", icon: "📖", label: "Realistisk fiktion", desc: "Samtidsroman, vardagsskildring" },
-  { id: "crime", icon: "🔍", label: "Deckare / Thriller", desc: "Brott, utredning, spänning" },
-  { id: "fantasy", icon: "🐉", label: "Fantasy / Sci-fi", desc: "Fiktiva världar, magi, framtid" },
-  { id: "romance", icon: "💕", label: "Romantik / Feelgood", desc: "Kärleksrelationer, personlig utveckling" },
-  { id: "horror", icon: "👻", label: "Skräck / Gothic", desc: "Obehag, rädsla, existentiell ångest" },
-  { id: "historical", icon: "📚", label: "Historisk roman", desc: "Avgränsad historisk period" },
-  { id: "ya", icon: "👶", label: "Barn & Ungdom", desc: "Upp till 18 år" },
-  { id: "memoir", icon: "📝", label: "Memoar / Sakprosa", desc: "Icke-fiktivt, berättande" },
-  { id: "poetry", icon: "🎭", label: "Lyrik / Poesi", desc: "Dikt, prosalyrik, versepos" },
-];
+import { GENRES } from "./data/genres";
 
 const LANGUAGES = [
   { id: "en", flag: "🇬🇧", label: "Engelska", sub: "British English" },
@@ -174,7 +164,6 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
   const [genres, setGenres] = useState([]);
   const [modules, setModules] = useState([]);
   const [transLangs, setTransLangs] = useState(["en"]);
-  const [analysisLevel, setAnalysisLevel] = useState("standard");
 
   const toggle = (arr, setArr, id) => setArr(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
@@ -210,7 +199,7 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
                 }}>
                   <div style={{ fontSize: 18, marginBottom: 4 }}>{g.icon}</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: ink }}>{g.label}</div>
-                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{g.desc}</div>
+                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{g.description}</div>
                 </button>
               );
             })}
@@ -274,45 +263,11 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
           </section>
         )}
 
-        {/* Analysis level */}
-        <section style={{ marginBottom: 28 }}>
-          <h3 style={{ fontFamily: uiFont, fontSize: 12, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 12px" }}>Analysnivå</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <p style={{ fontFamily: uiFont, fontSize: 10, color: muted, margin: "0 0 8px", fontStyle: "italic" }}>
-              Ungefärlig tid och kostnad baserat på ditt manus ({(totalWords || 0).toLocaleString()} ord, {chapterCount || 0} kapitel)
-            </p>
-            {Object.values(ANALYSIS_LEVELS).map(lvl => {
-              const active = analysisLevel === lvl.id;
-              const words = totalWords || 60000;
-              const chaps = chapterCount || 20;
-              const estMinutes = Math.ceil(chaps * lvl.estimatePerChapter / 60);
-              const estCost = (words / 1000 * lvl.costPer1kWords).toFixed(0);
-              return (
-                <button key={lvl.id} onClick={() => setAnalysisLevel(lvl.id)} style={{
-                  padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
-                  border: active ? `2px solid ${accent}` : `1px solid ${border}`,
-                  background: active ? accentLight : surface, display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
-                }}>
-                  <span style={{ fontSize: 22 }}>{lvl.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{lvl.label}</div>
-                    <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>{lvl.description}</div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontFamily: uiFont, fontSize: 11, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
-                    <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>ca {estCost} kr</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
         <button
-          onClick={() => onStart({ genres, modules, transLangs, analysisLevel })}
+          onClick={() => onStart({ genres, modules, transLangs, analysisLevel: "standard" })}
           style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
         >
-          Starta {ANALYSIS_LEVELS[analysisLevel].label.toLowerCase()}
+          Spara och öppna manus
         </button>
       </div>
     </div>
@@ -338,7 +293,8 @@ function ProcessingView({ chapters, statusText, onAbort }) {
           }}>
             <div style={{ width: 44, height: 44, borderRadius: "50%", background: accent, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 700 }}>M</div>
           </div>
-          <style>{`@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: 0.85; } }`}</style>
+          <style>{`@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: 0.85; } }
+@keyframes flash-highlight { 0% { background: #a0522d60; } 50% { background: #a0522d40; } 100% { background: #a0522d25; } }`}</style>
         </div>
 
         <h2 style={{ fontSize: 22, fontWeight: 700, color: ink, margin: "0 0 8px", letterSpacing: "-0.02em" }}>Bearbetar ditt manus</h2>
@@ -383,9 +339,7 @@ function ProcessingView({ chapters, statusText, onAbort }) {
 
 // ─── EDITOR COMPONENTS ───
 
-function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, onReanalyze, onDeepAnalyze, paragraphsByChapter }) {
-  const [splitTarget, setSplitTarget] = useState(null);
-
+function Sidebar({ chapters, activeChapter, setActiveChapter, paragraphsByChapter }) {
   const chapterHasSuggestions = (chId) => {
     const paras = paragraphsByChapter?.[chId] || [];
     return paras.some(p => p.suggestions?.length > 0);
@@ -450,7 +404,10 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: uiFont, fontSize: 10, color: muted }}>
                 <span>{ch.wordCount.toLocaleString()} ord</span>
-                {!chapterHasSuggestions(ch.id) && ch.status !== "active" && (
+                {ch.status === "error" && (
+                  <span style={{ fontSize: 9, color: "#c0392b" }}>analys misslyckades</span>
+                )}
+                {!chapterHasSuggestions(ch.id) && ch.status !== "active" && ch.status !== "error" && (
                   <span style={{ fontSize: 9, color: "#b8860b" }}>ej analyserad</span>
                 )}
                 <span style={{
@@ -464,13 +421,6 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
                 }} />
               </div>
             </button>
-            {splitTarget === ch.id && (
-              <SplitChapterPopover
-                chapter={ch}
-                onSplit={(lineIndex) => { onSplitChapter(ch.id, lineIndex); setSplitTarget(null); }}
-                onClose={() => setSplitTarget(null)}
-              />
-            )}
           </div>
         ))}
       </div>
@@ -480,6 +430,172 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
         </div>
       </div>
     </aside>
+  );
+}
+
+// ─── SEARCH BAR ───
+function SearchBar({ chapters, activeChapter, setActiveChapter, onReplace, onReplaceAll, onClose, onSearchChange }) {
+  const [query, setQuery] = useState("");
+  const [replaceText, setReplaceText] = useState("");
+  const [showReplace, setShowReplace] = useState(false);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [searchAll, setSearchAll] = useState(true); // default: search entire manuscript
+  const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Find all matches — in active chapter or entire manuscript
+  const allMatches = useMemo(() => {
+    if (query.length < 2) return [];
+    const searchStr = caseSensitive ? query : query.toLowerCase();
+    const result = [];
+    const searchChapters = searchAll ? chapters : chapters.filter(c => c.id === activeChapter);
+    for (const ch of searchChapters) {
+      if (!ch.content) continue;
+      const searchIn = caseSensitive ? ch.content : ch.content.toLowerCase();
+      let idx = 0;
+      while (idx < searchIn.length) {
+        const found = searchIn.indexOf(searchStr, idx);
+        if (found === -1) break;
+        result.push({ index: found, length: query.length, chapterId: ch.id, chapterTitle: ch.title });
+        idx = found + 1;
+      }
+    }
+    return result;
+  }, [query, caseSensitive, searchAll, chapters, activeChapter]);
+
+  // Matches in current chapter (for text highlighting)
+  const currentChapterMatches = allMatches.filter(m => m.chapterId === activeChapter);
+
+  // Report search state to parent for text highlighting (only current chapter matches)
+  useEffect(() => {
+    if (onSearchChange) {
+      const activeGlobal = allMatches[activeMatchIdx];
+      const localIdx = activeGlobal ? currentChapterMatches.findIndex(m => m.index === activeGlobal.index && m.chapterId === activeGlobal.chapterId) : -1;
+      onSearchChange(query.length >= 2 ? { query, matches: currentChapterMatches, activeMatchIdx: localIdx, caseSensitive } : null);
+    }
+  }, [query, currentChapterMatches.length, activeMatchIdx, caseSensitive, activeChapter]);
+
+  // Navigate to match — switch chapter if needed, then scroll
+  useEffect(() => {
+    if (allMatches.length === 0 || !query) return;
+    const match = allMatches[activeMatchIdx];
+    if (!match) return;
+    // Switch chapter if needed
+    if (match.chapterId !== activeChapter && setActiveChapter) {
+      setActiveChapter(match.chapterId);
+      // Wait for chapter to render before scrolling
+      setTimeout(() => {
+        const els = document.querySelectorAll("[data-search-match]");
+        if (els[0]) els[0].scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 150);
+    } else {
+      // Same chapter — scroll to match
+      setTimeout(() => {
+        const localIdx = currentChapterMatches.findIndex(m => m.index === match.index);
+        const els = document.querySelectorAll("[data-search-match]");
+        const target = els[localIdx >= 0 ? localIdx : 0];
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+    }
+  }, [activeMatchIdx, allMatches.length, query]);
+
+  const handleNext = () => setActiveMatchIdx(prev => (prev + 1) % Math.max(allMatches.length, 1));
+  const handlePrev = () => setActiveMatchIdx(prev => (prev - 1 + allMatches.length) % Math.max(allMatches.length, 1));
+
+  const handleReplace = () => {
+    if (allMatches.length > 0 && onReplace) {
+      const m = allMatches[activeMatchIdx];
+      if (m) {
+        // Switch to chapter first if needed
+        if (m.chapterId !== activeChapter && setActiveChapter) setActiveChapter(m.chapterId);
+        const ch = chapters.find(c => c.id === m.chapterId);
+        if (ch) {
+          const orig = ch.content.slice(m.index, m.index + m.length);
+          onReplace(orig, replaceText, m.chapterId);
+        }
+      }
+    }
+  };
+
+  const handleReplaceAll = () => {
+    if (allMatches.length > 0 && onReplaceAll && query) {
+      onReplaceAll(query, replaceText, caseSensitive, searchAll);
+    }
+  };
+
+  // Current match chapter info
+  const currentMatch = allMatches[activeMatchIdx];
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", gap: 6, padding: "8px 16px",
+      background: surface, borderBottom: `1px solid ${border}`, fontFamily: uiFont,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setActiveMatchIdx(0); }}
+          onKeyDown={e => { if (e.key === "Enter") handleNext(); if (e.key === "Escape") onClose(); }}
+          placeholder={searchAll ? "Sök i hela manuset..." : "Sök i kapitlet..."}
+          style={{
+            flex: 1, padding: "5px 10px", borderRadius: 6, border: `1px solid ${border}`,
+            fontFamily: uiFont, fontSize: 12, background: bg, color: ink, outline: "none",
+          }}
+        />
+        <span style={{ fontSize: 10, color: muted, minWidth: 50, textAlign: "center" }}>
+          {query.length >= 2 ? `${allMatches.length > 0 ? activeMatchIdx + 1 : 0} / ${allMatches.length}` : ""}
+        </span>
+        <button onClick={handlePrev} disabled={allMatches.length === 0} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface, cursor: "pointer", fontSize: 11, color: muted }}>←</button>
+        <button onClick={handleNext} disabled={allMatches.length === 0} style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface, cursor: "pointer", fontSize: 11, color: muted }}>→</button>
+        <button onClick={() => setCaseSensitive(!caseSensitive)} title="Skiftlägeskänslig sökning" style={{
+          padding: "3px 8px", borderRadius: 4, border: `1px solid ${caseSensitive ? accent : border}`,
+          background: caseSensitive ? accentLight : surface, cursor: "pointer", fontSize: 10, fontWeight: 600,
+          color: caseSensitive ? accent : muted,
+        }}>Aa</button>
+        <button onClick={() => { setSearchAll(!searchAll); setActiveMatchIdx(0); }} title={searchAll ? "Söker i hela manuset" : "Söker i aktivt kapitel"} style={{
+          padding: "3px 8px", borderRadius: 4, border: `1px solid ${searchAll ? accent : border}`,
+          background: searchAll ? accentLight : surface, cursor: "pointer", fontSize: 10, fontWeight: 600,
+          color: searchAll ? accent : muted,
+        }}>{searchAll ? "Alla" : "Kap"}</button>
+        <button onClick={() => setShowReplace(!showReplace)} style={{
+          padding: "3px 8px", borderRadius: 4, border: `1px solid ${showReplace ? accent : border}`,
+          background: showReplace ? accentLight : surface, cursor: "pointer", fontSize: 10, color: showReplace ? accent : muted,
+        }}>Ersätt</button>
+        <button onClick={onClose} style={{ padding: "3px 6px", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: muted }}>×</button>
+      </div>
+      {searchAll && currentMatch && allMatches.length > 0 && (
+        <div style={{ fontSize: 10, color: accent, fontWeight: 500, paddingLeft: 2 }}>
+          📍 {currentMatch.chapterTitle || "Kapitel"}
+        </div>
+      )}
+      {showReplace && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            value={replaceText}
+            onChange={e => setReplaceText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleReplace(); }}
+            placeholder="Ersätt med..."
+            style={{
+              flex: 1, padding: "5px 10px", borderRadius: 6, border: `1px solid ${border}`,
+              fontFamily: uiFont, fontSize: 12, background: bg, color: ink, outline: "none",
+            }}
+          />
+          <button onClick={handleReplace} disabled={matches.length === 0} style={{
+            padding: "4px 12px", borderRadius: 5, border: "none", background: accent, color: "#fff",
+            cursor: matches.length > 0 ? "pointer" : "default", fontSize: 11, fontWeight: 500,
+            opacity: matches.length > 0 ? 1 : 0.5,
+          }}>Ersätt</button>
+          <button onClick={handleReplaceAll} disabled={matches.length === 0} style={{
+            padding: "4px 12px", borderRadius: 5, border: `1px solid ${accent}`, background: surface,
+            color: accent, cursor: matches.length > 0 ? "pointer" : "default", fontSize: 11, fontWeight: 500,
+            opacity: matches.length > 0 ? 1 : 0.5,
+          }}>Alla ({matches.length})</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -525,7 +641,7 @@ function SplitChapterPopover({ chapter, onSplit, onClose }) {
 }
 
 // ─── COLLAPSIBLE PARAGRAPH EDIT SECTION ───
-function ParagraphEditSection({ paragraphs, onEdit }) {
+function ParagraphEditSection({ paragraphs, onEdit, getEffectiveText }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -549,7 +665,7 @@ function ParagraphEditSection({ paragraphs, onEdit }) {
           {paragraphs.map((para, i) => (
             <button
               key={para.id}
-              onClick={() => onEdit(para.id, para.text)}
+              onClick={() => onEdit(para.id, getEffectiveText ? getEffectiveText(para) : para.text)}
               style={{
                 width: "100%", textAlign: "left", padding: "5px 8px", marginBottom: 2, borderRadius: 5,
                 border: `1px solid ${border}`, background: surface, cursor: "pointer",
@@ -767,7 +883,7 @@ function EditModal({ text, paragraphId, chapterTitle, onSave, onCreateChapter, o
   );
 }
 
-function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onUndo }) {
+function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onUndo, hasInlineHighlight, onNavigateTerm, termOccurrenceCount, currentTermIdx }) {
   const p = PRIORITY[s.priority];
   const isHandled = status === "accepted" || status === "rejected";
 
@@ -807,6 +923,30 @@ function SuggestionCard({ s, isActive, onToggle, onAccept, onReject, status, onU
       )}
       {isActive && !isHandled && (
         <div style={{ marginTop: 8 }}>
+          {/* Show "Visa i text" navigation when suggestion has no inline highlight */}
+          {!hasInlineHighlight && onNavigateTerm && termOccurrenceCount > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, padding: "5px 8px", background: "#fdf6e3", borderRadius: 5, border: "1px solid #e8dcc8" }}>
+              <button onClick={e => { e.stopPropagation(); onNavigateTerm(0); }} style={{
+                padding: "3px 10px", borderRadius: 4, border: "none", background: accent, color: "#fff",
+                fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: uiFont, whiteSpace: "nowrap",
+              }}>📍 Visa i text</button>
+              {termOccurrenceCount > 1 && currentTermIdx !== null && (
+                <>
+                  <button onClick={e => { e.stopPropagation(); onNavigateTerm(Math.max(0, (currentTermIdx || 0) - 1)); }} style={{
+                    padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface,
+                    fontSize: 10, cursor: "pointer", fontFamily: uiFont, color: ink,
+                  }}>←</button>
+                  <span style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>
+                    {(currentTermIdx || 0) + 1}/{termOccurrenceCount}
+                  </span>
+                  <button onClick={e => { e.stopPropagation(); onNavigateTerm(Math.min(termOccurrenceCount - 1, (currentTermIdx || 0) + 1)); }} style={{
+                    padding: "3px 8px", borderRadius: 4, border: `1px solid ${border}`, background: surface,
+                    fontSize: 10, cursor: "pointer", fontFamily: uiFont, color: ink,
+                  }}>→</button>
+                </>
+              )}
+            </div>
+          )}
           <p style={{ fontFamily: uiFont, fontSize: 11.5, color: "#5a4e42", lineHeight: 1.55, margin: "0 0 10px" }}>{s.reason}</p>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={e => { e.stopPropagation(); onAccept(); }} style={{ flex: 1, padding: "7px 0", borderRadius: 5, border: "none", background: "#27864a", color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}>✓ Godkänn</button>
@@ -874,7 +1014,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
                 }}>
                   <div style={{ fontSize: 18, marginBottom: 4 }}>{g.icon}</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: ink }}>{g.label}</div>
-                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{g.desc}</div>
+                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{g.description}</div>
                 </button>
               );
             })}
@@ -992,7 +1132,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
 }
 
 // ─── DEVELOP PANEL ───
-function DevelopPanel({ inputText, dnaProfile, emotionMap, chapterContent, chapterTitle, onResult }) {
+function DevelopPanel({ inputText, dnaProfile, emotionMap, chapterContent, chapterTitle, onResult, apiClient, chapterId }) {
   const [tab, setTab] = useState("dna");
   const tabs = [
     { id: "dna", label: "Språklig DNA" },
@@ -1014,7 +1154,7 @@ function DevelopPanel({ inputText, dnaProfile, emotionMap, chapterContent, chapt
       <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
         {tab === "dna" && <DNAView profile={dnaProfile} />}
         {tab === "emotion" && <EmotionView emotionMap={emotionMap} />}
-        {tab === "develop" && <DevelopView inputText={inputText} dnaProfile={dnaProfile} emotionMap={emotionMap} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} />}
+        {tab === "develop" && <DevelopView inputText={inputText} dnaProfile={dnaProfile} emotionMap={emotionMap} chapterContent={chapterContent} chapterTitle={chapterTitle} onResult={onResult} apiClient={apiClient} chapterId={chapterId} />}
         {tab === "brainstorm" && <BrainstormView />}
       </div>
     </div>
@@ -1146,7 +1286,7 @@ function EmotionView({ emotionMap }) {
   );
 }
 
-function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult }) {
+function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult, apiClient: apiClientProp, chapterId }) {
   const [mode, setMode] = useState(null);
   const [userText, setUserText] = useState(inputText || "");
   const [userInstruction, setUserInstruction] = useState("");
@@ -1170,56 +1310,29 @@ function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emot
     setGenerating(true);
     setError(null);
 
-    const dnaStr = dnaProfile ? `\nFörfattarens DNA-profil: Perspektiv: ${dnaProfile.perspective}, Tempus: ${dnaProfile.tense}, Tonalitet: ${dnaProfile.tonality}, Meningslängd: ${dnaProfile.avgSentenceLen}, Dialogstil: ${dnaProfile.dialogStyle}, Bildspråk: ${dnaProfile.dominantImagery}` : "";
-
-    const emotionStr = emotionMap ? `\nKapitlets emotionella karta: Dominant känsla: ${emotionMap.dominantEmotion}, Spänningsnivå: ${Math.round((emotionMap.tension || 0) * 100)}%, Emotionell båge: ${emotionMap.arc || "okänd"}${emotionMap.characterStates?.length ? ", Karaktärer: " + emotionMap.characterStates.map(cs => `${cs.character} (${cs.state})`).join(", ") : ""}` : "";
-
     const contextSnippet = chapterContent ? chapterContent.slice(0, 6000) : "";
 
-    let systemMsg = `Du är en kreativ skrivassistent för svenska manus. Du matchar alltid författarens stil, ton och röst.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara ALLTID med JSON i detta format:\n{\n  "developedText": "<den utvecklade texten>",\n  "reasoning": "<1-3 meningar som förklarar ditt resonemang och hur texten passar in i berättelsen>"\n}`;
-
-    const instructionStr = userInstruction.trim() ? `\n\nFörfattarens instruktioner: ${userInstruction}` : "";
-
-    let userMsg = "";
-    if (mode === "expand") {
-      userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst.${instructionStr}\n\n${userText}`;
-    } else if (mode === "rewrite") {
-      const focus = rewriteFocus.length > 0 ? `\nFokus: ${rewriteFocus.join(", ")}` : "";
-      userMsg = `Skriv om denna passage.${focus}${instructionStr}\n\n${userText}`;
-    } else if (mode === "newscene") {
-      userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil.${instructionStr}\n\n${userText}`;
-    }
-
     try {
-      const response = await sendMessage({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        system: systemMsg,
-        messages: [{ role: "user", content: userMsg }],
+      const { result } = await apiClientProp.developText(mode, userText, {
+        context: contextSnippet,
+        chapterId,
+        dnaProfile,
+        emotionMap,
+        chapterTitle,
+        userInstruction: userInstruction.trim() || undefined,
+        rewriteFocus: mode === "rewrite" && rewriteFocus.length > 0 ? rewriteFocus : undefined,
       });
 
-      if (response) {
-        const text = extractText(response);
-        const parsed = parseJsonResponse(text);
-        if (parsed?.developedText) {
-          onResult({
-            mode,
-            modeLabel: modes.find(m => m.id === mode)?.label,
-            originalText: userText,
-            developedText: parsed.developedText,
-            reasoning: parsed.reasoning || "AI har genererat en ny version baserat på din text och författarprofil.",
-          });
-        } else {
-          // Fallback: treat the whole response as text
-          onResult({
-            mode,
-            modeLabel: modes.find(m => m.id === mode)?.label,
-            originalText: userText,
-            developedText: text,
-            reasoning: "Texten har genererats baserat på din förfrågan.",
-          });
-        }
-      }
+      const developedText = result?.developedText || result?.text || "";
+      const reasoning = result?.reasoning || "Texten har genererats baserat på din förfrågan.";
+
+      onResult({
+        mode,
+        modeLabel: modes.find(m => m.id === mode)?.label,
+        originalText: userText,
+        developedText,
+        reasoning,
+      });
     } catch (err) {
       console.error("Develop failed:", err);
       setError(err.message || "Generering misslyckades. Kontrollera API-nyckeln.");
@@ -1327,7 +1440,7 @@ function DevelopView({ inputText, chapterContent, chapterTitle, dnaProfile, emot
 }
 
 // ─── DEVELOP MODAL ───
-function DevelopModal({ initialText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult, onClose }) {
+function DevelopModal({ initialText, chapterContent, chapterTitle, dnaProfile, emotionMap, onResult, onClose, apiClient: apiClientProp, chapterId }) {
   const [mode, setMode] = useState("expand");
   const [userText, setUserText] = useState(initialText || "");
   const [userInstruction, setUserInstruction] = useState("");
@@ -1351,33 +1464,32 @@ function DevelopModal({ initialText, chapterContent, chapterTitle, dnaProfile, e
     setGenerating(true);
     setError(null);
 
-    const dnaStr = dnaProfile ? `\nFörfattarens DNA-profil: Perspektiv: ${dnaProfile.perspective}, Tempus: ${dnaProfile.tense}, Tonalitet: ${dnaProfile.tonality}, Meningslängd: ${dnaProfile.avgSentenceLen}, Dialogstil: ${dnaProfile.dialogStyle}, Bildspråk: ${dnaProfile.dominantImagery}` : "";
-    const emotionStr = emotionMap ? `\nKapitlets emotionella karta: Dominant känsla: ${emotionMap.dominantEmotion}, Spänningsnivå: ${Math.round((emotionMap.tension || 0) * 100)}%, Emotionell båge: ${emotionMap.arc || "okänd"}` : "";
+    const inputText = mode === "brainstorm" ? brainstormText : userText;
     const contextSnippet = chapterContent ? chapterContent.slice(0, 6000) : "";
 
     try {
-      if (mode === "brainstorm") {
-        const systemMsg = `Du är en kreativ skrivassistent. Analysera problemet och ge EXAKT tre alternativa lösningsförslag.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara med JSON:\n{\n  "developedText": "<kort sammanfattning>",\n  "reasoning": "<ditt resonemang>",\n  "alternatives": ["<förslag 1>", "<förslag 2>", "<förslag 3>"]\n}`;
-        const response = await sendMessage({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system: systemMsg, messages: [{ role: "user", content: brainstormText }] });
-        const text = extractText(response);
-        const parsed = parseJsonResponse(text);
-        onResult({ mode: "brainstorm", modeLabel: "Brainstorming", originalText: brainstormText, developedText: parsed?.developedText || text, reasoning: parsed?.reasoning || "", alternatives: parsed?.alternatives });
-      } else {
-        const systemMsg = `Du är en kreativ skrivassistent för svenska manus. Du matchar alltid författarens stil, ton och röst.${dnaStr}${emotionStr}\n\nKontext från ${chapterTitle || "kapitlet"}:\n${contextSnippet}\n\nSvara ALLTID med JSON:\n{\n  "developedText": "<den utvecklade texten>",\n  "reasoning": "<1-3 meningar som förklarar ditt resonemang>"\n}`;
-        const instructionStr = userInstruction.trim() ? `\n\nFörfattarens instruktioner: ${userInstruction}` : "";
-        let userMsg = "";
-        if (mode === "expand") userMsg = `Bygg ut denna scen med mer detaljer, sinnesintryck, dialog eller internmonolog. Behåll författarens röst.${instructionStr}\n\n${userText}`;
-        else if (mode === "rewrite") { const focus = rewriteFocus.length > 0 ? `\nFokus: ${rewriteFocus.join(", ")}` : ""; userMsg = `Skriv om denna passage.${focus}${instructionStr}\n\n${userText}`; }
-        else if (mode === "newscene") userMsg = `Skriv ett nytt textavsnitt baserat på denna beskrivning. Matcha författarens stil.${instructionStr}\n\n${userText}`;
+      const { result } = await apiClientProp.developText(mode, inputText, {
+        context: contextSnippet,
+        chapterId,
+        dnaProfile,
+        emotionMap,
+        chapterTitle,
+        userInstruction: userInstruction.trim() || undefined,
+        rewriteFocus: mode === "rewrite" && rewriteFocus.length > 0 ? rewriteFocus : undefined,
+      });
 
-        const response = await sendMessage({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system: systemMsg, messages: [{ role: "user", content: userMsg }] });
-        const text = extractText(response);
-        const parsed = parseJsonResponse(text);
-        onResult({ mode, modeLabel: modes.find(m => m.id === mode)?.label, originalText: userText, developedText: parsed?.developedText || text, reasoning: parsed?.reasoning || "Texten har genererats baserat på din förfrågan." });
+      const developedText = result?.developedText || result?.text || "";
+      const reasoning = result?.reasoning || "Texten har genererats baserat på din förfrågan.";
+      const alternatives = result?.alternatives;
+
+      if (mode === "brainstorm") {
+        onResult({ mode: "brainstorm", modeLabel: "Brainstorming", originalText: brainstormText, developedText, reasoning, alternatives });
+      } else {
+        onResult({ mode, modeLabel: modes.find(m => m.id === mode)?.label, originalText: userText, developedText, reasoning });
       }
     } catch (err) {
       console.error("Develop failed:", err);
-      setError(err.message || "Generering misslyckades. Kontrollera API-nyckeln.");
+      setError(err.message || "Generering misslyckades.");
     } finally {
       setGenerating(false);
     }
@@ -2192,8 +2304,9 @@ function RestorePrompt({ timestamp, onRestore, onDiscard }) {
   );
 }
 
-// ─── AUTH PAGE ───
-function AuthPage({ onLogin, onRegister, error: externalError }) {
+// ─── LANDING PAGE ───
+function LandingPage({ onLogin, onRegister }) {
+  const [authModal, setAuthModal] = useState(null); // null | "login" | "register"
   const [tab, setTab] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -2202,41 +2315,24 @@ function AuthPage({ onLogin, onRegister, error: externalError }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  const openAuth = (mode) => { setAuthModal(mode); setTab(mode); setError(null); setEmail(""); setPassword(""); setName(""); setConfirmPassword(""); };
+  const closeAuth = () => { setAuthModal(null); setError(null); };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    try {
-      await onLogin(email, password);
-    } catch (err) {
-      setError(err.message || "Inloggning misslyckades");
-    } finally {
-      setLoading(false);
-    }
+    try { await onLogin(email, password); } catch (err) { setError(err.message || "Inloggning misslyckades"); } finally { setLoading(false); }
   };
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setError(null);
-    if (password !== confirmPassword) {
-      setError("Lösenorden matchar inte");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Lösenordet måste vara minst 6 tecken");
-      return;
-    }
+    if (password !== confirmPassword) { setError("Lösenorden matchar inte"); return; }
+    if (password.length < 6) { setError("Lösenordet måste vara minst 6 tecken"); return; }
     setLoading(true);
-    try {
-      await onRegister(email, password, name);
-    } catch (err) {
-      setError(err.message || "Registrering misslyckades");
-    } finally {
-      setLoading(false);
-    }
+    try { await onRegister(email, password, name); } catch (err) { setError(err.message || "Registrering misslyckades"); } finally { setLoading(false); }
   };
-
-  const displayError = error || externalError;
 
   const inputStyle = {
     width: "100%", padding: "11px 14px", borderRadius: 8, border: `1px solid ${border}`,
@@ -2245,78 +2341,221 @@ function AuthPage({ onLogin, onRegister, error: externalError }) {
   };
   const labelStyle = { fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: muted, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.04em" };
 
+  const sectionStyle = { maxWidth: 960, margin: "0 auto", padding: "0 24px" };
+  const accentLight = "#f5ebe0";
+
+  const features = [
+    { icon: "\u{1F4DD}", title: "Grundgranskning", desc: "Stavfel, grammatik och interpunktion \u2014 vi hittar det mesta redan i f\u00f6rsta genomg\u00e5ngen." },
+    { icon: "\u2728", title: "Standardgranskning", desc: "Upprepningar, stilbrott och tempo \u2014 din text lyfts till n\u00e4sta niv\u00e5." },
+    { icon: "\u{1F50D}", title: "Djupgranskning", desc: "Dramaturgi, karakt\u00e4rsutveckling och tematik \u2014 som att ha en utvecklingsredakt\u00f6r." },
+  ];
+
+  const steps = [
+    { num: "1", text: "Ladda upp ditt manus (.docx/.pdf/.txt)" },
+    { num: "2", text: "V\u00e4lj analysniv\u00e5" },
+    { num: "3", text: "Granska och redigera med AI-st\u00f6d" },
+  ];
+
+  const extras = [
+    { icon: "\u{1F9EC}", title: "Skrivutveckling", desc: "DNA-profil och scenutbyggnad som st\u00e4rker ditt ber\u00e4ttande." },
+    { icon: "\u{1F310}", title: "\u00d6vers\u00e4ttning", desc: "Professionell AI-\u00f6vers\u00e4ttning med parallellvy och ordlista." },
+    { icon: "\u{1F4C4}", title: "Export till .docx", desc: "Exportera ditt manus med alla \u00e4ndringar applicerade, redo f\u00f6r tryck." },
+  ];
+
   return (
-    <div style={{ minHeight: "100vh", background: bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: font }}>
+    <div style={{ minHeight: "100vh", background: bg, fontFamily: font, color: ink }}>
       <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <style>{`
+        @keyframes landingFadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 720px) {
+          .lp-features-grid, .lp-steps-grid, .lp-extras-grid { grid-template-columns: 1fr !important; }
+          .lp-hero-heading { font-size: 36px !important; }
+          .lp-nav-inner { padding: 0 16px !important; }
+          .lp-hero { padding: 100px 16px 64px !important; }
+        }
+      `}</style>
 
-      {/* Logo */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <div style={{ width: 36, height: 36, background: ink, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 18, fontWeight: 700 }}>M</div>
-        <span style={{ fontSize: 24, fontWeight: 700, color: ink, letterSpacing: "-0.02em" }}>Manusverkstaden</span>
-      </div>
-      <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 32px", textAlign: "center" }}>AI-stödd manusgranskning for författare, redaktörer och förlag</p>
-
-      <div style={{ width: "100%", maxWidth: 420, background: surface, borderRadius: 16, padding: "32px 36px", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
-        {/* Tabs */}
-        <div style={{ display: "flex", gap: 0, marginBottom: 28, borderBottom: `2px solid ${border}` }}>
-          {[{ id: "login", label: "Logga in" }, { id: "register", label: "Skapa konto" }].map(t => (
-            <button key={t.id} onClick={() => { setTab(t.id); setError(null); }} style={{
-              flex: 1, padding: "10px 0", border: "none", background: "none", fontFamily: uiFont,
-              fontSize: 13, fontWeight: 600, cursor: "pointer", color: tab === t.id ? accent : muted,
-              borderBottom: tab === t.id ? `2px solid ${accent}` : "2px solid transparent",
-              marginBottom: -2, transition: "all 0.2s",
-            }}>{t.label}</button>
-          ))}
-        </div>
-
-        {displayError && (
-          <div style={{ marginBottom: 16, padding: "10px 14px", background: "#fdf0ef", borderRadius: 8, borderLeft: `3px solid #c0392b`, fontFamily: uiFont, fontSize: 12, color: "#c0392b" }}>
-            {displayError}
+      {/* ── NAV ── */}
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(247,244,239,0.92)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${border}` }}>
+        <div className="lp-nav-inner" style={{ maxWidth: 1080, margin: "0 auto", padding: "0 32px", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 32, height: 32, background: ink, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 16, fontWeight: 700, fontFamily: font }}>M</div>
+            <span style={{ fontSize: 18, fontWeight: 700, color: ink, letterSpacing: "-0.02em", fontFamily: font }}>Manusverkstaden</span>
           </div>
-        )}
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button onClick={() => openAuth("login")} style={{ padding: "8px 18px", borderRadius: 7, border: `1px solid ${border}`, background: "transparent", color: ink, fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: uiFont, transition: "all 0.2s" }}>Logga in</button>
+            <button onClick={() => openAuth("register")} style={{ padding: "8px 18px", borderRadius: 7, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont, transition: "all 0.2s" }}>Skapa konto</button>
+          </div>
+        </div>
+      </nav>
 
-        {tab === "login" ? (
-          <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>E-post</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
+      {/* ── HERO ── */}
+      <section className="lp-hero" style={{ padding: "140px 24px 80px", textAlign: "center", animation: "landingFadeIn 0.7s ease-out" }}>
+        <div style={sectionStyle}>
+          <h1 className="lp-hero-heading" style={{ fontFamily: font, fontSize: 52, fontWeight: 700, color: ink, letterSpacing: "-0.03em", lineHeight: 1.12, margin: "0 0 20px", maxWidth: 700, marginLeft: "auto", marginRight: "auto" }}>
+            Din personliga redakt&ouml;r &mdash; driven av AI
+          </h1>
+          <p style={{ fontFamily: uiFont, fontSize: 17, color: muted, lineHeight: 1.6, margin: "0 auto 36px", maxWidth: 560 }}>
+            Manusverkstaden granskar ditt bokmanuskript med samma precision som en professionell redakt&ouml;r. Fr&aring;n stavfel till dramaturgi.
+          </p>
+          <button onClick={() => openAuth("register")} style={{ padding: "14px 36px", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: uiFont, transition: "all 0.2s", boxShadow: "0 4px 16px rgba(160,82,45,0.25)" }}>
+            Kom ig&aring;ng gratis
+          </button>
+        </div>
+      </section>
+
+      {/* ── FEATURES ── */}
+      <section style={{ padding: "64px 24px 72px" }}>
+        <div style={sectionStyle}>
+          <h2 style={{ fontFamily: font, fontSize: 32, fontWeight: 700, color: ink, textAlign: "center", letterSpacing: "-0.02em", margin: "0 0 12px" }}>Tre niv&aring;er av granskning</h2>
+          <p style={{ fontFamily: uiFont, fontSize: 14, color: muted, textAlign: "center", margin: "0 0 44px" }}>V&auml;lj den niv&aring; som passar ditt manus b&auml;st.</p>
+          <div className="lp-features-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+            {features.map((f, i) => (
+              <div key={i} style={{ background: surface, borderRadius: 14, padding: "32px 28px", border: `1px solid ${border}`, transition: "box-shadow 0.2s" }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, background: accentLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginBottom: 18 }}>{f.icon}</div>
+                <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 600, color: ink, margin: "0 0 8px", letterSpacing: "-0.01em" }}>{f.title}</h3>
+                <p style={{ fontFamily: uiFont, fontSize: 13.5, color: muted, lineHeight: 1.55, margin: 0 }}>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ── */}
+      <section style={{ padding: "64px 24px 72px", background: surface }}>
+        <div style={sectionStyle}>
+          <h2 style={{ fontFamily: font, fontSize: 32, fontWeight: 700, color: ink, textAlign: "center", letterSpacing: "-0.02em", margin: "0 0 44px" }}>S&aring; fungerar det</h2>
+          <div className="lp-steps-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+            {steps.map((s, i) => (
+              <div key={i} style={{ textAlign: "center", padding: "24px 16px" }}>
+                <div style={{ width: 52, height: 52, borderRadius: "50%", background: ink, color: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, fontFamily: font, margin: "0 auto 16px" }}>{s.num}</div>
+                <p style={{ fontFamily: uiFont, fontSize: 14, color: ink, lineHeight: 1.5, margin: 0, fontWeight: 500 }}>{s.text}</p>
+                {i < steps.length - 1 && <div style={{ display: "none" }} />}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── EXTRA FEATURES ── */}
+      <section style={{ padding: "64px 24px 72px" }}>
+        <div style={sectionStyle}>
+          <h2 style={{ fontFamily: font, fontSize: 32, fontWeight: 700, color: ink, textAlign: "center", letterSpacing: "-0.02em", margin: "0 0 12px" }}>Mer &auml;n bara granskning</h2>
+          <p style={{ fontFamily: uiFont, fontSize: 14, color: muted, textAlign: "center", margin: "0 0 44px" }}>Verktyg som hj&auml;lper dig genom hela skrivprocessen.</p>
+          <div className="lp-extras-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+            {extras.map((f, i) => (
+              <div key={i} style={{ background: surface, borderRadius: 14, padding: "28px 24px", border: `1px solid ${border}` }}>
+                <div style={{ fontSize: 24, marginBottom: 14 }}>{f.icon}</div>
+                <h3 style={{ fontFamily: font, fontSize: 17, fontWeight: 600, color: ink, margin: "0 0 6px" }}>{f.title}</h3>
+                <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, lineHeight: 1.5, margin: 0 }}>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <section style={{ padding: "72px 24px 80px", background: ink, textAlign: "center" }}>
+        <div style={sectionStyle}>
+          <h2 style={{ fontFamily: font, fontSize: 32, fontWeight: 700, color: bg, letterSpacing: "-0.02em", margin: "0 0 16px" }}>Redo att f&ouml;rb&auml;ttra ditt manus?</h2>
+          <p style={{ fontFamily: uiFont, fontSize: 15, color: "rgba(247,244,239,0.65)", margin: "0 0 32px" }}>Prova Manusverkstaden gratis &mdash; inga kortuppgifter kr&auml;vs.</p>
+          <button onClick={() => openAuth("register")} style={{ padding: "14px 36px", borderRadius: 9, border: `2px solid ${accent}`, background: accent, color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: uiFont, transition: "all 0.2s" }}>
+            Skapa konto gratis
+          </button>
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer style={{ padding: "32px 24px", background: ink, borderTop: "1px solid rgba(247,244,239,0.1)" }}>
+        <div style={{ ...sectionStyle, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+          <span style={{ fontFamily: uiFont, fontSize: 12, color: "rgba(247,244,239,0.45)" }}>&copy; 2026 Manusverkstaden</span>
+          <div style={{ display: "flex", gap: 24 }}>
+            {["Villkor", "Integritet", "Kontakt"].map(link => (
+              <a key={link} href="#" onClick={e => e.preventDefault()} style={{ fontFamily: uiFont, fontSize: 12, color: "rgba(247,244,239,0.45)", textDecoration: "none", transition: "color 0.2s" }}
+                onMouseEnter={e => e.target.style.color = "rgba(247,244,239,0.8)"}
+                onMouseLeave={e => e.target.style.color = "rgba(247,244,239,0.45)"}
+              >{link}</a>
+            ))}
+          </div>
+        </div>
+      </footer>
+
+      {/* ── AUTH MODAL ── */}
+      {authModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={closeAuth} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.5)", backdropFilter: "blur(6px)" }} />
+          <div style={{ position: "relative", background: surface, borderRadius: 16, padding: "32px 36px", maxWidth: 420, width: "calc(100% - 48px)", boxShadow: "0 24px 80px rgba(0,0,0,0.2)", animation: "landingFadeIn 0.3s ease-out" }}>
+            {/* Close button */}
+            <button onClick={closeAuth} style={{ position: "absolute", top: 14, right: 14, width: 28, height: 28, borderRadius: "50%", border: "none", background: bg, color: muted, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>&times;</button>
+
+            {/* Logo */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 20 }}>
+              <div style={{ width: 28, height: 28, background: ink, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", color: bg, fontSize: 14, fontWeight: 700 }}>M</div>
+              <span style={{ fontSize: 17, fontWeight: 700, color: ink, letterSpacing: "-0.02em", fontFamily: font }}>Manusverkstaden</span>
             </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Lösenord</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Ditt lösenord" style={inputStyle} />
+
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: `2px solid ${border}` }}>
+              {[{ id: "login", label: "Logga in" }, { id: "register", label: "Skapa konto" }].map(t => (
+                <button key={t.id} onClick={() => { setTab(t.id); setError(null); }} style={{
+                  flex: 1, padding: "10px 0", border: "none", background: "none", fontFamily: uiFont,
+                  fontSize: 13, fontWeight: 600, cursor: "pointer", color: tab === t.id ? accent : muted,
+                  borderBottom: tab === t.id ? `2px solid ${accent}` : "2px solid transparent",
+                  marginBottom: -2, transition: "all 0.2s",
+                }}>{t.label}</button>
+              ))}
             </div>
-            <button type="submit" disabled={loading} style={{
-              width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
-              background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
-              cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
-            }}>{loading ? "Loggar in..." : "Logga in"}</button>
-          </form>
-        ) : (
-          <form onSubmit={handleRegister}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Namn</label>
-              <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Ditt namn" style={inputStyle} />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>E-post</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={labelStyle}>Lösenord</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Minst 6 tecken" style={inputStyle} />
-            </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={labelStyle}>Bekräfta lösenord</label>
-              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required placeholder="Upprepa lösenord" style={inputStyle} />
-            </div>
-            <button type="submit" disabled={loading} style={{
-              width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
-              background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
-              cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
-            }}>{loading ? "Skapar konto..." : "Skapa konto"}</button>
-          </form>
-        )}
-      </div>
+
+            {error && (
+              <div style={{ marginBottom: 16, padding: "10px 14px", background: "#fdf0ef", borderRadius: 8, borderLeft: `3px solid #c0392b`, fontFamily: uiFont, fontSize: 12, color: "#c0392b" }}>
+                {error}
+              </div>
+            )}
+
+            {tab === "login" ? (
+              <form onSubmit={handleLogin}>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>E-post</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 24 }}>
+                  <label style={labelStyle}>L&ouml;senord</label>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Ditt l\u00f6senord" style={inputStyle} />
+                </div>
+                <button type="submit" disabled={loading} style={{
+                  width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
+                  background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
+                  cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
+                }}>{loading ? "Loggar in..." : "Logga in"}</button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister}>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>Namn</label>
+                  <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Ditt namn" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>E-post</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="din@email.se" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>L&ouml;senord</label>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Minst 6 tecken" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 24 }}>
+                  <label style={labelStyle}>Bekr&auml;fta l&ouml;senord</label>
+                  <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required placeholder="Upprepa l\u00f6senord" style={inputStyle} />
+                </div>
+                <button type="submit" disabled={loading} style={{
+                  width: "100%", padding: "13px 0", borderRadius: 9, border: "none",
+                  background: loading ? "#d4c8bb" : accent, color: "#fff", fontSize: 14, fontWeight: 600,
+                  cursor: loading ? "default" : "pointer", fontFamily: uiFont, transition: "background 0.2s",
+                }}>{loading ? "Skapar konto..." : "Skapa konto"}</button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2327,6 +2566,7 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null); // project to confirm delete
   const [usageData, setUsageData] = useState(null);
 
   const SWEDISH_MONTHS = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
@@ -2513,11 +2753,11 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
               const chapterCount = project.chapterCount || project.chapters?.length || 0;
               const progress = project.progress || 0;
 
-              // Calculate review progress: chapters with suggestions / total chapters
-              const chaptersWithSuggestions = project.chapters
-                ? project.chapters.filter(c => c.suggestions?.length > 0 || c.reviewed).length
+              // Calculate review progress: chapters with REVIEWED status / total chapters
+              const chaptersReviewed = project.chapters
+                ? project.chapters.filter(c => c.status === 'REVIEWED').length
                 : 0;
-              const reviewPercent = chapterCount > 0 ? Math.round((chaptersWithSuggestions / chapterCount) * 100) : 0;
+              const reviewPercent = chapterCount > 0 ? Math.round((chaptersReviewed / chapterCount) * 100) : 0;
 
               // Genre badges
               const genres = project.genres || (project.genre ? [project.genre] : []);
@@ -2534,10 +2774,10 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
                     }}>...</button>
                     {menuOpen === project.id && (
                       <div style={{ position: "absolute", right: 0, top: "100%", background: surface, border: `1px solid ${border}`, borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", zIndex: 10, minWidth: 120, overflow: "hidden" }}>
-                        <button onClick={() => handleDelete(project.id)} disabled={deleting === project.id} style={{
+                        <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(project); setMenuOpen(null); }} style={{
                           width: "100%", padding: "9px 14px", border: "none", background: "none", textAlign: "left",
                           fontFamily: uiFont, fontSize: 12, color: "#c0392b", cursor: "pointer",
-                        }}>{deleting === project.id ? "Raderar..." : "Radera"}</button>
+                        }}>Radera</button>
                       </div>
                     )}
                   </div>
@@ -2591,6 +2831,32 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
           </div>
         )}
       </div>
+
+      {/* Delete confirmation dialog */}
+      {confirmDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={() => setConfirmDelete(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: surface, borderRadius: 16, padding: "32px 28px", maxWidth: 420, width: "90%", boxShadow: "0 16px 48px rgba(0,0,0,0.15)" }}>
+            <h3 style={{ fontFamily: font, fontSize: 18, fontWeight: 700, color: ink, margin: "0 0 12px" }}>Radera manus?</h3>
+            <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, lineHeight: 1.5, margin: "0 0 24px" }}>
+              Är du säker? Detta raderar även ändringar i manuset. Exportera först om du vill dokumentera ändringarna.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { onOpenProject(confirmDelete); setConfirmDelete(null); }} style={{
+                flex: 1, padding: "10px 16px", borderRadius: 8, border: `1px solid ${border}`,
+                background: surface, fontFamily: uiFont, fontSize: 13, fontWeight: 500, color: ink, cursor: "pointer",
+              }}>Exportera först</button>
+              <button onClick={async () => { const id = confirmDelete.id; setConfirmDelete(null); await handleDelete(id); }} disabled={deleting} style={{
+                flex: 1, padding: "10px 16px", borderRadius: 8, border: "none",
+                background: "#c0392b", fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer",
+              }}>{deleting ? "Raderar..." : "Radera"}</button>
+            </div>
+            <button onClick={() => setConfirmDelete(null)} style={{
+              width: "100%", marginTop: 10, padding: "8px", border: "none", background: "none",
+              fontFamily: uiFont, fontSize: 12, color: muted, cursor: "pointer",
+            }}>Avbryt</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3356,6 +3622,7 @@ export default function App() {
   const [paragraphsByChapter, setParagraphsByChapter] = useState({});
   const [activeChapter, setActiveChapter] = useState(null);
   const [activeSuggestion, setActiveSuggestion] = useState(null);
+  const [highlightTermState, setHighlightTermState] = useState(null); // { suggestionId, occurrenceIdx, terms, occurrences }
   const [accepted, setAccepted] = useState(new Set());
   const [rejected, setRejected] = useState(new Set());
   const [reviewHistory, setReviewHistory] = useState([]); // [{ date, chapterId, suggestionCount, accepted, rejected }]
@@ -3383,6 +3650,24 @@ export default function App() {
   const [showFinalCheckPrompt, setShowFinalCheckPrompt] = useState(false);
   const [editModal, setEditModal] = useState(null);
   const [showExport, setShowExport] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchState, setSearchState] = useState(null); // { query, matches, activeMatchIdx, caseSensitive }
+
+  // Keyboard shortcuts: Ctrl/Cmd+F → search, Escape → close
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f" && view === "editor") {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "h" && view === "editor") {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [view]);
   const [developResult, setDevelopResult] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null); // null | "saving" | "saved"
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -3517,11 +3802,21 @@ export default function App() {
     setView("dashboard");
   };
 
-  // Upload → Create project in DB → Editor (no forced analysis)
-  const handleUploadNext = async (file, parsedChapters) => {
+  // Upload step 1 → Settings
+  const handleUploadNext = (file, parsedChapters) => {
     setUploadedFile(file);
-    const chaps = parsedChapters.map(ch => ({ ...ch, status: "pending" }));
-    setChapters(chaps);
+    setChapters(parsedChapters.map(ch => ({ ...ch, status: "pending" })));
+    setView("settings");
+  };
+
+  // Settings → Save project to DB → Editor (no forced analysis)
+  const handleSettingsDone = async (settings) => {
+    setGenres(settings.genres || []);
+    setModules(settings.modules || []);
+    setTransLangs(settings.transLangs || []);
+    if (settings.analysisLevel) setAnalysisLevel(settings.analysisLevel);
+
+    const chaps = chapters;
     setActiveChapter(chaps[0]?.id);
 
     // Build paragraphs
@@ -3533,8 +3828,10 @@ export default function App() {
     if (isAuthenticated) {
       try {
         const projectData = await apiClient.createProject({
-          title: file?.name?.replace(/\.[^.]+$/, '') || "Manus",
-          genres: [], modules: [], transLanguages: [],
+          title: uploadedFile?.name?.replace(/\.[^.]+$/, '') || "Manus",
+          genres: settings.genres || [],
+          modules: settings.modules || [],
+          transLanguages: settings.transLangs || [],
           chapters: chaps.map((ch, idx) => ({
             number: idx + 1, title: ch.title,
             content: ch.content, wordCount: ch.wordCount,
@@ -3570,10 +3867,17 @@ export default function App() {
 
   // ─── LOAD PROJECT FROM SERVER ───
   const handleOpenProject = async (project) => {
+    // Show loading state immediately
+    setChapters([]);
+    setView("editor"); // Guard will show spinner until chapters load
     try {
       const result = await apiClient.getProject(project.id);
       const data = result?.project || result;
-      if (!data) return;
+      if (!data) {
+        console.error("No project data returned for id:", project.id);
+        setView("dashboard");
+        return;
+      }
 
       setServerProjectId(data.id);
       setUploadedFile({ name: data.title });
@@ -3605,6 +3909,14 @@ export default function App() {
         content: ch.content, wordCount: ch.wordCount,
         status: ch.suggestions?.length > 0 ? "done" : "pending",
       }));
+
+      if (loadedChapters.length === 0) {
+        console.error("Project has no chapters:", data.id);
+        setView("dashboard");
+        alert("Projektet har inga kapitel.");
+        return;
+      }
+
       setChapters(loadedChapters);
       setParagraphsByChapter(parasMap);
       setActiveChapter(loadedChapters[0]?.id);
@@ -3613,9 +3925,9 @@ export default function App() {
 
       // Save session reference to IndexedDB for quick restore
       await saveProject({ serverProjectId: data.id, activeChapterId: loadedChapters[0]?.id, conventions, view: "editor" });
-      setView("editor");
     } catch (err) {
       console.error("Failed to load project:", err);
+      setView("dashboard");
       alert("Kunde inte öppna projektet: " + err.message);
     }
   };
@@ -3719,7 +4031,7 @@ export default function App() {
           }
 
           // Use backend API – suggestions are saved to DB automatically
-          const result = await apiClient.reviewChapter(updatedChapters[i].id, projId);
+          const result = await apiClient.reviewChapter(updatedChapters[i].id, projId, level || 'standard');
           const suggestions = result?.suggestions || [];
 
           if (suggestions.length > 0) {
@@ -3794,12 +4106,11 @@ export default function App() {
     const chapter = chapters.find(c => c.id === chapterId);
     if (!chapter || reanalyzingChapter) return;
 
+    const analysisLevel = level || analysisLevelRef.current || "basic";
     setReanalyzingChapter(chapterId);
     setProcessingStatus(`Analyserar ${chapter.title}...`);
 
-    // Clear existing suggestions for this chapter
     const freshParas = splitIntoParagraphs(chapter.content);
-    setParagraphsByChapter(prev => ({ ...prev, [chapterId]: freshParas }));
 
     // Mark as active
     setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "active" } : c));
@@ -3813,13 +4124,33 @@ export default function App() {
           setProcessingStatus(`Bearbetar ${chapter.title}... (försök ${attempt + 1})`);
           await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
         }
-        // Use backend API – suggestions saved to DB automatically
-        const result = await apiClient.reviewChapter(chapterId, serverProjectId);
+        // Use multi-pass backend API
+        const result = await apiClient.reviewChapterMulti(chapterId, serverProjectId, analysisLevel);
         const suggestions = result?.suggestions || [];
+
+        // Update DNA profile if returned
+        if (result?.dnaProfile) setDnaProfile(result.dnaProfile);
+
+        // Restore accepted/rejected state from DB status
+        const restoredAccepted = new Set(accepted);
+        const restoredRejected = new Set(rejected);
+        for (const s of suggestions) {
+          if (s.status === "ACCEPTED") restoredAccepted.add(s.id);
+          if (s.status === "REJECTED") restoredRejected.add(s.id);
+        }
+        setAccepted(restoredAccepted);
+        setRejected(restoredRejected);
 
         if (suggestions.length > 0) {
           const enrichedParas = attachSuggestionsToParagraphs(freshParas, suggestions, chapterId);
           setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enrichedParas }));
+        } else {
+          setParagraphsByChapter(prev => ({ ...prev, [chapterId]: freshParas }));
+        }
+
+        const stats = result?.stats;
+        if (stats) {
+          console.log(`[Multi-pass] ${chapter.title}: ${stats.new} nya, ${stats.kept} bevarade, ${stats.total} totalt`);
         }
         success = true;
       } catch (err) {
@@ -3829,14 +4160,19 @@ export default function App() {
     }
 
     if (!success && lastError) {
-      setProcessingStatus(`${chapter.title}: Analysen misslyckades`);
-      await new Promise(r => setTimeout(r, 2000));
+      const shortError = lastError.length > 80 ? lastError.slice(0, 80) + '...' : lastError;
+      setProcessingStatus(`❌ ${chapter.title}: Analysen misslyckades – ${shortError}`);
+      await new Promise(r => setTimeout(r, 5000));
     }
 
-    setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: "done" } : c));
+    setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, status: success ? "done" : "error" } : c));
     setProcessingStatus("");
     setReanalyzingChapter(null);
   };
+
+  // Ref to track current analysis level (avoids stale closures)
+  const analysisLevelRef = useRef(analysisLevel);
+  useEffect(() => { analysisLevelRef.current = analysisLevel; }, [analysisLevel]);
 
   // Split chapter at a paragraph boundary
   // ─── ANALYZE ALL UNREVIEWED CHAPTERS ───
@@ -3879,9 +4215,10 @@ export default function App() {
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
-          // Use backend API – suggestions saved to DB automatically
-          const result = await apiClient.reviewChapter(ch.id, serverProjectId);
+          // Use multi-pass backend API
+          const result = await apiClient.reviewChapterMulti(ch.id, serverProjectId, analysisLevelRef.current || "basic");
           const suggestions = result?.suggestions || [];
+          if (result?.dnaProfile && !dnaProfile) setDnaProfile(result.dnaProfile);
 
           if (suggestions.length > 0) {
             const enrichedParas = attachSuggestionsToParagraphs(paras, suggestions, ch.id);
@@ -3914,6 +4251,8 @@ export default function App() {
   const [reReviewing, setReReviewing] = useState(false);
   const [showReReviewModal, setShowReReviewModal] = useState(false);
   const [reReviewLevel, setReReviewLevel] = useState(analysisLevel || "standard");
+  const [reReviewSelectedChapters, setReReviewSelectedChapters] = useState(new Set()); // empty = all
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   const handleReReview = async (level) => {
     if (reReviewing || batchAnalyzing) return;
@@ -3964,6 +4303,7 @@ export default function App() {
 
     // Re-run analysis on all chapters via backend API
     for (let i = 0; i < chapters.length; i++) {
+
       if (abortProcessingRef.current) {
         abortProcessingRef.current = false;
         break;
@@ -3971,6 +4311,7 @@ export default function App() {
       const ch = chapters[i];
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
       setProcessingStatus(`Granskning ${activeReviewRound + 1}: Kapitel ${i + 1} (${i + 1}/${chapters.length})...`);
+
 
       let success = false;
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
@@ -3981,7 +4322,7 @@ export default function App() {
           }
 
           // Use backend API – suggestions saved to DB automatically
-          const result = await apiClient.reviewChapter(ch.id, serverProjectId);
+          const result = await apiClient.reviewChapter(ch.id, serverProjectId, useLevel || 'standard');
           const suggestions = result?.suggestions || [];
 
           if (suggestions.length > 0) {
@@ -4003,6 +4344,7 @@ export default function App() {
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "done" } : c));
 
       if (i < chapters.length - 1) {
+
         setProcessingStatus(`Förbereder nästa kapitel...`);
         await new Promise(r => setTimeout(r, 3000));
       }
@@ -4067,16 +4409,56 @@ export default function App() {
   // ─── SCROLL TO SUGGESTION IN TEXT ───
   useEffect(() => {
     if (!activeSuggestion || !mainRef.current) return;
-    const el = mainRef.current.querySelector(`[data-suggestion-id="${activeSuggestion}"]`);
+    const normS = s => s.replace(/\s+/g, ' ').trim();
+
+    const flashElement = (el, color = "#a0522d30", duration = 1500) => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.style.transition = "background 0.3s, outline 0.3s";
+      el.style.background = color;
+      el.style.outline = "2px solid #a0522d40";
+      el.style.outlineOffset = "4px";
+      el.style.borderRadius = "4px";
+      setTimeout(() => { el.style.background = "transparent"; el.style.outline = "none"; }, duration);
+    };
+
+    // 1. Try inline highlight first (exact match already rendered)
+    let el = mainRef.current.querySelector(`[data-suggestion-id="${activeSuggestion}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
-      // Flash animation
       el.style.transition = "background 0.15s";
-      const original = el.style.background;
+      const orig = el.style.background;
       el.style.background = "#a0522d30";
-      setTimeout(() => { el.style.background = original; }, 800);
+      setTimeout(() => { el.style.background = orig; }, 800);
+      return;
     }
-  }, [activeSuggestion]);
+
+    // 2. Try paragraph that owns this suggestion
+    const paraEl = mainRef.current.querySelector(`[data-para-suggestion-ids*="${activeSuggestion}"]`);
+    if (paraEl) { flashElement(paraEl); return; }
+
+    // 3. Search for original text across all visible paragraphs
+    const paras = paragraphsByChapter[activeChapter] || [];
+    const sugg = paras.flatMap(p => p.suggestions || []).find(s => s.id === activeSuggestion);
+    if (sugg?.original) {
+      const normOrig = normS(sugg.original);
+      // Find the paragraph element containing this text
+      const allParaEls = mainRef.current.querySelectorAll("[data-para-id]");
+      for (const pEl of allParaEls) {
+        if (normS(pEl.textContent).includes(normOrig) || normOrig.includes(normS(pEl.textContent).slice(0, 50))) {
+          flashElement(pEl, "#a0522d18");
+          return;
+        }
+      }
+      // 4. Last resort: search with shorter prefix (first 40 chars)
+      const shortOrig = normOrig.slice(0, 40);
+      for (const pEl of allParaEls) {
+        if (normS(pEl.textContent).includes(shortOrig)) {
+          flashElement(pEl, "#a0522d12");
+          return;
+        }
+      }
+    }
+  }, [activeSuggestion, activeChapter, paragraphsByChapter]);
 
   // ─── TEXT SELECTION HANDLER ───
   const handleTextSelection = useCallback(() => {
@@ -4102,11 +4484,153 @@ export default function App() {
     });
   }, []);
 
+  // ─── BAKE IN: apply text replacement to chapter content + save to DB ───
+  // Uses setChapters(prev => ...) to always read CURRENT state (no stale closures)
+  // Helper: fuzzy replace (handles whitespace differences between AI original and actual text)
+  const fuzzyReplaceInText = (text, original, replacement) => {
+    const normS = s => s.replace(/\s+/g, ' ').trim();
+    // Exact match
+    if (text.includes(original)) return text.replace(original, replacement);
+    // Normalized match: find position in normalized string, map back to original
+    const normText = normS(text);
+    const normOrig = normS(original);
+    const normIdx = normText.indexOf(normOrig);
+    if (normIdx === -1) return null;
+    // Map normalized index back to original text position
+    let origStart = -1, origEnd = -1, ni = 0, ti = 0;
+    // Skip leading whitespace in original text
+    while (ti < text.length && /\s/.test(text[ti]) && ni === 0) ti++;
+    while (ti <= text.length && ni <= normIdx + normOrig.length) {
+      if (ni === normIdx && origStart === -1) origStart = ti;
+      if (ni === normIdx + normOrig.length) { origEnd = ti; break; }
+      if (ti >= text.length) break;
+      if (/\s/.test(text[ti])) {
+        while (ti < text.length && /\s/.test(text[ti])) ti++;
+        ni++;
+      } else {
+        ti++; ni++;
+      }
+    }
+    if (origEnd === -1) origEnd = text.length;
+    if (origStart === -1) return null;
+    return text.slice(0, origStart) + replacement + text.slice(origEnd);
+  };
+
+  const applyReplacementToContent = (chapterId, originalText, replacementText) => {
+    // Safety: if replacement text already exists in the chapter, skip (prevent duplication)
+    let savedContent = null;
+
+    setChapters(prev => {
+      const ch = prev.find(c => c.id === chapterId);
+      if (!ch) return prev;
+      // If replacement already exists in text, skip (prevent double-application)
+      const normCheck = s => s.replace(/\s+/g, ' ').trim();
+      if (replacementText && normCheck(ch.content).includes(normCheck(replacementText)) && normCheck(originalText) !== normCheck(replacementText)) {
+        console.log("[Bake-in] Replacement already in text, skipping:", replacementText.slice(0, 60));
+        return prev;
+      }
+      const newContent = fuzzyReplaceInText(ch.content, originalText, replacementText);
+      if (!newContent || newContent === ch.content) {
+        console.warn("[Bake-in] Could not find original text in chapter:", originalText.slice(0, 80));
+        return prev;
+      }
+      savedContent = newContent;
+      return prev.map(c => c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c);
+    });
+
+    // After chapter content updated, also refresh paragraphs to keep para.text in sync
+    setTimeout(() => {
+      if (savedContent) {
+        // Rebuild paragraphs from new content, preserving suggestions
+        const newParas = splitIntoParagraphs(savedContent);
+        const oldParas = paragraphsByChapter[chapterId] || [];
+        const enriched = newParas.map(np => {
+          // Match by text similarity — find closest old paragraph
+          const exact = oldParas.find(op => op.text === np.text);
+          if (exact?.suggestions?.length) return { ...np, suggestions: exact.suggestions };
+          // Fuzzy: check if old paragraph text is a substring or vice versa
+          const fuzzy = oldParas.find(op => np.text.includes(op.text?.substring(0, 40)) || op.text?.includes(np.text.substring(0, 40)));
+          if (fuzzy?.suggestions?.length) return { ...np, suggestions: fuzzy.suggestions };
+          return np;
+        });
+        setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enriched }));
+
+        if (serverProjectId) {
+          apiClient.updateChapter(chapterId, { content: savedContent })
+            .then(() => console.log("[Bake-in] Saved to DB"))
+            .catch(e => {
+              console.error("[Bake-in] DB save failed:", e);
+              setSaveStatus("error");
+            });
+        }
+      } else {
+        console.warn("[Bake-in] No content saved — replacement not applied");
+      }
+    }, 0);
+  };
+
+  // Batch version: apply multiple replacements in ONE state update
+  const applyBatchReplacements = (chapterId, replacements) => {
+    let savedContent = null;
+
+    setChapters(prev => {
+      const ch = prev.find(c => c.id === chapterId);
+      if (!ch) return prev;
+      let content = ch.content;
+      let applied = 0;
+      for (const { original, replacement } of replacements) {
+        if (!original || !replacement) continue;
+        const result = fuzzyReplaceInText(content, original, replacement);
+        if (result && result !== content) {
+          content = result;
+          applied++;
+        } else {
+          console.warn("[Batch bake-in] Could not find:", original.slice(0, 60));
+        }
+      }
+      if (content === ch.content) return prev;
+      console.log(`[Batch bake-in] Applied ${applied}/${replacements.length} replacements`);
+      savedContent = content;
+      return prev.map(c => c.id === chapterId ? { ...c, content, wordCount: countWords(content) } : c);
+    });
+
+    setTimeout(() => {
+      if (savedContent && serverProjectId) {
+        apiClient.updateChapter(chapterId, { content: savedContent })
+          .then(() => console.log("[Batch bake-in] Saved to DB"))
+          .catch(e => {
+            console.error("[Batch bake-in] DB save failed:", e);
+            setSaveStatus("error");
+          });
+      }
+    }, 0);
+  };
+
+  // ─── GET EFFECTIVE TEXT (with accepted replacements applied) ───
+  const getEffectiveText = (para) => {
+    if (!para?.suggestions?.length) return para?.text || "";
+    let text = para.text;
+    // Apply accepted replacements — use same findInText as renderText for consistency
+    const acceptedSuggestions = (para.suggestions || []).filter(s => accepted.has(s.id) && s.original && s.replacement);
+    if (acceptedSuggestions.length === 0) return text;
+    // Sort by position (reverse) to apply from end to start
+    const withPos = acceptedSuggestions.map(s => {
+      const match = findInText(text, s.original);
+      return { s, match };
+    }).filter(x => x.match).sort((a, b) => b.match.idx - a.match.idx);
+    for (const { s, match } of withPos) {
+      text = text.slice(0, match.idx) + s.replacement + text.slice(match.idx + match.len);
+    }
+    return text;
+  };
+
+
   // ─── EDIT PARAGRAPH ───
-  const handleEditParagraph = (paraId, text) => {
+  const handleEditParagraph = (paraId, text, involvedParaIds = null) => {
     setEditModal({
       text,
       paraId,
+      involvedParaIds, // track all paragraphs involved in multi-para selection
       chapterTitle: currentChapter?.title || "Kapitel",
     });
     setSelectionToolbar(null);
@@ -4120,10 +4644,26 @@ export default function App() {
     const idx = paras.findIndex(p => p.id === paraId);
     if (idx === -1) return;
 
-    paras[idx] = { ...paras[idx], text: newText };
+    // Split edited text on double newlines (user may have added paragraph breaks)
+    const newParts = newText.split(/\n\s*\n/).map(t => t.trim()).filter(t => t.length > 0);
+
+    if (newParts.length <= 1) {
+      // Simple case: single paragraph — update text, clear baked-in accepted suggestions
+      const cleanedSuggestions = (paras[idx].suggestions || []).filter(s => !accepted.has(s.id));
+      paras[idx] = { ...paras[idx], text: newParts[0] || newText.trim(), suggestions: cleanedSuggestions };
+    } else {
+      // User created multiple paragraphs in the editor — split into N paragraphs
+      const newParas = newParts.map((text, i) => ({
+        id: i === 0 ? paras[idx].id : `p${Date.now()}_${i}`,
+        text,
+        suggestions: i === 0 ? (paras[idx].suggestions || []).filter(s => !accepted.has(s.id)) : [],
+      }));
+      paras.splice(idx, 1, ...newParas);
+    }
+
     setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: paras }));
 
-    // Also update the chapter content
+    // Rebuild and save chapter content
     const newContent = paras.map(p => p.text).join("\n\n");
     setChapters(prev => prev.map(ch =>
       ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
@@ -4183,17 +4723,21 @@ export default function App() {
   // Get current chapter paragraphs
   const currentParagraphs = paragraphsByChapter[activeChapter] || [];
   const allSuggestions = currentParagraphs.flatMap(p => p.suggestions || []);
-  // Show all suggestions: pending first, then handled. Filter by priority.
+  const [showHandled, setShowHandled] = useState(false);
+  // Default: only show pending suggestions. Toggle to see handled ones too.
   const filtered = allSuggestions
     .map((s, idx) => ({ ...s, _textOrder: idx }))
     .filter(s => filterPriority === "all" || s.priority === filterPriority)
+
     .sort((a, b) => {
       const aHandled = accepted.has(a.id) || rejected.has(a.id) ? 1 : 0;
       const bHandled = accepted.has(b.id) || rejected.has(b.id) ? 1 : 0;
       if (aHandled !== bHandled) return aHandled - bHandled; // pending first
       return a._textOrder - b._textOrder; // preserve text order within group
+
     });
   const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
+  const handledCount = allSuggestions.length - pendingCount;
 
   // Global: count ALL suggestions across ALL chapters
   const globalAllSuggestions = Object.values(paragraphsByChapter).flatMap(paras => paras.flatMap(p => p.suggestions || []));
@@ -4203,6 +4747,15 @@ export default function App() {
     return paras.some(p => p.suggestions?.length > 0);
   });
   const manuscriptFullyHandled = allChaptersReviewed && globalPendingCount === 0 && globalAllSuggestions.length > 0;
+
+  // Show completion modal when all suggestions are handled
+  const prevPendingRef = useRef(globalPendingCount);
+  useEffect(() => {
+    if (prevPendingRef.current > 0 && globalPendingCount === 0 && manuscriptFullyHandled && !reReviewing && !batchAnalyzing) {
+      setShowCompletionModal(true);
+    }
+    prevPendingRef.current = globalPendingCount;
+  }, [globalPendingCount, manuscriptFullyHandled, reReviewing, batchAnalyzing]);
 
   // ─── RENDER ───
 
@@ -4217,9 +4770,9 @@ export default function App() {
     </div>
   );
 
-  // Not authenticated → show auth page
+  // Not authenticated → show landing page
   if (!isAuthenticated) return (
-    <AuthPage onLogin={login} onRegister={register} />
+    <LandingPage onLogin={login} onRegister={register} />
   );
 
   // Dashboard (also handles "loading" state after auth is settled)
@@ -4246,9 +4799,22 @@ export default function App() {
   );
 
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
-  if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} chapterCount={chapters.length} totalWords={chapters.reduce((s, c) => s + c.wordCount, 0)} onStart={handleStartProcessing} onBack={() => setView("upload")} />;
+  if (view === "settings") return <OnboardingSettings fileName={uploadedFile?.name} chapterCount={chapters.length} totalWords={chapters.reduce((s, c) => s + c.wordCount, 0)} onStart={handleSettingsDone} onBack={() => setView("upload")} />;
   if (view === "processing") return <ProcessingView chapters={chapters} statusText={processingStatus} onAbort={handleAbortProcessing} />;
   if (view === "pricing") return <PricingPage onBack={() => setView("editor")} />;
+
+  // Guard: if editor view but no chapters loaded, show loading or fallback to dashboard
+  if (view === "editor" && chapters.length === 0) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, flexDirection: "column", gap: 16 }}>
+      <div style={{ width: 36, height: 36, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>Laddar manus...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <button onClick={() => setView("dashboard")} style={{
+        fontFamily: uiFont, fontSize: 11, padding: "6px 16px", borderRadius: 7,
+        border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", marginTop: 8,
+      }}>← Tillbaka till dashboard</button>
+    </div>
+  );
 
   const currentChapter = chapters.find(c => c.id === activeChapter) || chapters[0];
 
@@ -4291,6 +4857,7 @@ export default function App() {
 
   // Find s.original in text, falling back to normalized/fuzzy matching.
   // Returns { idx, len } where idx is position in text and len is the actual matched length in text.
+
   const findInText = (text, original, fromIndex = 0) => {
     // Exact match
     const exact = text.indexOf(original, fromIndex);
@@ -4332,18 +4899,104 @@ export default function App() {
         // Try to match the full original length from this point
         const approxLen = Math.min(original.length + 20, text.length - realIdx);
         return { idx: realIdx, len: approxLen };
+
       }
     }
     return null;
   };
 
   const renderText = (para) => {
+
     const { text, suggestions } = para;
-    if (!suggestions || !suggestions.length) return renderFormatted(text, `p${para.id}`);
+
+    // Helper: apply search highlights to a text fragment
+    // Uses searchState.matches (which reference chapter.content offsets) mapped to paragraph text
+    const applySearchHighlights = (fragment, keyPrefix, globalStart) => {
+      if (!searchState || !fragment || !searchState.query || !searchState.matches?.length) return renderFormatted(fragment, keyPrefix);
+      const { activeMatchIdx: sIdx, matches: chapterMatches } = searchState;
+      const fragEnd = globalStart + fragment.length;
+      // Find which chapter-level matches fall within this fragment
+      const fragMatches = [];
+      for (let mi = 0; mi < chapterMatches.length; mi++) {
+        const m = chapterMatches[mi];
+        // Check if match overlaps with this fragment (using tolerance for offset drift)
+        const mEnd = m.index + m.length;
+        // Try direct: match falls within fragment's global range
+        if (m.index >= globalStart - 2 && mEnd <= fragEnd + 2) {
+          const localIdx = Math.max(0, m.index - globalStart);
+          const localEnd = Math.min(fragment.length, mEnd - globalStart);
+          if (localIdx < fragment.length && localEnd > localIdx) {
+            fragMatches.push({ localIdx, length: localEnd - localIdx, matchNum: mi });
+          }
+        }
+      }
+      if (fragMatches.length === 0) return renderFormatted(fragment, keyPrefix);
+      const parts = [];
+      let pos = 0;
+      for (const fm of fragMatches) {
+        if (fm.localIdx > pos) parts.push(<span key={`${keyPrefix}s${pos}`}>{renderFormatted(fragment.slice(pos, fm.localIdx), `${keyPrefix}s${pos}`)}</span>);
+        const isActive = fm.matchNum === sIdx;
+        parts.push(
+          <mark key={`${keyPrefix}sm${fm.matchNum}`}
+            data-search-match={fm.matchNum}
+            style={{
+              background: isActive ? "#e8a83880" : "#e8a83830",
+              borderBottom: isActive ? "2px solid #c87000" : "1px solid #c8700060",
+              padding: "1px 2px", borderRadius: 3,
+              outline: isActive ? "2px solid #c8700050" : "none", outlineOffset: 1,
+            }}>
+            {renderFormatted(fragment.slice(fm.localIdx, fm.localIdx + fm.length), `${keyPrefix}sm${fm.matchNum}`)}
+          </mark>
+        );
+        pos = fm.localIdx + fm.length;
+      }
+      if (pos < fragment.length) parts.push(<span key={`${keyPrefix}se`}>{renderFormatted(fragment.slice(pos), `${keyPrefix}se`)}</span>);
+      return parts;
+    };
+
+    // Helper: apply term highlights to a text fragment
+    const applyTermHighlights = (fragment, keyPrefix, globalStart) => {
+      if (!highlightTermState || !fragment) return applySearchHighlights(fragment, keyPrefix, globalStart);
+      const { suggestionId, occurrenceIdx, occurrences } = highlightTermState;
+      // Find occurrences that fall within this fragment's global range
+      const fragEnd = globalStart + fragment.length;
+      const matching = occurrences.map((occ, i) => ({ ...occ, occIdx: i }))
+        .filter(occ => occ.index >= globalStart && occ.index + occ.length <= fragEnd);
+      if (matching.length === 0) return applySearchHighlights(fragment, keyPrefix, globalStart);
+
+      const parts = [];
+      let pos = 0;
+      for (const occ of matching) {
+        const localIdx = occ.index - globalStart;
+        if (localIdx > pos) parts.push(<span key={`${keyPrefix}t${pos}`}>{...applySearchHighlights(fragment.slice(pos, localIdx), `${keyPrefix}t${pos}`, globalStart + pos)}</span>);
+        const isCurrentOcc = occ.occIdx === occurrenceIdx;
+        parts.push(
+          <mark key={`${keyPrefix}h${occ.occIdx}`}
+            data-term-highlight={`${suggestionId}-${occ.occIdx}`}
+            style={{
+              background: isCurrentOcc ? "#a0522d40" : "#a0522d15",
+              borderBottom: `2px solid ${isCurrentOcc ? "#a0522d" : "#a0522d60"}`,
+              padding: "1px 2px", borderRadius: 3,
+              outline: isCurrentOcc ? "2px solid #a0522d50" : "none", outlineOffset: 1,
+              animation: isCurrentOcc ? "flash-highlight 1.5s ease-out" : "none",
+            }}>
+            {...renderFormatted(occ.text, `${keyPrefix}h${occ.occIdx}`)}
+          </mark>
+        );
+        pos = localIdx + occ.length;
+      }
+      if (pos < fragment.length) parts.push(<span key={`${keyPrefix}e`}>{...applySearchHighlights(fragment.slice(pos), `${keyPrefix}e`, globalStart + pos)}</span>);
+      return parts;
+    };
+
+    // Filter out suggestions flagged as no-inline (unmatched, placed for panel visibility only)
+    const inlineSuggestions = (suggestions || []).filter(s => !s._noInline);
+    if (!inlineSuggestions.length) return applyTermHighlights(text, `p${para.id}`, paraGlobalOffset);
     const parts = [];
     let last = 0;
     // Pre-compute positions for sorting
     const withPos = suggestions.filter(s => s.original).map(s => {
+
       const match = findInText(text, s.original);
       return { s, match };
     }).filter(x => x.match).sort((a, b) => a.match.idx - b.match.idx);
@@ -4352,6 +5005,7 @@ export default function App() {
       const { idx, len } = match;
       if (idx < last) continue; // Skip overlapping
       if (idx > last) parts.push(<span key={`t${last}`}>{...renderFormatted(text.slice(last, idx), `t${last}`)}</span>);
+
       const matchedText = text.slice(idx, idx + len);
       const isAcc = accepted.has(s.id), isRej = rejected.has(s.id), isAct = activeSuggestion === s.id;
       const p = PRIORITY[s.priority];
@@ -4374,8 +5028,8 @@ export default function App() {
       }
       last = idx + len;
     }
-    if (last < text.length) parts.push(<span key="end">{...renderFormatted(text.slice(last), "end")}</span>);
-    return parts.length ? parts : renderFormatted(text, `p${para.id}`);
+    if (last < text.length) parts.push(<span key="end">{...applyTermHighlights(text.slice(last), "end", paraGlobalOffset + last)}</span>);
+    return parts.length ? parts : applyTermHighlights(text, `p${para.id}`, paraGlobalOffset);
   };
 
   return (
@@ -4403,27 +5057,7 @@ export default function App() {
             </span>
           )}
           <button onClick={() => { if (window.confirm("Vill du börja om med ett nytt manus? Allt osparat arbete försvinner.")) handleStartFresh(); }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer", fontWeight: 500 }}>Nytt manus</button>
-          {/* Analyze unreviewed button */}
-          {(() => {
-            const unreviewedCount = chapters.filter(ch => {
-              const paras = paragraphsByChapter[ch.id] || [];
-              return !paras.some(p => p.suggestions?.length > 0);
-            }).length;
-            return unreviewedCount > 0 ? (
-              <button
-                onClick={handleAnalyzeUnreviewed}
-                disabled={batchAnalyzing}
-                style={{
-                  fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: "none",
-                  background: batchAnalyzing ? "#d4c8bb" : accent, color: "#fff", cursor: batchAnalyzing ? "default" : "pointer",
-                  fontWeight: 600, display: "flex", alignItems: "center", gap: 5,
-                }}
-              >
-                {batchAnalyzing ? `Analyserar...` : `Analysera (${unreviewedCount})`}
-              </button>
-            ) : null;
-          })()}
-          {/* Re-review button */}
+          {/* Review button */}
           <button
             onClick={() => reReviewing ? null : setShowReReviewModal(true)}
             disabled={reReviewing}
@@ -4433,12 +5067,19 @@ export default function App() {
               display: "flex", alignItems: "center", gap: 4,
             }}
           >
-            {reReviewing ? "Granskar..." : `↻ Ny granskning`}
+            {reReviewing ? "Granskar..." : `↻ Granska`}
             {reviewHistory.length > 0 && (
               <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 8, background: accentLight, color: accent, fontWeight: 600 }}>
                 #{activeReviewRound}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => setShowSearch(s => !s)}
+            title={`Sök i text (${navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}+F)`}
+            style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 12px", borderRadius: 7, border: `1px solid ${showSearch ? accent : border}`, background: showSearch ? accentLight : surface, color: showSearch ? accent : ink, cursor: "pointer", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
+          >
+            <span style={{ fontSize: 13 }}>⌕</span> Sök
           </button>
           <button onClick={() => setShowExport(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Exportera</button>
           <button onClick={() => setShowSettings(true)} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>Inställningar</button>
@@ -4455,22 +5096,29 @@ export default function App() {
         </div>
       )}
 
-      {/* BATCH ANALYSIS STATUS BAR */}
-      {(batchAnalyzing || reanalyzingChapter) && processingStatus && (
+      {/* ANALYSIS STATUS BAR */}
+      {(batchAnalyzing || reanalyzingChapter || reReviewing) && processingStatus && (
         <div style={{
-          padding: "6px 16px", background: "#fdf6e3", borderBottom: `1px solid #e8d9a8`,
-          display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+          padding: "12px 20px", background: "linear-gradient(135deg, #fdf6e3 0%, #f5ead0 100%)",
+          borderBottom: `1px solid #e8d9a8`,
+          display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
         }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: "50%", background: "#b8860b",
-            animation: "pulse 1.5s ease-in-out infinite",
+          <div style={{
+            width: 28, height: 28, borderRadius: "50%", border: "3px solid #e8d9a8",
+            borderTopColor: accent, animation: "spin 1s linear infinite",
+            flexShrink: 0,
           }} />
-          <span style={{ fontFamily: uiFont, fontSize: 11, color: "#7a6520" }}>{processingStatus}</span>
-          {batchAnalyzing && (
-            <button onClick={handleAbortProcessing} style={{
-              marginLeft: "auto", fontFamily: uiFont, fontSize: 10, padding: "3px 10px",
-              borderRadius: 4, border: `1px solid #e8d9a8`, background: "transparent",
-              color: "#7a6520", cursor: "pointer",
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: uiFont, fontSize: 12, color: ink, fontWeight: 600 }}>{processingStatus}</div>
+            <div style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginTop: 2 }}>
+              Stäng inte webbläsaren — granskningen pågår i bakgrunden
+            </div>
+          </div>
+          {(batchAnalyzing || reanalyzingChapter) && (
+            <button onClick={handleAbortProcessing || (() => { setReanalyzingChapter(null); setProcessingStatus(""); })} style={{
+              fontFamily: uiFont, fontSize: 11, padding: "6px 14px",
+              borderRadius: 6, border: `1px solid #d4c0a0`, background: "rgba(255,255,255,0.7)",
+              color: "#7a6520", cursor: "pointer", fontWeight: 500,
             }}>Avbryt</button>
           )}
         </div>
@@ -4478,7 +5126,60 @@ export default function App() {
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* LEFT SIDEBAR */}
-        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} onSplitChapter={handleSplitChapter} onReanalyze={handleReanalyzeChapter} onDeepAnalyze={(id) => handleReanalyzeChapter(id, "deep")} paragraphsByChapter={paragraphsByChapter} />
+        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} paragraphsByChapter={paragraphsByChapter} />
+
+        {/* SEARCH BAR */}
+        {showSearch && (
+          <SearchBar
+            chapters={chapters}
+            activeChapter={activeChapter}
+            setActiveChapter={setActiveChapter}
+            onReplace={(original, replacement, chapterId) => {
+              const targetChapter = chapterId || activeChapter;
+              if (targetChapter) {
+                applyReplacementToContent(targetChapter, original, replacement);
+              }
+            }}
+            onReplaceAll={(query, replacement, caseSensitive, searchAllChapters) => {
+              const targetChapters = searchAllChapters ? chapters : chapters.filter(c => c.id === activeChapter);
+              setChapters(prev => {
+                let updated = prev;
+                for (const tc of targetChapters) {
+                  const ch = updated.find(c => c.id === tc.id);
+                  if (!ch) continue;
+                  const flags = caseSensitive ? 'g' : 'gi';
+                  const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+                  const newContent = ch.content.replace(regex, replacement);
+                  if (newContent === ch.content) continue;
+                  if (serverProjectId) apiClient.updateChapter(tc.id, { content: newContent }).catch(e => console.error("Replace all save failed:", e));
+                  updated = updated.map(c => c.id === tc.id ? { ...c, content: newContent, wordCount: countWords(newContent) } : c);
+                }
+                return updated;
+              });
+              // Refresh paragraphs for all affected chapters
+              setTimeout(() => {
+                const affectedIds = searchAllChapters ? chapters.map(c => c.id) : [activeChapter];
+                for (const chId of affectedIds) {
+                  setChapters(prev => {
+                    const ch = prev.find(c => c.id === chId);
+                    if (ch) {
+                      const newParas = splitIntoParagraphs(ch.content);
+                      const oldParas = paragraphsByChapter[chId] || [];
+                      const enriched = newParas.map(np => {
+                        const op = oldParas.find(o => o.text === np.text);
+                        return op?.suggestions?.length ? { ...np, suggestions: op.suggestions } : np;
+                      });
+                      setParagraphsByChapter(prev2 => ({ ...prev2, [chId]: enriched }));
+                    }
+                    return prev;
+                  });
+                }
+              }, 0);
+            }}
+            onClose={() => { setShowSearch(false); setSearchState(null); }}
+            onSearchChange={setSearchState}
+          />
+        )}
 
         {/* MAIN TEXT */}
         <main ref={mainRef} onMouseUp={handleTextSelection} style={{ flex: 1, overflowY: "auto", padding: "36px 52px", maxWidth: 680, margin: "0 auto", position: "relative" }}>
@@ -4492,7 +5193,18 @@ export default function App() {
               <span>{allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length} förslag kvar</span>
             </div>
           </div>
-          {currentParagraphs.map(para => {
+          {(() => {
+            // Build accurate offsets by finding each paragraph in chapter.content
+            const chContent = currentChapter?.content || "";
+            const paraOffsets = [];
+            let searchFrom = 0;
+            for (const p of currentParagraphs) {
+              const idx = chContent.indexOf(p.text, searchFrom);
+              paraOffsets.push(idx >= 0 ? idx : searchFrom);
+              searchFrom = (idx >= 0 ? idx : searchFrom) + p.text.length;
+            }
+            return currentParagraphs.map((para, paraIdx) => {
+            const paraGlobalOffset = paraOffsets[paraIdx] || 0;
             const isInserted = insertedParaIds.has(para.id);
             const hasAcceptedChanges = (para.suggestions || []).some(s => accepted.has(s.id));
             const hasPendingChanges = (para.suggestions || []).some(s => !accepted.has(s.id) && !rejected.has(s.id));
@@ -4510,7 +5222,9 @@ export default function App() {
                     background: `${accent}50`, borderRadius: 2,
                   }} />
                 )}
-                <p style={{
+                <p
+                  data-para-suggestion-ids={(para.suggestions || []).map(s => s.id).join(',') || undefined}
+                  style={{
                   fontSize: 16.5, lineHeight: 1.85, marginBottom: 22, position: "relative",
                   color: isInserted ? "#2d4a35" : "#3d2e23",
                   background: isInserted ? "#f0faf3" : "transparent",
@@ -4518,12 +5232,12 @@ export default function App() {
                   borderRadius: isInserted ? 6 : 0,
                   transition: "background 0.3s, color 0.3s",
                 }}>
-                  {renderText(para)}
+                  {renderText(para, paraGlobalOffset)}
                 </p>
                 {isInserted && (
                   <div style={{ display: "flex", gap: 6, marginTop: -14, marginBottom: 16, paddingLeft: 10 }}>
                     <button onClick={() => {
-                      handleEditParagraph(para.id, para.text);
+                      handleEditParagraph(para.id, getEffectiveText(para));
                       setInsertedParaIds(new Set());
                     }} style={{
                       fontFamily: uiFont, fontSize: 10, padding: "3px 10px", borderRadius: 5,
@@ -4539,7 +5253,7 @@ export default function App() {
                 )}
               </div>
             );
-          })}
+          }); })()}
         </main>
 
         {/* RIGHT PANEL */}
@@ -4549,14 +5263,19 @@ export default function App() {
               <div style={{ padding: "12px 14px", borderBottom: `1px solid ${border}` }}>
                 <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Förslag</div>
                 <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                  {["all", "red", "yellow", "green"].map(p => (
+                  {["all", "red", "yellow", "green"].map(p => {
+                    const count = p === "all"
+                      ? allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length
+                      : allSuggestions.filter(s => s.priority === p && !accepted.has(s.id) && !rejected.has(s.id)).length;
+                    return (
                     <button key={p} onClick={() => setFilterPriority(p)} style={{
                       fontFamily: uiFont, fontSize: 10, padding: "3px 9px", borderRadius: 10, cursor: "pointer",
                       border: filterPriority === p ? "none" : `1px solid ${border}`,
                       background: filterPriority === p ? (p === "all" ? ink : PRIORITY[p]?.color) : surface,
                       color: filterPriority === p ? "#fff" : muted, fontWeight: 500,
-                    }}>{p === "all" ? "Alla" : PRIORITY[p].label}</button>
-                  ))}
+                    }}>{p === "all" ? "Alla" : PRIORITY[p].label}{count > 0 ? ` (${count})` : ""}</button>
+                    );
+                  })}
                 </div>
                 {/* Batch actions */}
                 {(() => {
@@ -4575,6 +5294,12 @@ export default function App() {
                               return n;
                             });
                             conventionSuggestions.forEach(s => apiClient.updateSuggestion(s.id, "ACCEPTED").catch(() => {}));
+                            if (activeChapter) {
+                              const replacements = conventionSuggestions
+                                .filter(s => s.original && s.replacement)
+                                .map(s => ({ original: s.original, replacement: s.replacement }));
+                              if (replacements.length > 0) applyBatchReplacements(activeChapter, replacements);
+                            }
                           }
                         }} style={{
                           fontFamily: uiFont, fontSize: 9.5, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
@@ -4594,6 +5319,12 @@ export default function App() {
                               return n;
                             });
                             filteredPending.forEach(s => apiClient.updateSuggestion(s.id, "ACCEPTED").catch(() => {}));
+                            if (activeChapter) {
+                              const replacements = filteredPending
+                                .filter(s => s.original && s.replacement)
+                                .map(s => ({ original: s.original, replacement: s.replacement }));
+                              if (replacements.length > 0) applyBatchReplacements(activeChapter, replacements);
+                            }
                           }
                         }} style={{
                           fontFamily: uiFont, fontSize: 9.5, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
@@ -4606,6 +5337,15 @@ export default function App() {
                     </div>
                   ) : null;
                 })()}
+                {handledCount > 0 && (
+                  <button onClick={() => setShowHandled(!showHandled)} style={{
+                    fontFamily: uiFont, fontSize: 9.5, padding: "3px 8px", borderRadius: 5, cursor: "pointer",
+                    border: `1px solid ${border}`, background: showHandled ? "#f0faf3" : surface,
+                    color: showHandled ? "#27864a" : muted, fontWeight: 500, marginTop: 4,
+                  }}>
+                    {showHandled ? `Dölj hanterade (${handledCount})` : `Visa hanterade (${handledCount})`}
+                  </button>
+                )}
               </div>
               <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
                 {/* Suggestion cards – primary content */}
@@ -4665,31 +5405,37 @@ export default function App() {
                         </div>
                       </div>
                     )}
-                    {filtered.map(s => (
+                    {filtered.map(s => {
+                      // Check if this suggestion actually renders with an inline highlight
+                      // It must be attached to a paragraph AND findInText must find it in THAT paragraph's text
+                      const attachedPara = currentParagraphs.find(p => p.suggestions?.some(ps => ps.id === s.id));
+                      const hasInline = !!(attachedPara && s.original && findInText(attachedPara.text, s.original) !== null);
+                      const terms = !hasInline && s.original ? extractSearchTerms(s.original) : [];
+                      const chapter = chapters.find(c => c.id === activeChapter);
+                      const termOccs = terms.length > 0 && chapter ? findAllTermOccurrences(chapter.content, terms) : [];
+                      return (
                       <SuggestionCard key={s.id} s={s} isActive={activeSuggestion === s.id}
                         status={accepted.has(s.id) ? "accepted" : rejected.has(s.id) ? "rejected" : "pending"}
-                        onToggle={() => setActiveSuggestion(activeSuggestion === s.id ? null : s.id)}
-                        onAccept={() => { setAccepted(prev => new Set([...prev, s.id])); setActiveSuggestion(null); apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e)); }}
-                        onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); apiClient.updateSuggestion(s.id, "REJECTED").catch(e => console.error("Save reject failed:", e)); }}
+                        hasInlineHighlight={hasInline}
+                        termOccurrenceCount={termOccs.length}
+                        currentTermIdx={highlightTermState?.suggestionId === s.id ? highlightTermState.occurrenceIdx : null}
+                        onNavigateTerm={termOccs.length > 0 ? (idx) => navigateToTermOccurrence(s.id, terms, idx) : null}
+                        onToggle={() => { setActiveSuggestion(activeSuggestion === s.id ? null : s.id); if (activeSuggestion !== s.id) setHighlightTermState(null); }}
+                        onAccept={() => {
+                          setAccepted(prev => new Set([...prev, s.id]));
+                          setActiveSuggestion(null);
+                          setHighlightTermState(null);
+                          apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e));
+                          // Bake replacement into chapter content (uses prev=> for fresh state)
+                          if (s.original && s.replacement && activeChapter) {
+                            applyReplacementToContent(activeChapter, s.original, s.replacement);
+                          }
+                        }}
+                        onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); setHighlightTermState(null); apiClient.updateSuggestion(s.id, "REJECTED").catch(e => console.error("Save reject failed:", e)); }}
                         onUndo={() => {
-                          // For develop suggestions, restore original text
-                          if (s.type === "develop" && s.original && s.replacement && activeChapter) {
-                            const chapter = chapters.find(c => c.id === activeChapter);
-                            if (chapter && chapter.content.includes(s.replacement.substring(0, 50))) {
-                              const restoredContent = chapter.content.replace(s.replacement, s.original);
-                              setChapters(prev => prev.map(ch =>
-                                ch.id === activeChapter ? { ...ch, content: restoredContent, wordCount: countWords(restoredContent) } : ch
-                              ));
-                              const restoredParas = splitIntoParagraphs(restoredContent);
-                              // Preserve suggestions from other paragraphs
-                              const oldParas = paragraphsByChapter[activeChapter] || [];
-                              const enriched = restoredParas.map(np => {
-                                const op = oldParas.find(o => o.text === np.text);
-                                return op?.suggestions?.length ? { ...np, suggestions: op.suggestions.filter(sg => sg.id !== s.id) } : np;
-                              });
-                              setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: enriched }));
-                              if (serverProjectId) apiClient.updateChapter(activeChapter, { content: restoredContent }).catch(e => console.error("Undo develop failed:", e));
-                            }
+                          // Restore original text for ALL accepted suggestions
+                          if (accepted.has(s.id) && s.original && s.replacement && activeChapter) {
+                            applyReplacementToContent(activeChapter, s.replacement, s.original);
                           }
                           setAccepted(prev => { const n = new Set(prev); n.delete(s.id); return n; });
                           setRejected(prev => { const n = new Set(prev); n.delete(s.id); return n; });
@@ -4697,13 +5443,13 @@ export default function App() {
                           if (!s.id.startsWith("dev_")) apiClient.updateSuggestion(s.id, "PENDING").catch(e => console.error("Save undo failed:", e));
                         }}
                       />
-                    ))}
+                    ); })}
                   </>
                 )}
 
                 {/* Collapsible paragraph edit section */}
                 {currentParagraphs.length > 0 && (
-                  <ParagraphEditSection paragraphs={currentParagraphs} onEdit={handleEditParagraph} />
+                  <ParagraphEditSection paragraphs={currentParagraphs} onEdit={handleEditParagraph} getEffectiveText={getEffectiveText} />
                 )}
               </div>
               <div style={{ padding: "10px 14px", borderTop: `1px solid ${border}`, fontFamily: uiFont, fontSize: 10, color: muted, display: "flex", justifyContent: "space-between" }}>
@@ -4726,11 +5472,15 @@ export default function App() {
             const paras = paragraphsByChapter[activeChapter] || [];
             const para = paras.find(p => p.id === selectionToolbar.paraId);
             if (selectedText && selectedText.includes("\n")) {
-              // Multi-paragraph selection: open modal with selected text
-              handleEditParagraph(selectionToolbar.paraId, selectedText);
+              // Multi-paragraph selection: find all involved paragraph IDs
+              const involvedIds = paras
+                .filter(p => selectedText.includes(p.text.slice(0, 40)))
+                .map(p => p.id);
+              if (involvedIds.length === 0) involvedIds.push(selectionToolbar.paraId);
+              handleEditParagraph(involvedIds[0], selectedText, involvedIds);
             } else if (para) {
-              // Single paragraph: open modal with full paragraph text
-              handleEditParagraph(selectionToolbar.paraId, para.text);
+              // Single paragraph: open modal with effective text (includes accepted replacements)
+              handleEditParagraph(selectionToolbar.paraId, getEffectiveText(para));
             }
           }
         }}
@@ -4773,7 +5523,41 @@ export default function App() {
           text={editModal.text}
           paragraphId={editModal.paraId}
           chapterTitle={editModal.chapterTitle}
-          onSave={(newText) => handleSaveParagraph(editModal.paraId, newText)}
+          onSave={(newText) => {
+            // If multi-paragraph selection was edited, remove text from other involved paragraphs
+            if (editModal.involvedParaIds && editModal.involvedParaIds.length > 1) {
+              const paras = [...(paragraphsByChapter[activeChapter] || [])];
+              // Remove all involved paragraphs except the first
+              const otherIds = editModal.involvedParaIds.slice(1);
+              const cleaned = paras.filter(p => !otherIds.includes(p.id));
+              setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: cleaned }));
+              // Now save the merged text into the first paragraph
+              const firstIdx = cleaned.findIndex(p => p.id === editModal.paraId);
+              if (firstIdx !== -1) {
+                const newParts = newText.split(/\n\s*\n/).map(t => t.trim()).filter(t => t.length > 0);
+                if (newParts.length <= 1) {
+                  cleaned[firstIdx] = { ...cleaned[firstIdx], text: newParts[0] || newText.trim() };
+                } else {
+                  const newParas = newParts.map((text, i) => ({
+                    id: i === 0 ? cleaned[firstIdx].id : `p${Date.now()}_${i}`,
+                    text,
+                    suggestions: i === 0 ? (cleaned[firstIdx].suggestions || []) : [],
+                  }));
+                  cleaned.splice(firstIdx, 1, ...newParas);
+                }
+                setParagraphsByChapter(prev => ({ ...prev, [activeChapter]: cleaned }));
+                const newContent = cleaned.map(p => p.text).join("\n\n");
+                setChapters(prev => prev.map(ch =>
+                  ch.id === activeChapter ? { ...ch, content: newContent, wordCount: countWords(newContent) } : ch
+                ));
+                apiClient.updateChapter(activeChapter, { content: newContent }).catch(err =>
+                  console.error("Failed to save chapter to DB:", err)
+                );
+              }
+            } else {
+              handleSaveParagraph(editModal.paraId, newText);
+            }
+          }}
           onCreateChapter={(text) => handleCreateChapterFromText(text, editModal.paraId)}
           onClose={() => setEditModal(null)}
         />
@@ -4797,6 +5581,8 @@ export default function App() {
           chapterTitle={currentChapter?.title}
           dnaProfile={dnaProfile}
           emotionMap={emotionMaps[activeChapter]}
+          apiClient={apiClient}
+          chapterId={activeChapter}
           onResult={(result) => {
             setDevelopResult({ ...result, insertAfterParaId: developModal.paraId || null });
             setDevelopModal(null);
@@ -4820,10 +5606,23 @@ export default function App() {
                 let newContent;
 
                 // REPLACE original text with new text (not append)
+                const norm = s => s.replace(/\s+/g, ' ').trim();
                 if (originalText && chapter.content.includes(originalText)) {
+                  // Exact match — simple replace
                   newContent = chapter.content.replace(originalText, newText);
+                } else if (originalText && norm(chapter.content).includes(norm(originalText))) {
+                  // Fuzzy match (whitespace differences) — replace by paragraph
+                  const paraIndex = oldParas.findIndex(p => norm(p.text).includes(norm(originalText)) || norm(originalText).includes(norm(p.text)));
+                  if (paraIndex >= 0) {
+                    const updatedParas = oldParas.map((p, i) =>
+                      i === paraIndex ? { ...p, text: newText } : p
+                    );
+                    newContent = updatedParas.map(p => p.text).join("\n\n");
+                  } else {
+                    newContent = chapter.content + "\n\n" + newText;
+                  }
                 } else if (paraId) {
-                  // Fallback: replace the paragraph content
+                  // Fallback: replace the specific paragraph
                   const paraIndex = oldParas.findIndex(p => p.id === paraId);
                   if (paraIndex >= 0) {
                     const updatedParas = oldParas.map((p, i) =>
@@ -4958,15 +5757,69 @@ export default function App() {
               <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Ny granskning</h3>
               <button onClick={() => setShowReReviewModal(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
             </div>
-            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 20px", lineHeight: 1.5 }}>
-              Befintliga förslag arkiveras. Godkända ändringar behålls i texten. Välj analysnivå:
+            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 16px", lineHeight: 1.5 }}>
+              Godkända ändringar behålls i texten. Redan hanterade förslag filtreras bort.
             </p>
+
+            {/* Chapter selection */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink }}>Kapitel att granska</span>
+                <button onClick={() => {
+                  const allSelected = reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.size === chapters.length;
+                  if (allSelected) {
+                    // Currently all selected → deselect all
+                    setReReviewSelectedChapters(new Set(["__none__"])); // sentinel: nothing selected
+                  } else {
+                    // Not all selected → select all
+                    setReReviewSelectedChapters(new Set());
+                  }
+                }} style={{ fontFamily: uiFont, fontSize: 10, color: accent, background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
+                  {reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.size === chapters.length ? "Avmarkera alla" : "Alla kapitel"}
+                </button>
+              </div>
+              <div style={{ maxHeight: 150, overflowY: "auto", border: `1px solid ${border}`, borderRadius: 8, padding: "4px 0" }}>
+                {chapters.map(ch => {
+                  const isSelected = reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.has(ch.id);
+                  const hasSuggestions = (paragraphsByChapter[ch.id] || []).some(p => p.suggestions?.length > 0);
+                  return (
+                    <label key={ch.id} style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer",
+                      background: isSelected ? "#f7f4ef" : "transparent", transition: "background 0.1s",
+                    }}>
+                      <input type="checkbox" checked={isSelected}
+                        onChange={() => {
+                          setReReviewSelectedChapters(prev => {
+                            const next = new Set(prev.size === 0 ? chapters.map(c => c.id) : prev);
+                            if (next.has(ch.id)) next.delete(ch.id); else next.add(ch.id);
+                            // If all selected, reset to empty (= all)
+                            if (next.size === chapters.length) return new Set();
+                            return next;
+                          });
+                        }}
+                        style={{ accentColor: accent }}
+                      />
+                      <span style={{ fontFamily: uiFont, fontSize: 11, color: ink, flex: 1 }}>{ch.title}</span>
+                      <span style={{ fontFamily: uiFont, fontSize: 9, color: muted }}>{ch.wordCount.toLocaleString()} ord</span>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: hasSuggestions ? "#27864a" : "#c0392b", flexShrink: 0 }} />
+                    </label>
+                  );
+                })}
+              </div>
+              <div style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginTop: 4 }}>
+                {reReviewSelectedChapters.size === 0
+                  ? `Alla ${chapters.length} kapitel väljs`
+                  : `${reReviewSelectedChapters.size} av ${chapters.length} kapitel valda`}
+              </div>
+            </div>
+
+            {/* Analysis level */}
+            <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 8 }}>Analysnivå</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
               {Object.values(ANALYSIS_LEVELS).map(lvl => {
                 const active = reReviewLevel === lvl.id;
-                const words = chapters.reduce((s, c) => s + c.wordCount, 0);
-                const estMinutes = Math.ceil(chapters.length * lvl.estimatePerChapter / 60);
-                const estCost = (words / 1000 * lvl.costPer1kWords).toFixed(0);
+                const selectedChapters = reReviewSelectedChapters.size > 0 && !reReviewSelectedChapters.has("__none__") ? reReviewSelectedChapters.size : chapters.length;
+                const estMinutes = Math.ceil(selectedChapters * lvl.estimatePerChapter / 60);
                 return (
                   <button key={lvl.id} onClick={() => setReReviewLevel(lvl.id)} style={{
                     padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
@@ -4977,10 +5830,11 @@ export default function App() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>{lvl.label}</div>
                       <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>{lvl.description}</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 2, fontStyle: "italic" }}>{lvl.passes}</div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>ca {estCost} kr</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>{lvl.costPerChapter}/kap</div>
                     </div>
                   </button>
                 );
@@ -4992,6 +5846,63 @@ export default function App() {
             >
               Starta {ANALYSIS_LEVELS[reReviewLevel].label.toLowerCase()}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLETION MODAL - all suggestions handled */}
+      {showCompletionModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={() => setShowCompletionModal(false)} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
+          <div style={{ position: "relative", background: surface, borderRadius: 16, width: 460, boxShadow: "0 24px 80px rgba(0,0,0,0.18)", padding: "32px 36px", textAlign: "center" }}>
+            <button onClick={() => setShowCompletionModal(false)} style={{ position: "absolute", top: 12, right: 16, background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted }}>✕</button>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+            <h3 style={{ fontFamily: font, fontSize: 22, fontWeight: 700, color: ink, margin: "0 0 8px", letterSpacing: "-0.02em" }}>
+              Alla förslag hanterade!
+            </h3>
+            <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 6px", lineHeight: 1.5 }}>
+              Du har gått igenom alla {globalAllSuggestions.length} förslag i manuskriptet.
+            </p>
+            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 24px", lineHeight: 1.5 }}>
+              {globalAllSuggestions.filter(s => accepted.has(s.id)).length} godkända · {globalAllSuggestions.filter(s => rejected.has(s.id)).length} avvisade
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={async () => {
+                // Save as new version (duplicate project)
+                setShowCompletionModal(false);
+                try {
+                  const date = new Date().toLocaleDateString("sv-SE");
+                  const versionName = `${chapters[0]?.title ? uploadedFile?.name?.replace(/\.[^.]+$/, '') || 'Manus' : 'Manus'} – version ${date}`;
+                  const res = await apiClient.duplicateProject(serverProjectId, versionName);
+                  if (res?.project?.id) {
+                    alert(`Ny version sparad: "${versionName}"`);
+                  }
+                } catch (e) {
+                  console.error("Save version failed:", e);
+                  alert("Kunde inte spara version. Exportera istället.");
+                }
+              }} style={{
+                padding: "13px 0", borderRadius: 9, border: `1px solid ${border}`, background: surface, color: ink,
+                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                📋 Spara som ny version
+              </button>
+              <button onClick={() => { setShowCompletionModal(false); setShowExport(true); }} style={{
+                padding: "13px 0", borderRadius: 9, border: `1px solid ${border}`, background: surface, color: ink,
+                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                📄 Exportera
+              </button>
+              <button onClick={() => { setShowCompletionModal(false); setShowReReviewModal(true); }} style={{
+                padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff",
+                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                ↻ Gör ny granskning
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -5028,12 +5939,15 @@ function attachSuggestionsToParagraphs(paragraphs, suggestions, chapterId) {
       if (paraText.includes(orig)) { matched.add(sIdx); return true; }
       // Normalized whitespace match
       if (paraNorm.includes(origNorm)) { matched.add(sIdx); return true; }
-      // Prefix match (first 60 chars)
-      const prefix = origNorm.substring(0, 60).trim();
-      if (prefix.length > 15 && paraNorm.includes(prefix)) { matched.add(sIdx); return true; }
-      // Suffix match (last 40 chars)
-      const suffix = origNorm.slice(-40).trim();
-      if (suffix.length > 15 && paraNorm.includes(suffix)) { matched.add(sIdx); return true; }
+      // Prefix match (first 60 chars) – only for excerpt-style originals, not patterns
+      const looksLikeExcerpt = !orig.includes('...') && orig.length > 60;
+      if (looksLikeExcerpt) {
+        const prefix = origNorm.substring(0, 60).trim();
+        if (prefix.length > 15 && paraNorm.includes(prefix)) { matched.add(sIdx); return true; }
+        // Suffix match (last 40 chars)
+        const suffix = origNorm.slice(-40).trim();
+        if (suffix.length > 15 && paraNorm.includes(suffix)) { matched.add(sIdx); return true; }
+      }
       // Case-insensitive match
       if (paraNorm.toLowerCase().includes(origNorm.toLowerCase())) { matched.add(sIdx); return true; }
       return false;
@@ -5044,13 +5958,42 @@ function attachSuggestionsToParagraphs(paragraphs, suggestions, chapterId) {
     return { ...para, suggestions: matchingSuggestions };
   });
 
-  // Attach unmatched suggestions to first paragraph so they still appear in the panel
-  const unmatched = suggestions.filter((s, i) => !matched.has(i)).map((s, i) => ({
-    ...s,
-    id: s.id || `${chapterId}_unmatched_${i}`,
-  }));
-  if (unmatched.length > 0 && result.length > 0) {
-    result[0] = { ...result[0], suggestions: [...(result[0].suggestions || []), ...unmatched] };
+  // Attach unmatched suggestions — try to find the right paragraph by searching all paragraphs
+  const unmatched = suggestions.filter((s, i) => !matched.has(i));
+  for (const s of unmatched) {
+    const suggestion = { ...s, id: s.id || `${chapterId}_unmatched_${unmatched.indexOf(s)}` };
+    let placed = false;
+    if (s.original) {
+      // Search each paragraph for the original text
+      const norm = str => str.replace(/\s+/g, ' ').toLowerCase();
+      const normOrig = norm(s.original);
+      for (let pi = 0; pi < result.length; pi++) {
+        if (norm(result[pi].text).includes(normOrig) || normOrig.includes(norm(result[pi].text).substring(0, 40))) {
+          result[pi] = { ...result[pi], suggestions: [...(result[pi].suggestions || []), suggestion] };
+          placed = true;
+          break;
+        }
+      }
+      // Try partial match — first 30 chars of original
+      if (!placed && normOrig.length > 30) {
+        const prefix = normOrig.substring(0, 30);
+        for (let pi = 0; pi < result.length; pi++) {
+          if (norm(result[pi].text).includes(prefix)) {
+            result[pi] = { ...result[pi], suggestions: [...(result[pi].suggestions || []), suggestion] };
+            placed = true;
+            break;
+          }
+        }
+      }
+    }
+    // Last resort: attach to last paragraph (not first/title) with noInlineHighlight flag
+    if (!placed && result.length > 1) {
+      suggestion._noInline = true;
+      result[result.length - 1] = { ...result[result.length - 1], suggestions: [...(result[result.length - 1].suggestions || []), suggestion] };
+    } else if (!placed && result.length > 0) {
+      suggestion._noInline = true;
+      result[0] = { ...result[0], suggestions: [...(result[0].suggestions || []), suggestion] };
+    }
   }
   return result;
 }

@@ -28,12 +28,33 @@ export async function parseManuscript(file) {
 }
 
 /**
+ * Clean imported text — remove invisible Unicode characters, normalize
+ * whitespace, and ensure consistent formatting BEFORE chapter splitting.
+ * This prevents offset-drift in search, AI matching issues, and hidden chars.
+ */
+function cleanTextForImport(text) {
+  return text
+    .replace(/\r\n/g, '\n').replace(/\r/g, '\n')                          // Normalize line endings
+    .replace(/\t/g, ' ')                                                    // Tabs → spaces
+    .replace(/[\u200B\u200C\u200D\u00AD\uFEFF\u2060\u200E\u200F]/g, '')   // Remove invisible chars
+    .replace(/\u00A0/g, ' ')                                                // Non-breaking → regular space
+    .replace(/([^\n]) {2,}/g, '$1 ')                                       // Collapse multiple spaces
+    .replace(/[\u2010\u2011]/g, '-')                                       // Hyphen variants → regular
+    .replace(/\u2012/g, '\u2013')                                          // Figure dash → en-dash
+    .replace(/[ \t]+$/gm, '')                                              // Trailing whitespace per line
+    .replace(/\n{3,}/g, '\n\n')                                            // 3+ newlines → 2
+    .replace(/^\d{1,4}\s*$/gm, '')                                         // Remove standalone page numbers (lines with only 1-4 digits)
+    .replace(/\n{3,}/g, '\n\n')                                            // Re-collapse after page number removal
+    .trim();
+}
+
+/**
  * Parse a plain text file.
  * Splits on common chapter markers.
  */
 async function parseTxtFile(file) {
   const text = await file.text();
-  return splitIntoChapters(text);
+  return splitIntoChapters(cleanTextForImport(text));
 }
 
 /**
@@ -41,15 +62,21 @@ async function parseTxtFile(file) {
  * Falls back to plain text extraction.
  */
 async function parseDocxFile(file) {
-  try {
-    // Dynamic import of mammoth for docx parsing
-    const mammoth = await import('mammoth');
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return splitIntoChapters(result.value);
-  } catch (error) {
-    console.error('Docx parsing failed:', error);
-    throw new Error('Kunde inte läsa .docx-filen. Kontrollera att filen inte är skadad.');
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const mammoth = await import('mammoth');
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      return splitIntoChapters(cleanTextForImport(result.value));
+    } catch (error) {
+      console.error(`Docx parsing failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw new Error('Kunde inte läsa .docx-filen. Kontrollera att filen inte är skadad.');
+    }
   }
 }
 
@@ -58,22 +85,29 @@ async function parseDocxFile(file) {
  * Extracts text from all pages.
  */
 async function parsePdfFile(file) {
-  try {
-    const pdfjsLib = await import('pdfjs-dist');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items.map(item => item.str).join(' ');
-      fullText += pageText + '\n\n';
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const pdfjsLib = await import('pdfjs-dist');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n\n';
+      }
+      return splitIntoChapters(cleanTextForImport(fullText));
+    } catch (error) {
+      console.error(`PDF parsing failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw new Error('Kunde inte läsa PDF-filen. Kontrollera att filen inte är skadad.');
     }
-    return splitIntoChapters(fullText);
-  } catch (error) {
-    console.error('PDF parsing failed:', error);
-    throw new Error('Kunde inte läsa PDF-filen. Kontrollera att filen inte är skadad.');
   }
 }
 
@@ -83,15 +117,35 @@ async function parsePdfFile(file) {
  */
 function splitIntoChapters(text) {
   // Normalize line breaks and clean up whitespace
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Swedish ordinal words for chapter matching
+  // Swedish ordinal words — LONGEST FIRST to prevent partial matching
+  // (e.g. "tjugoförsta" must match before "första")
+  const SWEDISH_ORDINALS = "trettionde|tjugonionde|tjugo[åa]ttonde|tjugosjunde|tjugosj[äa]tte|tjugofemte|tjugofj[äa]rde|tjugotredje|tjugoandra|tjugof[öo]rsta|tjugonde|nittonde|artonde|sjuttonde|sextonde|femtonde|fjortonde|trettonde|tolfte|elfte|tionde|nionde|[åa]ttonde|sjunde|sj[äa]tte|femte|fj[äa]rde|tredje|andra|f[öo]rsta";
+
+  // Map ordinal words to numbers for display
+  const ordinalToNumber = (word) => {
+    const w = word.toLowerCase().replace(/ö/g, 'o').replace(/ä/g, 'a').replace(/å/g, 'a');
+    const map = { forsta: 1, andra: 2, tredje: 3, fjarde: 4, femte: 5, sjatte: 6, sjunde: 7, attonde: 8, nionde: 9, tionde: 10, elfte: 11, tolfte: 12, trettonde: 13, fjortonde: 14, femtonde: 15, sextonde: 16, sjuttonde: 17, artonde: 18, nittonde: 19, tjugonde: 20, tjugoforsta: 21, tjugoandra: 22, tjugotredje: 23, tjugofjarde: 24, tjugofemte: 25, tjugosjatte: 26, tjugosjunde: 27, tjugoattonde: 28, tjugonionde: 29, trettionde: 30 };
+    return map[w] || null;
+  };
+
+  // Pre-process: ensure chapter headings get their own line.
+  // Mammoth/PDF extractors may merge headings with body text, losing the \n boundary.
+  const chapterWordPattern = new RegExp(`([^\\n])((?:${SWEDISH_ORDINALS})\\s+kapitlet)`, 'gi');
+  normalized = normalized
+    .replace(/([^\n])(KAPITEL\s+\d+)/gi, '$1\n$2')
+    .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2')
+    .replace(chapterWordPattern, '$1\n$2');
 
   // Common chapter heading patterns - order matters, most specific first
-  // The key fix: match KAPITEL/Chapter headings even if not at absolute line start
-  // (mammoth/pdf extractors may add spaces or merge lines)
+  const ordinalChapterPattern = new RegExp(`(?:^|\\n)\\s*((${SWEDISH_ORDINALS})\\s+kapitlet[^\\n]*)`, 'gi');
   const chapterPatterns = [
     /(?:^|\n)\s*(KAPITEL\s+\d+[^\n]*)/gi,
     /(?:^|\n)\s*(Kapitel\s+\d+[^\n]*)/g,
     /(?:^|\n)\s*(Chapter\s+\d+[^\n]*)/gi,
+    ordinalChapterPattern, // "Första kapitlet", "Tionde kapitlet", etc.
     /(?:^|\n)\s*(\d+\.\s+[A-ZÅÄÖ][^\n]*)/g,
     /^(#{1,2}\s+[^\n]+)/gm, // Markdown headings
   ];
@@ -130,10 +184,19 @@ function splitIntoChapters(text) {
 
     if (content.length === 0) continue; // Skip empty chapters (heading-only)
 
+    // Map ordinal chapter names to "Kapitel N" for display
+    let displayTitle = title;
+    const ordinalMatch = title.match(new RegExp(`^(${SWEDISH_ORDINALS})\\s+kapitlet`, 'i'));
+    if (ordinalMatch) {
+      const num = ordinalToNumber(ordinalMatch[1]);
+      if (num) displayTitle = `Kapitel ${num}`;
+    }
+
     chapters.push({
       id: i + 1,
       number: i + 1,
-      title,
+      title: displayTitle,
+      originalTitle: title, // preserve author's chapter naming in manuscript text
       content,
       wordCount: countWords(content),
       status: 'pending',
@@ -204,12 +267,21 @@ export function countWords(text) {
  * Split chapter text into paragraphs for the editor.
  */
 export function splitIntoParagraphs(chapterContent) {
-  return chapterContent
+  const raw = chapterContent
     .split(/\n\s*\n/)
-    .map((text, index) => ({
-      id: `p${index}`,
-      text: text.trim(),
-      suggestions: [],
-    }))
-    .filter((p) => p.text.length > 0);
+    .map((text) => text.trim())
+    .filter((text) => text.length > 0);
+
+  // Dedup consecutive identical paragraphs (from develop-insert bugs)
+  const deduped = [];
+  for (let i = 0; i < raw.length; i++) {
+    if (i > 0 && raw[i] === raw[i - 1]) continue;
+    deduped.push(raw[i]);
+  }
+
+  return deduped.map((text, index) => ({
+    id: `p${index}`,
+    text,
+    suggestions: [],
+  }));
 }

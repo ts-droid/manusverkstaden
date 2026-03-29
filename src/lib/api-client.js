@@ -133,6 +133,13 @@ class ApiClient {
     return this.request(`/projects/${id}`, { method: 'DELETE' });
   }
 
+  async duplicateProject(id, newTitle) {
+    return this.request(`/projects/${id}/duplicate`, {
+      method: 'POST',
+      body: JSON.stringify({ title: newTitle }),
+    });
+  }
+
   async uploadManuscript(projectId, file) {
     const formData = new FormData();
     formData.append('file', file);
@@ -144,10 +151,17 @@ class ApiClient {
 
   // ─── AI ───
 
-  async reviewChapter(chapterId, projectId) {
+  async reviewChapter(chapterId, projectId, level = 'standard') {
     return this.request('/ai/review', {
       method: 'POST',
-      body: JSON.stringify({ chapterId, projectId }),
+      body: JSON.stringify({ chapterId, projectId, level }),
+    });
+  }
+
+  async reviewChapterMulti(chapterId, projectId, level = 'basic') {
+    return this.request('/ai/review-multi', {
+      method: 'POST',
+      body: JSON.stringify({ chapterId, projectId, level }),
     });
   }
 
@@ -158,10 +172,10 @@ class ApiClient {
     });
   }
 
-  async developText(mode, input, context, chapterId) {
+  async developText(mode, input, { context, chapterId, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus } = {}) {
     return this.request('/ai/develop', {
       method: 'POST',
-      body: JSON.stringify({ mode, input, context, chapterId }),
+      body: JSON.stringify({ mode, input, context, chapterId, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus }),
     });
   }
 

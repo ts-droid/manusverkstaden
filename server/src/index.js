@@ -45,11 +45,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ─── DEV ACCOUNT SETUP (runs once at startup) ───
+// ─── STARTUP TASKS (runs once at startup) ───
 import { PrismaClient } from '@prisma/client';
+import { seedPrompts } from './utils/seed-prompts.js';
+
 const prismaSetup = new PrismaClient();
 (async () => {
   try {
+    // Dev account setup
     const devEmails = ['cecilia.svardsen@gmail.com'];
     for (const email of devEmails) {
       const user = await prismaSetup.user.findUnique({ where: { email } });
@@ -62,6 +65,14 @@ const prismaSetup = new PrismaClient();
     // Ignore - might not have DB yet
   } finally {
     await prismaSetup.$disconnect();
+  }
+
+  // Seed/migrate prompts
+  try {
+    await seedPrompts();
+    console.log('[startup] Prompts seeded/migrated');
+  } catch (err) {
+    console.error('[startup] Prompt seeding failed:', err.message);
   }
 })();
 
