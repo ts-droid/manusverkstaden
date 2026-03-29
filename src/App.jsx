@@ -326,7 +326,7 @@ function ProcessingView({ chapters, statusText, onAbort }) {
                 }}>
                   {ch.status === "done" ? "✓" : ch.status === "active" ? "..." : ""}
                 </span>
-                <span style={{ color: ch.status === "pending" ? muted : ink, flex: 1 }}>{ch.title}</span>
+                <span style={{ color: ch.status === "pending" ? muted : ink, flex: 1 }}>{`Kapitel ${i + 1}`}</span>
                 <span style={{ fontSize: 10, color: muted }}>{ch.wordCount.toLocaleString()} ord</span>
               </div>
             ))}
@@ -351,14 +351,56 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, paragraphsByChapte
         <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Kapitel</div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 6 }}>
-        {chapters.map(ch => (
+        {chapters.map((ch, idx) => (
           <div key={ch.id} style={{ position: "relative" }}>
             <button onClick={() => setActiveChapter(ch.id)} style={{
               width: "100%", textAlign: "left", padding: "9px 10px", borderRadius: 7, border: "none",
               background: activeChapter === ch.id ? "#ede8e0" : "transparent", cursor: "pointer", fontFamily: font, marginBottom: 1,
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35, flex: 1 }}>{ch.title}</div>
+                <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35, flex: 1 }}>{`Kapitel ${idx + 1}`}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                  {activeChapter === ch.id && onDeepAnalyze && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); onDeepAnalyze(ch.id); }}
+                      title="Djupanalys (Opus)"
+                      style={{
+                        fontSize: 11, color: muted, cursor: "pointer",
+                        padding: "2px 5px", lineHeight: 1, borderRadius: 4,
+                        background: "transparent", transition: "all 0.15s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "#7a4700"; e.currentTarget.style.background = "#fdf6e3"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = muted; e.currentTarget.style.background = "transparent"; }}
+                    >🔍</span>
+                  )}
+                  {activeChapter === ch.id && onReanalyze && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); onReanalyze(ch.id); }}
+                      title={chapterHasSuggestions(ch.id) ? "Analysera om" : "Analysera"}
+                      style={{
+                        fontSize: 12, color: muted, cursor: "pointer",
+                        padding: "2px 5px", lineHeight: 1, borderRadius: 4,
+                        background: "transparent", transition: "all 0.15s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = accent; e.currentTarget.style.background = accentLight; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = muted; e.currentTarget.style.background = "transparent"; }}
+                    >🔄</span>
+                  )}
+                  {activeChapter === ch.id && onSplitChapter && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); setSplitTarget(splitTarget === ch.id ? null : ch.id); }}
+                      title="Dela kapitel"
+                      style={{
+                        fontSize: 15, color: splitTarget === ch.id ? accent : muted, cursor: "pointer",
+                        padding: "2px 6px", flexShrink: 0, lineHeight: 1, borderRadius: 4,
+                        background: splitTarget === ch.id ? accentLight : "transparent",
+                        transition: "all 0.15s", display: "flex", alignItems: "center",
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = accent}
+                      onMouseLeave={(e) => { if (splitTarget !== ch.id) e.currentTarget.style.color = muted; }}
+                    >✂</span>
+                  )}
+                </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: uiFont, fontSize: 10, color: muted }}>
                 <span>{ch.wordCount.toLocaleString()} ord</span>
@@ -2078,9 +2120,9 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
         <OptionGroup label="Vad vill du exportera?">
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <Chip active={exportScope === "all"} onClick={() => setExportScope("all")}>Hela boken</Chip>
-            {chapters.map(ch => (
+            {chapters.map((ch, idx) => (
               <Chip key={ch.id} active={exportScope === ch.id} onClick={() => setExportScope(ch.id)}>
-                {ch.title || `Kapitel ${ch.number}`}
+                {`Kapitel ${idx + 1}`}
               </Chip>
             ))}
           </div>
@@ -4256,25 +4298,26 @@ export default function App() {
     setRejected(new Set());
     setActiveSuggestion(null);
 
-    // Re-run analysis on selected chapters (or all if none selected)
-    const chaptersToReview = reReviewSelectedChapters.size > 0
-      ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
-      : chapters;
-    setReReviewSelectedChapters(new Set()); // reset selection
+    // Mark all chapters as pending for the new review round
+    setChapters(prev => prev.map(c => ({ ...c, status: "pending" })));
 
-    for (let i = 0; i < chaptersToReview.length; i++) {
+    // Re-run analysis on all chapters via backend API
+    for (let i = 0; i < chapters.length; i++) {
+
       if (abortProcessingRef.current) {
         abortProcessingRef.current = false;
         break;
       }
-      const ch = chaptersToReview[i];
-      setProcessingStatus(`Granskning ${activeReviewRound + 1}: ${ch.title} (${i + 1}/${chaptersToReview.length})...`);
+      const ch = chapters[i];
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
+      setProcessingStatus(`Granskning ${activeReviewRound + 1}: Kapitel ${i + 1} (${i + 1}/${chapters.length})...`);
+
 
       let success = false;
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            setProcessingStatus(`Bearbetar ${ch.title}... (försök ${attempt + 1})`);
+            setProcessingStatus(`Bearbetar Kapitel ${i + 1}... (försök ${attempt + 1})`);
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
@@ -4290,15 +4333,18 @@ export default function App() {
           }
           success = true;
         } catch (err) {
-          console.error(`Re-review failed for ${ch.title}:`, err);
+          console.error(`Re-review failed for Kapitel ${i + 1}:`, err);
           if (attempt === 2) {
-            setProcessingStatus(`${ch.title} hoppades över – analyseras vid nästa genomgång`);
+            setProcessingStatus(`Kapitel ${i + 1} hoppades över – analyseras vid nästa genomgång`);
             await new Promise(r => setTimeout(r, 1500));
           }
         }
       }
 
-      if (i < chaptersToReview.length - 1) {
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "done" } : c));
+
+      if (i < chapters.length - 1) {
+
         setProcessingStatus(`Förbereder nästa kapitel...`);
         await new Promise(r => setTimeout(r, 3000));
       }
@@ -4680,28 +4726,15 @@ export default function App() {
   const [showHandled, setShowHandled] = useState(false);
   // Default: only show pending suggestions. Toggle to see handled ones too.
   const filtered = allSuggestions
-    .filter(s => {
-      const isHandled = accepted.has(s.id) || rejected.has(s.id);
-      if (!showHandled && isHandled) return false;
-      return filterPriority === "all" || s.priority === filterPriority;
-    })
+    .map((s, idx) => ({ ...s, _textOrder: idx }))
+    .filter(s => filterPriority === "all" || s.priority === filterPriority)
+
     .sort((a, b) => {
       const aHandled = accepted.has(a.id) || rejected.has(a.id) ? 1 : 0;
       const bHandled = accepted.has(b.id) || rejected.has(b.id) ? 1 : 0;
       if (aHandled !== bHandled) return aHandled - bHandled; // pending first
-      // Sort by actual position in chapter text
-      const chapter = chapters.find(c => c.id === activeChapter);
-      if (chapter) {
-        const aPos = a.original ? chapter.content.indexOf(a.original) : -1;
-        const bPos = b.original ? chapter.content.indexOf(b.original) : -1;
-        if (aPos !== -1 && bPos !== -1) return aPos - bPos;
-        if (aPos !== -1) return -1;
-        if (bPos !== -1) return 1;
-      }
-      // Fallback: paragraphIndex
-      const aIdx = a.paragraphIndex ?? 9999;
-      const bIdx = b.paragraphIndex ?? 9999;
-      return aIdx - bIdx;
+      return a._textOrder - b._textOrder; // preserve text order within group
+
     });
   const pendingCount = allSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
   const handledCount = allSuggestions.length - pendingCount;
@@ -4824,110 +4857,6 @@ export default function App() {
 
   // Find s.original in text, falling back to normalized/fuzzy matching.
   // Returns { idx, len } where idx is position in text and len is the actual matched length in text.
-  // ─── EXTRACT SEARCH TERMS FROM ORIGINALS ───
-  // Extracts searchable fragments: sentence parts, phrases, or individual significant words
-  const extractSearchTerms = (original) => {
-    if (!original) return [];
-    const terms = [];
-    // 1. Try the whole original first
-    terms.push(original.trim());
-    // 2. Split into sentences and add each as a term
-    const sentences = original.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 8);
-    for (const s of sentences) terms.push(s);
-    // 3. For pattern-style originals with ..., split on that too
-    if (original.includes('...')) {
-      const parts = original.split(/\.{2,}/).map(s => s.trim()).filter(s => s.length >= 3);
-      for (const p of parts) terms.push(p);
-    }
-    // 4. Extract significant multi-word phrases (3+ words, 15+ chars)
-    const words = original.replace(/[.!?,;:–—]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
-    for (let i = 0; i < words.length - 2; i++) {
-      const phrase = words.slice(i, i + 3).join(' ');
-      if (phrase.length >= 15) terms.push(phrase);
-    }
-    return [...new Set(terms)];
-  };
-
-  // ─── FIND ALL OCCURRENCES OF TERMS IN FULL CHAPTER TEXT ───
-  const findAllTermOccurrences = (chapterContent, terms) => {
-    if (!chapterContent || !terms.length) return [];
-    const results = [];
-    for (const term of terms) {
-      const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      let m;
-      while ((m = regex.exec(chapterContent)) !== null) {
-        results.push({ term, index: m.index, length: m[0].length, text: m[0] });
-      }
-    }
-    // Sort by position, dedup overlapping
-    results.sort((a, b) => a.index - b.index);
-    const deduped = [];
-    for (const r of results) {
-      const last = deduped[deduped.length - 1];
-      if (last && r.index < last.index + last.length) continue;
-      deduped.push(r);
-    }
-    return deduped;
-  };
-
-  // ─── NAVIGATE TO TERM OCCURRENCE ───
-  const navigateToTermOccurrence = (suggestionId, terms, occIdx) => {
-    const chapter = chapters.find(c => c.id === activeChapter);
-    if (!chapter) return;
-
-    // First try: search in chapter.content using regex
-    let occs = findAllTermOccurrences(chapter.content, terms);
-
-    // Second try: if no results from regex, use fuzzy findInText on chapter.content
-    if (occs.length === 0 && terms.length > 0) {
-      const original = terms[0]; // first term is the full original
-      const match = findInText(chapter.content, original);
-      if (match) {
-        occs = [{ term: original, index: match.idx, length: match.len, text: chapter.content.slice(match.idx, match.idx + match.len) }];
-      }
-    }
-
-    // Third try: search paragraph by paragraph using findInText
-    if (occs.length === 0 && terms.length > 0) {
-      const paras = currentParagraphs;
-      const chContent = currentChapter?.content || "";
-      let searchFrom = 0;
-      for (const para of paras) {
-        const pText = para.content || para.text || '';
-        const paraStart = chContent.indexOf(pText, searchFrom);
-        const globalOffset = paraStart >= 0 ? paraStart : searchFrom;
-        const match = findInText(pText, terms[0]);
-        if (match) {
-          occs = [{ term: terms[0], index: globalOffset + match.idx, length: match.len, text: pText.slice(match.idx, match.idx + match.len) }];
-          break;
-        }
-        searchFrom = globalOffset + pText.length;
-      }
-    }
-
-    if (occs.length === 0) return;
-    const idx = Math.min(occIdx, occs.length - 1);
-    setHighlightTermState({ suggestionId, occurrenceIdx: idx, terms, occurrences: occs });
-
-    // Find the occurrence in the DOM via data attribute or fallback to text search
-    setTimeout(() => {
-      const el = mainRef.current?.querySelector(`[data-term-highlight="${suggestionId}-${idx}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      } else {
-        // Fallback: find the suggestion's original text in DOM text nodes
-        const searchText = occs[idx]?.text || terms[0];
-        const walker = document.createTreeWalker(mainRef.current, NodeFilter.SHOW_TEXT);
-        let node;
-        while ((node = walker.nextNode())) {
-          if (node.textContent.includes(searchText.substring(0, 30))) {
-            node.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
-            break;
-          }
-        }
-      }
-    }, 80);
-  };
 
   const findInText = (text, original, fromIndex = 0) => {
     // Exact match
@@ -4957,89 +4886,27 @@ export default function App() {
       }
       return { idx: realIdx, len: realEnd - realIdx };
     }
-    // Prefix match: find first 50 chars – but only if the original looks like
-    // an actual text excerpt (not a pattern like "obehag... obehagliga")
-    const looksLikeExcerpt = !original.includes('...') && original.length > 60;
-    if (looksLikeExcerpt) {
-      const prefix = norm(original.substring(0, 50)).trim();
-      if (prefix.length > 15) {
-        const prefIdx = textNorm.indexOf(prefix, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
-        if (prefIdx !== -1) {
-          let realIdx = 0, normPos = 0;
-          while (normPos < prefIdx && realIdx < text.length) {
-            if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
-            realIdx++; normPos++;
-          }
-          // Match only the prefix length, not the full original
-          const approxLen = Math.min(prefix.length + 10, text.length - realIdx);
-          return { idx: realIdx, len: approxLen };
+    // Prefix match: find first 50 chars
+    const prefix = norm(original.substring(0, 50)).trim();
+    if (prefix.length > 15) {
+      const prefIdx = textNorm.indexOf(prefix, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
+      if (prefIdx !== -1) {
+        let realIdx = 0, normPos = 0;
+        while (normPos < prefIdx && realIdx < text.length) {
+          if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
+          realIdx++; normPos++;
         }
-      }
-    }
-    // Case-insensitive fallback
-    const textLower = textNorm.toLowerCase();
-    const origLower = origNorm.toLowerCase();
-    const ciIdx = textLower.indexOf(origLower, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
-    if (ciIdx !== -1) {
-      let realIdx = 0, normPos = 0;
-      while (normPos < ciIdx && realIdx < text.length) {
-        if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
-        realIdx++; normPos++;
-      }
-      let realEnd = realIdx, normEnd = ciIdx;
-      while (normEnd < ciIdx + origLower.length && realEnd < text.length) {
-        if (/\s/.test(text[realEnd]) && realEnd > realIdx && /\s/.test(text[realEnd - 1])) { realEnd++; continue; }
-        realEnd++; normEnd++;
-      }
-      return { idx: realIdx, len: realEnd - realIdx };
-    }
-    // Punctuation-stripped fallback: ignore quotes, dashes, ellipsis differences
-    const stripPunct = (s) => s.replace(/[""''«»\-–—….,;:!?()[\]{}]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const textStripped = stripPunct(text);
-    const origStripped = stripPunct(original);
-    if (origStripped.length > 10) {
-      const stripIdx = textStripped.indexOf(origStripped);
-      if (stripIdx !== -1) {
-        // Map back: walk through text, skip punctuation chars to find real start
-        let realIdx = 0, strippedPos = 0;
-        while (strippedPos < stripIdx && realIdx < text.length) {
-          const ch = text[realIdx];
-          if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realIdx++; continue; }
-          if (/\s/.test(ch) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
-          realIdx++; strippedPos++;
-        }
-        // Find end
-        let realEnd = realIdx, strippedEnd = stripIdx;
-        while (strippedEnd < stripIdx + origStripped.length && realEnd < text.length) {
-          const ch = text[realEnd];
-          if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realEnd++; continue; }
-          if (/\s/.test(ch) && realEnd > realIdx && /\s/.test(text[realEnd - 1])) { realEnd++; continue; }
-          realEnd++; strippedEnd++;
-        }
-        return { idx: realIdx, len: realEnd - realIdx };
-      }
-      // Try first 40 chars of stripped original as prefix
-      const strippedPrefix = origStripped.substring(0, 40);
-      if (strippedPrefix.length > 15) {
-        const prefStripIdx = textStripped.indexOf(strippedPrefix);
-        if (prefStripIdx !== -1) {
-          let realIdx = 0, strippedPos = 0;
-          while (strippedPos < prefStripIdx && realIdx < text.length) {
-            const ch = text[realIdx];
-            if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realIdx++; continue; }
-            if (/\s/.test(ch) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
-            realIdx++; strippedPos++;
-          }
-          // Match a reasonable chunk
-          const approxLen = Math.min(original.length + 20, text.length - realIdx);
-          return { idx: realIdx, len: approxLen };
-        }
+        // Try to match the full original length from this point
+        const approxLen = Math.min(original.length + 20, text.length - realIdx);
+        return { idx: realIdx, len: approxLen };
+
       }
     }
     return null;
   };
 
-  const renderText = (para, paraGlobalOffset) => {
+  const renderText = (para) => {
+
     const { text, suggestions } = para;
 
     // Helper: apply search highlights to a text fragment
@@ -5128,7 +4995,8 @@ export default function App() {
     const parts = [];
     let last = 0;
     // Pre-compute positions for sorting
-    const withPos = inlineSuggestions.filter(s => s.original).map(s => {
+    const withPos = suggestions.filter(s => s.original).map(s => {
+
       const match = findInText(text, s.original);
       return { s, match };
     }).filter(x => x.match).sort((a, b) => a.match.idx - b.match.idx);
@@ -5136,7 +5004,8 @@ export default function App() {
     for (const { s, match } of withPos) {
       const { idx, len } = match;
       if (idx < last) continue; // Skip overlapping
-      if (idx > last) parts.push(<span key={`t${last}`}>{...applyTermHighlights(text.slice(last, idx), `t${last}`, paraGlobalOffset + last)}</span>);
+      if (idx > last) parts.push(<span key={`t${last}`}>{...renderFormatted(text.slice(last, idx), `t${last}`)}</span>);
+
       const matchedText = text.slice(idx, idx + len);
       const isAcc = accepted.has(s.id), isRej = rejected.has(s.id), isAct = activeSuggestion === s.id;
       const p = PRIORITY[s.priority];
