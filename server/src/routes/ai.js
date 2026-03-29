@@ -155,12 +155,12 @@ router.post('/review-multi', async (req, res, next) => {
 
     const chapter = await prisma.chapter.findFirst({
       where: { id: chapterId, project: { userId: req.user.id } },
-      include: { project: { include: { chapters: { orderBy: { number: 'asc' } } } } },
+      include: { project: { include: { chapters: { orderBy: [{ number: 'asc' }, { createdAt: 'asc' }] } } } },
     });
     if (!chapter) return res.status(404).json({ error: 'Kapitlet hittades inte' });
 
-    const allowed = await checkUsageLimit(req.user.id);
-    if (!allowed) return res.status(429).json({ error: 'API-gräns nådd för denna månad.' });
+    const limit = await checkUsageLimit(req.user.id, 'review', chapter.wordCount || 0);
+    if (!limit.allowed) return res.status(429).json({ error: limit.reason, usage: limit });
 
     // Update chapter status
     await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWING' } });
