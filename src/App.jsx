@@ -338,7 +338,8 @@ function ProcessingView({ chapters, statusText, onAbort }) {
 
 // ─── EDITOR COMPONENTS ───
 
-function Sidebar({ chapters, activeChapter, setActiveChapter, paragraphsByChapter }) {
+function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, onReanalyze, onDeepAnalyze, paragraphsByChapter }) {
+  const [splitTarget, setSplitTarget] = useState(null);
   const chapterHasSuggestions = (chId) => {
     const paras = paragraphsByChapter?.[chId] || [];
     return paras.some(p => p.suggestions?.length > 0);
@@ -420,6 +421,13 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, paragraphsByChapte
                 }} />
               </div>
             </button>
+            {splitTarget === ch.id && (
+              <SplitChapterPopover
+                chapter={ch}
+                onSplit={(lineIndex) => { onSplitChapter(ch.id, lineIndex); setSplitTarget(null); }}
+                onClose={() => setSplitTarget(null)}
+              />
+            )}
           </div>
         ))}
       </div>
@@ -582,16 +590,16 @@ function SearchBar({ chapters, activeChapter, setActiveChapter, onReplace, onRep
               fontFamily: uiFont, fontSize: 12, background: bg, color: ink, outline: "none",
             }}
           />
-          <button onClick={handleReplace} disabled={matches.length === 0} style={{
+          <button onClick={handleReplace} disabled={allMatches.length === 0} style={{
             padding: "4px 12px", borderRadius: 5, border: "none", background: accent, color: "#fff",
-            cursor: matches.length > 0 ? "pointer" : "default", fontSize: 11, fontWeight: 500,
-            opacity: matches.length > 0 ? 1 : 0.5,
+            cursor: allMatches.length > 0 ? "pointer" : "default", fontSize: 11, fontWeight: 500,
+            opacity: allMatches.length > 0 ? 1 : 0.5,
           }}>Ersätt</button>
-          <button onClick={handleReplaceAll} disabled={matches.length === 0} style={{
+          <button onClick={handleReplaceAll} disabled={allMatches.length === 0} style={{
             padding: "4px 12px", borderRadius: 5, border: `1px solid ${accent}`, background: surface,
-            color: accent, cursor: matches.length > 0 ? "pointer" : "default", fontSize: 11, fontWeight: 500,
-            opacity: matches.length > 0 ? 1 : 0.5,
-          }}>Alla ({matches.length})</button>
+            color: accent, cursor: allMatches.length > 0 ? "pointer" : "default", fontSize: 11, fontWeight: 500,
+            opacity: allMatches.length > 0 ? 1 : 0.5,
+          }}>Alla ({allMatches.length})</button>
         </div>
       )}
     </div>
@@ -4726,8 +4734,11 @@ export default function App() {
   // Default: only show pending suggestions. Toggle to see handled ones too.
   const filtered = allSuggestions
     .map((s, idx) => ({ ...s, _textOrder: idx }))
-    .filter(s => filterPriority === "all" || s.priority === filterPriority)
-
+    .filter(s => {
+      const isHandled = accepted.has(s.id) || rejected.has(s.id);
+      if (!showHandled && isHandled) return false;
+      return filterPriority === "all" || s.priority === filterPriority;
+    })
     .sort((a, b) => {
       const aHandled = accepted.has(a.id) || rejected.has(a.id) ? 1 : 0;
       const bHandled = accepted.has(b.id) || rejected.has(b.id) ? 1 : 0;
@@ -5125,7 +5136,7 @@ export default function App() {
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* LEFT SIDEBAR */}
-        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} paragraphsByChapter={paragraphsByChapter} />
+        <Sidebar chapters={chapters} activeChapter={activeChapter} setActiveChapter={setActiveChapter} onSplitChapter={handleSplitChapter} onReanalyze={handleReanalyzeChapter} onDeepAnalyze={(id) => handleReanalyzeChapter(id, "deep")} paragraphsByChapter={paragraphsByChapter} />
 
         {/* SEARCH BAR */}
         {showSearch && (
@@ -5406,19 +5417,15 @@ export default function App() {
                     )}
                     {filtered.map(s => {
                       // Check if this suggestion actually renders with an inline highlight
-                      // It must be attached to a paragraph AND findInText must find it in THAT paragraph's text
                       const attachedPara = currentParagraphs.find(p => p.suggestions?.some(ps => ps.id === s.id));
                       const hasInline = !!(attachedPara && s.original && findInText(attachedPara.text, s.original) !== null);
-                      const terms = !hasInline && s.original ? extractSearchTerms(s.original) : [];
-                      const chapter = chapters.find(c => c.id === activeChapter);
-                      const termOccs = terms.length > 0 && chapter ? findAllTermOccurrences(chapter.content, terms) : [];
                       return (
                       <SuggestionCard key={s.id} s={s} isActive={activeSuggestion === s.id}
                         status={accepted.has(s.id) ? "accepted" : rejected.has(s.id) ? "rejected" : "pending"}
                         hasInlineHighlight={hasInline}
-                        termOccurrenceCount={termOccs.length}
-                        currentTermIdx={highlightTermState?.suggestionId === s.id ? highlightTermState.occurrenceIdx : null}
-                        onNavigateTerm={termOccs.length > 0 ? (idx) => navigateToTermOccurrence(s.id, terms, idx) : null}
+                        termOccurrenceCount={0}
+                        currentTermIdx={null}
+                        onNavigateTerm={null}
                         onToggle={() => { setActiveSuggestion(activeSuggestion === s.id ? null : s.id); if (activeSuggestion !== s.id) setHighlightTermState(null); }}
                         onAccept={() => {
                           setAccepted(prev => new Set([...prev, s.id]));
