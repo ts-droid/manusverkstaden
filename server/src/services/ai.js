@@ -185,9 +185,22 @@ Returnera JSON-array:
 
 Returnera ENBART JSON-arrayen.`);
 
+  // Load genre-specific prompts and inject into system prompt
+  let genreContext = '';
+  if (genres.length > 0) {
+    const genrePrompts = await Promise.all(
+      genres.map(g => getPrompt(`genre:${g}`, ''))
+    );
+    genreContext = genrePrompts.filter(Boolean).join('\n\n');
+  }
+
   // Run pass 1 and DNA generation in parallel
+  const pass1System = genreContext
+    ? `${pass1Prompt}\n\n${genreContext}`
+    : pass1Prompt;
+
   const pass1Promise = sendMessage({
-    system: `${pass1Prompt}\n\nGenrer: ${genres.join(', ') || 'inga'}`,
+    system: pass1System,
     messages: [{ role: 'user', content: `Granska:\n\n${content}` }],
     max_tokens: 8192,
   });

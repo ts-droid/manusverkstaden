@@ -151,10 +151,10 @@ class ApiClient {
 
   // ─── AI ───
 
-  async reviewChapter(chapterId, projectId) {
+  async reviewChapter(chapterId, projectId, level = 'standard') {
     return this.request('/ai/review', {
       method: 'POST',
-      body: JSON.stringify({ chapterId, projectId }),
+      body: JSON.stringify({ chapterId, projectId, level }),
     });
   }
 

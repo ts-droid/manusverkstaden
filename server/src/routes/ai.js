@@ -13,7 +13,7 @@ router.use(requireAuth);
 router.post('/review', async (req, res, next) => {
   try {
     const chapterId = String(req.body.chapterId);
-    const { projectId } = req.body;
+    const { projectId, level = 'standard' } = req.body;
 
     // Verify ownership
     const chapter = await prisma.chapter.findUnique({
@@ -33,10 +33,21 @@ router.post('/review', async (req, res, next) => {
     // Update status
     await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWING' } });
 
-    // Call AI
-    const { result: suggestions, meta } = await reviewChapter(chapter.content, {
+    // Get all chapter text for DNA profiling (sample first 3 chapters)
+    const allChapters = await prisma.chapter.findMany({
+      where: { projectId: chapter.projectId },
+      select: { content: true },
+      take: 3,
+      orderBy: { sortOrder: 'asc' },
+    });
+    const allText = allChapters.map(c => c.content).join('\n\n');
+
+    // Call AI — multi-pass analysis
+    console.log(`[AI Review] Starting ${level} analysis for chapter ${chapterId} (${chapter.wordCount} words)`);
+    const { result: suggestions, meta, dnaProfile: dna } = await reviewChapterMultiPass(chapter.content, {
       genres: chapter.project.genres,
-      modules: chapter.project.modules,
+      level,
+      allText,
     });
 
     // Save suggestions – preserve accepted/rejected, only replace pending

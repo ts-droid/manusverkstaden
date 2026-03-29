@@ -3989,7 +3989,7 @@ export default function App() {
           }
 
           // Use backend API – suggestions are saved to DB automatically
-          const result = await apiClient.reviewChapter(updatedChapters[i].id, projId);
+          const result = await apiClient.reviewChapter(updatedChapters[i].id, projId, level || 'standard');
           const suggestions = result?.suggestions || [];
 
           if (suggestions.length > 0) {
@@ -4279,7 +4279,7 @@ export default function App() {
           }
 
           // Use backend API – suggestions saved to DB automatically
-          const result = await apiClient.reviewChapter(ch.id, serverProjectId);
+          const result = await apiClient.reviewChapter(ch.id, serverProjectId, useLevel || 'standard');
           const suggestions = result?.suggestions || [];
 
           if (suggestions.length > 0) {
