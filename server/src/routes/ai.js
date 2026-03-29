@@ -38,7 +38,7 @@ router.post('/review', async (req, res, next) => {
       where: { projectId: chapter.projectId },
       select: { content: true },
       take: 3,
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { number: 'asc' },
     });
     const allText = allChapters.map(c => c.content).join('\n\n');
 
@@ -239,14 +239,7 @@ router.post('/review-multi', async (req, res, next) => {
     await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWED' } });
 
     // Record usage
-    await recordUsage({
-      userId: req.user.id,
-      type: `review-multi-${level}`,
-      model: meta.model,
-      inputTokens: meta.inputTokens,
-      outputTokens: meta.outputTokens,
-      chapterId,
-    });
+    await recordUsage(req.user.id, `review-${level}`, chapter.wordCount, meta);
 
     const allSuggestions = [...kept, ...created];
     res.json({
@@ -260,7 +253,7 @@ router.post('/review-multi', async (req, res, next) => {
     try {
       const chapterId = String(req.body?.chapterId);
       if (chapterId) {
-        await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'ERROR' } });
+        await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'PENDING' } });
       }
     } catch (resetErr) {
       console.error('[Multi-pass] Failed to reset status:', resetErr.message);
