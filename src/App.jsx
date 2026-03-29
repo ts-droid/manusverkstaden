@@ -5227,22 +5227,29 @@ export default function App() {
         </div>
       )}
 
-      {/* BATCH ANALYSIS STATUS BAR */}
+      {/* ANALYSIS STATUS BAR */}
       {(batchAnalyzing || reanalyzingChapter) && processingStatus && (
         <div style={{
-          padding: "6px 16px", background: "#fdf6e3", borderBottom: `1px solid #e8d9a8`,
-          display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+          padding: "12px 20px", background: "linear-gradient(135deg, #fdf6e3 0%, #f5ead0 100%)",
+          borderBottom: `1px solid #e8d9a8`,
+          display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
         }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: "50%", background: "#b8860b",
-            animation: "pulse 1.5s ease-in-out infinite",
+          <div style={{
+            width: 28, height: 28, borderRadius: "50%", border: "3px solid #e8d9a8",
+            borderTopColor: accent, animation: "spin 1s linear infinite",
+            flexShrink: 0,
           }} />
-          <span style={{ fontFamily: uiFont, fontSize: 11, color: "#7a6520" }}>{processingStatus}</span>
-          {batchAnalyzing && (
-            <button onClick={handleAbortProcessing} style={{
-              marginLeft: "auto", fontFamily: uiFont, fontSize: 10, padding: "3px 10px",
-              borderRadius: 4, border: `1px solid #e8d9a8`, background: "transparent",
-              color: "#7a6520", cursor: "pointer",
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: uiFont, fontSize: 12, color: ink, fontWeight: 600 }}>{processingStatus}</div>
+            <div style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginTop: 2 }}>
+              Stäng inte webbläsaren — granskningen pågår i bakgrunden
+            </div>
+          </div>
+          {(batchAnalyzing || reanalyzingChapter) && (
+            <button onClick={handleAbortProcessing || (() => { setReanalyzingChapter(null); setProcessingStatus(""); })} style={{
+              fontFamily: uiFont, fontSize: 11, padding: "6px 14px",
+              borderRadius: 6, border: `1px solid #d4c0a0`, background: "rgba(255,255,255,0.7)",
+              color: "#7a6520", cursor: "pointer", fontWeight: 500,
             }}>Avbryt</button>
           )}
         </div>
