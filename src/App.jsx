@@ -5228,7 +5228,7 @@ export default function App() {
       )}
 
       {/* ANALYSIS STATUS BAR */}
-      {(batchAnalyzing || reanalyzingChapter) && processingStatus && (
+      {(batchAnalyzing || reanalyzingChapter || reReviewing) && processingStatus && (
         <div style={{
           padding: "12px 20px", background: "linear-gradient(135deg, #fdf6e3 0%, #f5ead0 100%)",
           borderBottom: `1px solid #e8d9a8`,
