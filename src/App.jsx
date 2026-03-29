@@ -4326,6 +4326,26 @@ export default function App() {
     setRejected(new Set());
     setActiveSuggestion(null);
 
+    // Generate DNA profile first if not available (ensures all chapters benefit from DNA)
+    if (!dnaProfile && serverProjectId) {
+      setProcessingStatus("Bygger språklig DNA-profil (analyserar hela manuset)...");
+      try {
+        const dnaResult = await apiClient.generateDNAProfile(serverProjectId);
+        if (dnaResult?.dnaProfile) {
+          setDnaProfile(dnaResult.dnaProfile);
+        }
+      } catch (err) {
+        console.error("DNA profile generation failed:", err);
+      }
+    }
+
+    if (abortProcessingRef.current) {
+      abortProcessingRef.current = false;
+      setReReviewing(false);
+      setProcessingStatus("");
+      return;
+    }
+
     // Re-run analysis on selected chapters (or all if none selected)
     const chaptersToReview = reReviewSelectedChapters.size > 0
       ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
