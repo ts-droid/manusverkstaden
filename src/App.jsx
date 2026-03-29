@@ -1,21 +1,14 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { parseManuscript, splitIntoParagraphs, countWords } from "./lib/manuscript-parser";
-import { sendMessage, extractText, parseJsonResponse } from "./lib/ai-client";
-import { buildPrompt, buildReviewRequest, ANALYSIS_LEVELS } from "./lib/prompt-builder";
-import { saveProject, loadProject, clearProject, hasSavedProject } from "./lib/storage";
+import { ANALYSIS_LEVELS } from "./lib/prompt-builder";
+import { saveProject, loadProject, clearProject } from "./lib/storage";
 import { exportToDocx, downloadBlob } from "./lib/export";
 import { useAuth } from "./contexts/AuthContext";
 import { apiClient, AuthError } from "./lib/api-client";
 
 // ─── DATA ───
 import { GENRES } from "./data/genres";
-
-const LANGUAGES = [
-  { id: "en", flag: "🇬🇧", label: "Engelska", sub: "British English" },
-  { id: "de", flag: "🇩🇪", label: "Tyska", sub: "Hochdeutsch" },
-  { id: "es", flag: "🇪🇸", label: "Spanska", sub: "Kastiliansk" },
-  { id: "ar", flag: "🇸🇦", label: "Arabiska", sub: "Modern standard" },
-];
+import { LANGUAGES } from "./data/languages";
 
 const PRIORITY = {
   red: { label: "Måste åtgärdas", color: "#c0392b", bg: "#fdf0ef" },
@@ -253,7 +246,7 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
                     <span style={{ fontSize: 18 }}>{l.flag}</span>
                     <div style={{ textAlign: "left" }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: ink }}>{l.label}</div>
-                      <div style={{ fontSize: 9, color: muted }}>{l.sub}</div>
+                      <div style={{ fontSize: 9, color: muted }}>{l.subtitle}</div>
                     </div>
                   </button>
                 );
@@ -361,7 +354,7 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: uiFont, fontSize: 10, color: muted }}>
                 <span>{ch.wordCount.toLocaleString()} ord</span>
                 {ch.status === "error" && (
-                  <span style={{ fontSize: 9, color: "#c0392b" }}>analys misslyckades</span>
+                  <span title={ch.errorMessage || 'Okänt fel'} style={{ fontSize: 9, color: "#c0392b", cursor: "help" }}>analys misslyckades</span>
                 )}
                 {!chapterHasSuggestions(ch.id) && ch.status !== "active" && ch.status !== "error" && (
                   <span style={{ fontSize: 9, color: "#b8860b" }}>ej analyserad</span>
@@ -1030,7 +1023,7 @@ function SettingsModal({ onClose, genres, setGenres, modules, setModules, transL
                     <span style={{ fontSize: 18 }}>{l.flag}</span>
                     <div style={{ textAlign: "left" }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: ink }}>{l.label}</div>
-                      <div style={{ fontSize: 9, color: muted }}>{l.sub}</div>
+                      <div style={{ fontSize: 9, color: muted }}>{l.subtitle}</div>
                     </div>
                   </button>
                 );
@@ -3960,9 +3953,45 @@ export default function App() {
     // Save metadata to IndexedDB for quick restore
     await saveProject({ serverProjectId: projId, activeChapterId: updatedChapters[0]?.id, conventions, view: "editor" });
 
-    // Step 2: Review each chapter via backend API (saves suggestions to DB)
+    // Step 2: Generate DNA profile FIRST (analyzes entire manuscript)
+    let dnaGenerated = false;
+    if (projId) {
+      setProcessingStatus("Bygger språklig DNA-profil (analyserar hela manuset)...");
+      try {
+        const dnaResult = await apiClient.generateDNAProfile(projId);
+        if (dnaResult?.dnaProfile) {
+          setDnaProfile(dnaResult.dnaProfile);
+          dnaGenerated = true;
+        }
+      } catch (err) {
+        console.error("DNA profile failed:", err);
+      }
+    }
+
+    // Fallback DNA if API didn't work
+    if (!dnaGenerated) {
+      const allText = chaps.map(c => c.content).join(" ");
+      const words = allText.split(/\s+/);
+      const sentences = allText.split(/[.!?]+/).filter(s => s.trim().length > 0);
+      const avgLen = sentences.length > 0 ? Math.round((words.length / sentences.length) * 10) / 10 : 0;
+      setDnaProfile({
+        avgSentenceLen: avgLen, shortLongRatio: "—", dominantImagery: "—",
+        dialogStyle: "—", favoriteWords: findFrequentWords(allText),
+        tonality: "—", perspective: "—", tense: "—",
+      });
+    }
+
+    if (abortProcessingRef.current) {
+      abortProcessingRef.current = false;
+      setProcessingStatus("");
+      setView("editor");
+      return;
+    }
+
+    // Step 3: Review each chapter via backend API (with DNA available)
     let skipped = 0;
     let sentToEditor = false;
+    const failedChapterIndices = [];
     for (let i = 0; i < updatedChapters.length; i++) {
       if (abortProcessingRef.current) {
         abortProcessingRef.current = false;
@@ -3982,7 +4011,7 @@ export default function App() {
 
       updatedChapters[i] = { ...updatedChapters[i], status: "active" };
       setChapters([...updatedChapters]);
-      setProcessingStatus(`Analyserar ${updatedChapters[i].title} (${i + 1 - skipped}/${updatedChapters.length - skipped})...`);
+      setProcessingStatus(`Granskar ${updatedChapters[i].title} (${i + 1 - skipped}/${updatedChapters.length - skipped})...`);
 
       let success = false;
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
@@ -4005,19 +4034,25 @@ export default function App() {
           }
           success = true;
         } catch (err) {
-          console.error(`Review failed for chapter ${i + 1} (attempt ${attempt + 1}):`, err);
+          const status = err?.response?.status || err?.status || '';
+          const msg = err?.response?.data?.error || err?.message || 'Okänt fel';
+          console.error(`[Review] ${updatedChapters[i].title} försök ${attempt + 1}/3: ${status} ${msg}`, err);
           if (attempt === 2) {
-            setProcessingStatus(`${updatedChapters[i].title} hoppades över – analyseras vid nästa genomgång`);
-            await new Promise(r => setTimeout(r, 1500));
+            failedChapterIndices.push(i);
           }
         }
       }
 
-      updatedChapters[i] = { ...updatedChapters[i], status: "done" };
+      // Only mark as done if review succeeded
+      if (success) {
+        updatedChapters[i] = { ...updatedChapters[i], status: "done" };
+      } else {
+        updatedChapters[i] = { ...updatedChapters[i], status: "pending" };
+      }
       setChapters([...updatedChapters]);
 
       // Switch to editor after first analyzed chapter
-      if (i === 0 || (i === skipped && !sentToEditor)) {
+      if (success && (i === 0 || (i === skipped && !sentToEditor))) {
         setView("editor");
         setActiveChapter(updatedChapters[i].id);
         sentToEditor = true;
@@ -4031,30 +4066,56 @@ export default function App() {
       }
     }
 
-    // Step 3: DNA profile via backend API (saved to project in DB)
-    if (projId) {
-      setProcessingStatus("Bygger språklig DNA-profil...");
-      try {
-        const dnaResult = await apiClient.generateDNAProfile(projId);
-        if (dnaResult?.dnaProfile) {
-          setDnaProfile(dnaResult.dnaProfile);
-        }
-      } catch (err) {
-        console.error("DNA profile failed:", err);
-      }
-    }
+    // Step 4: Auto-retry failed chapters
+    if (failedChapterIndices.length > 0 && !abortProcessingRef.current) {
+      setProcessingStatus(`Omanalyserar ${failedChapterIndices.length} missade kapitel...`);
+      await new Promise(r => setTimeout(r, 5000));
 
-    // Fallback DNA if API didn't work
-    if (!dnaProfile) {
-      const allText = chaps.map(c => c.content).join(" ");
-      const words = allText.split(/\s+/);
-      const sentences = allText.split(/[.!?]+/).filter(s => s.trim().length > 0);
-      const avgLen = sentences.length > 0 ? Math.round((words.length / sentences.length) * 10) / 10 : 0;
-      setDnaProfile({
-        avgSentenceLen: avgLen, shortLongRatio: "—", dominantImagery: "—",
-        dialogStyle: "—", favoriteWords: findFrequentWords(allText),
-        tonality: "—", perspective: "—", tense: "—",
-      });
+      for (let fi = 0; fi < failedChapterIndices.length; fi++) {
+        if (abortProcessingRef.current) {
+          abortProcessingRef.current = false;
+          break;
+        }
+        const idx = failedChapterIndices[fi];
+        updatedChapters[idx] = { ...updatedChapters[idx], status: "active" };
+        setChapters([...updatedChapters]);
+        setProcessingStatus(`Omanalyserar ${updatedChapters[idx].title} (${fi + 1}/${failedChapterIndices.length})...`);
+
+        let retrySuccess = false;
+        let lastError = null;
+        for (let attempt = 0; attempt < 3 && !retrySuccess; attempt++) {
+          try {
+            if (attempt > 0) {
+              await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
+            }
+            const result = await apiClient.reviewChapter(updatedChapters[idx].id, projId, level || 'standard');
+            const suggestions = result?.suggestions || [];
+            if (suggestions.length > 0) {
+              const chapterParas = updatedParas[updatedChapters[idx].id] || splitIntoParagraphs(updatedChapters[idx].content);
+              const enrichedParas = attachSuggestionsToParagraphs(chapterParas, suggestions, updatedChapters[idx].id);
+              updatedParas[updatedChapters[idx].id] = enrichedParas;
+              setParagraphsByChapter({ ...updatedParas });
+            }
+            retrySuccess = true;
+          } catch (err) {
+            lastError = err;
+            const status = err?.response?.status || err?.status || '';
+            const msg = err?.response?.data?.error || err?.message || 'Okänt fel';
+            console.error(`[Retry] ${updatedChapters[idx].title} försök ${attempt + 1}/3 misslyckades: ${status} ${msg}`, err);
+          }
+        }
+
+        if (!retrySuccess) {
+          const errorMsg = lastError?.response?.data?.error || lastError?.message || 'Okänt fel';
+          console.error(`[Review] ${updatedChapters[idx].title} misslyckades slutgiltigt efter 6 försök (3+3): ${errorMsg}`);
+        }
+        updatedChapters[idx] = { ...updatedChapters[idx], status: retrySuccess ? "done" : "error", errorMessage: retrySuccess ? undefined : (lastError?.response?.data?.error || lastError?.message || 'Granskning misslyckades') };
+        setChapters([...updatedChapters]);
+
+        if (fi < failedChapterIndices.length - 1) {
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
     }
 
     setActiveChapter(updatedChapters[0]?.id);
@@ -4111,10 +4172,6 @@ export default function App() {
           setParagraphsByChapter(prev => ({ ...prev, [chapterId]: freshParas }));
         }
 
-        const stats = result?.stats;
-        if (stats) {
-          console.log(`[Multi-pass] ${chapter.title}: ${stats.new} nya, ${stats.kept} bevarade, ${stats.total} totalt`);
-        }
         success = true;
       } catch (err) {
         lastError = err.message;
@@ -4496,7 +4553,6 @@ export default function App() {
       // If replacement already exists in text, skip (prevent double-application)
       const normCheck = s => s.replace(/\s+/g, ' ').trim();
       if (replacementText && normCheck(ch.content).includes(normCheck(replacementText)) && normCheck(originalText) !== normCheck(replacementText)) {
-        console.log("[Bake-in] Replacement already in text, skipping:", replacementText.slice(0, 60));
         return prev;
       }
       const newContent = fuzzyReplaceInText(ch.content, originalText, replacementText);
@@ -4527,7 +4583,6 @@ export default function App() {
 
         if (serverProjectId) {
           apiClient.updateChapter(chapterId, { content: savedContent })
-            .then(() => console.log("[Bake-in] Saved to DB"))
             .catch(e => {
               console.error("[Bake-in] DB save failed:", e);
               setSaveStatus("error");
@@ -4559,7 +4614,6 @@ export default function App() {
         }
       }
       if (content === ch.content) return prev;
-      console.log(`[Batch bake-in] Applied ${applied}/${replacements.length} replacements`);
       savedContent = content;
       return prev.map(c => c.id === chapterId ? { ...c, content, wordCount: countWords(content) } : c);
     });
@@ -4567,7 +4621,6 @@ export default function App() {
     setTimeout(() => {
       if (savedContent && serverProjectId) {
         apiClient.updateChapter(chapterId, { content: savedContent })
-          .then(() => console.log("[Batch bake-in] Saved to DB"))
           .catch(e => {
             console.error("[Batch bake-in] DB save failed:", e);
             setSaveStatus("error");
@@ -5203,8 +5256,8 @@ export default function App() {
               Stäng inte webbläsaren — granskningen pågår i bakgrunden
             </div>
           </div>
-          {(batchAnalyzing || reanalyzingChapter) && (
-            <button onClick={handleAbortProcessing || (() => { setReanalyzingChapter(null); setProcessingStatus(""); })} style={{
+          {(batchAnalyzing || reanalyzingChapter || reReviewing) && (
+            <button onClick={handleAbortProcessing} style={{
               fontFamily: uiFont, fontSize: 11, padding: "6px 14px",
               borderRadius: 6, border: `1px solid #d4c0a0`, background: "rgba(255,255,255,0.7)",
               color: "#7a6520", cursor: "pointer", fontWeight: 500,
@@ -5298,7 +5351,7 @@ export default function App() {
             const hasAcceptedChanges = (para.suggestions || []).some(s => accepted.has(s.id));
             const hasPendingChanges = (para.suggestions || []).some(s => !accepted.has(s.id) && !rejected.has(s.id));
             return (
-              <div key={para.id} data-para-id={para.id} data-inserted={isInserted || undefined} style={{ position: "relative", group: "para" }}>
+              <div key={para.id} data-para-id={para.id} data-inserted={isInserted || undefined} data-group="para" style={{ position: "relative" }}>
                 {(isInserted || hasAcceptedChanges) && (
                   <div style={{
                     position: "absolute", left: -18, top: 0, bottom: 0, width: 3,
