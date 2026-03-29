@@ -77,6 +77,55 @@ function parseJsonResponse(text) {
 }
 
 /**
+ * Validate suggestions against the actual chapter text.
+ * Filters out false positives where the AI's reasoning doesn't match reality.
+ */
+function validateSuggestions(suggestions, chapterContent) {
+  return suggestions.filter(s => {
+    // Skip suggestions with missing required fields
+    if (!s.original || !s.replacement) return false;
+
+    // Skip if original and replacement are identical
+    if (s.original.trim() === s.replacement.trim()) return false;
+
+    // Skip if original text doesn't exist in the chapter
+    if (!chapterContent.includes(s.original)) {
+      // Try fuzzy: first 30 chars
+      const prefix = s.original.substring(0, 30).trim();
+      if (prefix.length < 10 || !chapterContent.includes(prefix)) return false;
+    }
+
+    // Validate punctuation changes at end of text
+    const origTrimmed = s.original.trim();
+    const replTrimmed = s.replacement.trim();
+    const origLastChar = origTrimmed.slice(-1);
+    const replLastChar = replTrimmed.slice(-1);
+    const isPunctuationChange = origTrimmed.slice(0, -1) === replTrimmed.slice(0, -1)
+      && /[.,;:!?]/.test(origLastChar) && /[.,;:!?]/.test(replLastChar);
+
+    if (isPunctuationChange) {
+      // Find what comes after the original text in the chapter
+      const pos = chapterContent.indexOf(origTrimmed);
+      if (pos >= 0) {
+        const after = chapterContent.slice(pos + origTrimmed.length).replace(/^\s+/, '');
+        const nextChar = after.charAt(0);
+
+        // Comma→period: only valid if next char is uppercase (new sentence)
+        if (origLastChar === ',' && replLastChar === '.') {
+          if (nextChar && /[a-zåäö]/.test(nextChar)) return false;
+        }
+        // Period→comma: only valid if next char is lowercase (continuation)
+        if (origLastChar === '.' && replLastChar === ',') {
+          if (nextChar && /[A-ZÅÄÖ]/.test(nextChar)) return false;
+        }
+      }
+    }
+
+    return true;
+  });
+}
+
+/**
  * Review a chapter and return suggestions.
  */
 export async function reviewChapter(content, { genres = [], modules = [] } = {}) {
@@ -112,7 +161,9 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
   const meta = extractMeta(response);
   const text = extractText(response);
   try {
-    return { result: parseJsonResponse(text), meta };
+    const raw = parseJsonResponse(text);
+    const validated = validateSuggestions(Array.isArray(raw) ? raw : (raw?.suggestions || []), content);
+    return { result: validated, meta };
   } catch {
     console.error('Failed to parse review response:', text.slice(0, 200));
     return { result: [], meta };

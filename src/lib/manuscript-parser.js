@@ -92,6 +92,8 @@ function splitIntoChapters(text) {
     /(?:^|\n)\s*(KAPITEL\s+\d+[^\n]*)/gi,
     /(?:^|\n)\s*(Kapitel\s+\d+[^\n]*)/g,
     /(?:^|\n)\s*(Chapter\s+\d+[^\n]*)/gi,
+    // Swedish ordinal chapter names: FÖRSTA KAPITLET, ANDRA KAPITLET, etc.
+    /(?:^|\n)\s*((?:FÖRSTA|ANDRA|TREDJE|FJÄRDE|FEMTE|SJÄTTE|SJUNDE|ÅTTONDE|NIONDE|TIONDE|ELFTE|TOLFTE|TRETTONDE|FJORTONDE|FEMTONDE|SEXTONDE|SJUTTONDE|ARTONDE|NITTONDE|TJUGONDE|TJUGOFÖRSTA|TJUGOANDRA|TJUGOTREDJE|TJUGOFJÄRDE|TJUGOFEMTE|TJUGOSJÄTTE|TJUGOSJUNDE|TJUGOÅTTONDE|TJUGONIONDE|TRETTIONDE)\s+KAPITLET[^\n]*)/g,
     /(?:^|\n)\s*(\d+\.\s+[A-ZÅÄÖ][^\n]*)/g,
     /^(#{1,2}\s+[^\n]+)/gm, // Markdown headings
   ];

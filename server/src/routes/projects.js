@@ -29,7 +29,7 @@ router.get('/:id', async (req, res, next) => {
       where: { id: req.params.id, userId: req.user.id },
       include: {
         chapters: {
-          orderBy: { number: 'asc' },
+          orderBy: [{ number: 'asc' }, { createdAt: 'asc' }],
           include: { suggestions: true, translations: true },
         },
       },
@@ -62,7 +62,7 @@ router.post('/', async (req, res, next) => {
           },
         } : {}),
       },
-      include: { chapters: { orderBy: { number: 'asc' } } },
+      include: { chapters: { orderBy: [{ number: 'asc' }, { createdAt: 'asc' }] } },
     });
     res.status(201).json({ id: project.id, project });
   } catch (err) { next(err); }

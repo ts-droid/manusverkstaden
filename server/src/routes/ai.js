@@ -72,7 +72,7 @@ router.post('/dna-profile', async (req, res, next) => {
 
     const project = await prisma.project.findFirst({
       where: { id: projectId, userId: req.user.id },
-      include: { chapters: { orderBy: { number: 'asc' } } },
+      include: { chapters: { orderBy: [{ number: 'asc' }, { createdAt: 'asc' }] } },
     });
     if (!project) return res.status(404).json({ error: 'Projektet hittades inte' });
 
@@ -170,7 +170,7 @@ router.post('/final-check', async (req, res, next) => {
 
     const project = await prisma.project.findFirst({
       where: { id: projectId, userId: req.user.id },
-      include: { chapters: { orderBy: { number: 'asc' } } },
+      include: { chapters: { orderBy: [{ number: 'asc' }, { createdAt: 'asc' }] } },
     });
     if (!project) return res.status(404).json({ error: 'Projektet hittades inte' });
 
