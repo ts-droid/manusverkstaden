@@ -65,7 +65,8 @@ async function parseDocxFile(file) {
   const maxRetries = 2;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const mammoth = await import('mammoth');
+      const mammothModule = await import('mammoth');
+      const mammoth = mammothModule.default || mammothModule;
       const arrayBuffer = await file.arrayBuffer();
       const result = await mammoth.extractRawText({ arrayBuffer });
       return splitIntoChapters(cleanTextForImport(result.value));
