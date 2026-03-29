@@ -212,7 +212,6 @@ function OnboardingSettings({ fileName, chapterCount, totalWords, onStart, onBac
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {[
               { id: "develop", icon: "🪶", label: "Skrivutveckling", desc: "AI-stödd textutveckling – få hjälp att utveckla, skriva om och utöka din text. Inkluderar språklig DNA-profil, emotionell kartläggning, scenutbyggnad och brainstorming.", tag: "Kreativ AI" },
-              { id: "translate", icon: "🌍", label: "Översättning", desc: "Professionell litterär översättning av färdigt manus till engelska, tyska, spanska och arabiska. Kulturell anpassning och konsekvensgranskning ingår.", tag: "Export" },
             ].map(m => {
               const active = modules.includes(m.id);
               return (
@@ -4905,7 +4904,7 @@ export default function App() {
     return null;
   };
 
-  const renderText = (para) => {
+  const renderText = (para, paraGlobalOffset = 0) => {
 
     const { text, suggestions } = para;
 
