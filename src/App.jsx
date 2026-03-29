@@ -357,51 +357,7 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
               width: "100%", textAlign: "left", padding: "9px 10px", borderRadius: 7, border: "none",
               background: activeChapter === ch.id ? "#ede8e0" : "transparent", cursor: "pointer", fontFamily: font, marginBottom: 1,
             }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35, flex: 1 }}>{`Kapitel ${idx + 1}`}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                  {activeChapter === ch.id && onDeepAnalyze && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); onDeepAnalyze(ch.id); }}
-                      title="Djupanalys (Opus)"
-                      style={{
-                        fontSize: 11, color: muted, cursor: "pointer",
-                        padding: "2px 5px", lineHeight: 1, borderRadius: 4,
-                        background: "transparent", transition: "all 0.15s",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "#7a4700"; e.currentTarget.style.background = "#fdf6e3"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = muted; e.currentTarget.style.background = "transparent"; }}
-                    >🔍</span>
-                  )}
-                  {activeChapter === ch.id && onReanalyze && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); onReanalyze(ch.id); }}
-                      title={chapterHasSuggestions(ch.id) ? "Analysera om" : "Analysera"}
-                      style={{
-                        fontSize: 12, color: muted, cursor: "pointer",
-                        padding: "2px 5px", lineHeight: 1, borderRadius: 4,
-                        background: "transparent", transition: "all 0.15s",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = accent; e.currentTarget.style.background = accentLight; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = muted; e.currentTarget.style.background = "transparent"; }}
-                    >🔄</span>
-                  )}
-                  {activeChapter === ch.id && onSplitChapter && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); setSplitTarget(splitTarget === ch.id ? null : ch.id); }}
-                      title="Dela kapitel"
-                      style={{
-                        fontSize: 15, color: splitTarget === ch.id ? accent : muted, cursor: "pointer",
-                        padding: "2px 6px", flexShrink: 0, lineHeight: 1, borderRadius: 4,
-                        background: splitTarget === ch.id ? accentLight : "transparent",
-                        transition: "all 0.15s", display: "flex", alignItems: "center",
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = accent}
-                      onMouseLeave={(e) => { if (splitTarget !== ch.id) e.currentTarget.style.color = muted; }}
-                    >✂</span>
-                  )}
-                </div>
-              </div>
+              <div style={{ fontSize: 12.5, fontWeight: activeChapter === ch.id ? 600 : 400, color: ink, lineHeight: 1.35 }}>{`Kapitel ${idx + 1}`}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontFamily: uiFont, fontSize: 10, color: muted }}>
                 <span>{ch.wordCount.toLocaleString()} ord</span>
                 {ch.status === "error" && (
@@ -4305,26 +4261,33 @@ export default function App() {
     setRejected(new Set());
     setActiveSuggestion(null);
 
-    // Mark all chapters as pending for the new review round
-    setChapters(prev => prev.map(c => ({ ...c, status: "pending" })));
+    // Re-run analysis on selected chapters (or all if none selected)
+    const chaptersToReview = reReviewSelectedChapters.size > 0
+      ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
+      : chapters;
+    setReReviewSelectedChapters(new Set());
 
-    // Re-run analysis on all chapters via backend API
-    for (let i = 0; i < chapters.length; i++) {
+    // Mark chapters to review as pending
+    setChapters(prev => prev.map(c =>
+      chaptersToReview.some(cr => cr.id === c.id) ? { ...c, status: "pending" } : c
+    ));
 
+    for (let i = 0; i < chaptersToReview.length; i++) {
       if (abortProcessingRef.current) {
         abortProcessingRef.current = false;
         break;
       }
-      const ch = chapters[i];
+      const ch = chaptersToReview[i];
+      const chIdx = chapters.indexOf(ch);
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
-      setProcessingStatus(`Granskning ${activeReviewRound + 1}: Kapitel ${i + 1} (${i + 1}/${chapters.length})...`);
+      setProcessingStatus(`Granskning ${activeReviewRound + 1}: Kapitel ${chIdx + 1} (${i + 1}/${chaptersToReview.length})...`);
 
 
       let success = false;
       for (let attempt = 0; attempt < 3 && !success; attempt++) {
         try {
           if (attempt > 0) {
-            setProcessingStatus(`Bearbetar Kapitel ${i + 1}... (försök ${attempt + 1})`);
+            setProcessingStatus(`Bearbetar Kapitel ${chIdx + 1}... (försök ${attempt + 1})`);
             await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
           }
 
@@ -4340,9 +4303,9 @@ export default function App() {
           }
           success = true;
         } catch (err) {
-          console.error(`Re-review failed for Kapitel ${i + 1}:`, err);
+          console.error(`Re-review failed for Kapitel ${chIdx + 1}:`, err);
           if (attempt === 2) {
-            setProcessingStatus(`Kapitel ${i + 1} hoppades över – analyseras vid nästa genomgång`);
+            setProcessingStatus(`Kapitel ${chIdx + 1} hoppades över – analyseras vid nästa genomgång`);
             await new Promise(r => setTimeout(r, 1500));
           }
         }
@@ -4350,7 +4313,7 @@ export default function App() {
 
       setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "done" } : c));
 
-      if (i < chapters.length - 1) {
+      if (i < chaptersToReview.length - 1) {
 
         setProcessingStatus(`Förbereder nästa kapitel...`);
         await new Promise(r => setTimeout(r, 3000));
@@ -4868,6 +4831,82 @@ export default function App() {
   // Find s.original in text, falling back to normalized/fuzzy matching.
   // Returns { idx, len } where idx is position in text and len is the actual matched length in text.
 
+  const extractSearchTerms = (original) => {
+    if (!original) return [];
+    const terms = [];
+    terms.push(original.trim());
+    const sentences = original.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length >= 8);
+    for (const s of sentences) terms.push(s);
+    if (original.includes('...')) {
+      const parts = original.split(/\.{2,}/).map(s => s.trim()).filter(s => s.length >= 3);
+      for (const p of parts) terms.push(p);
+    }
+    const words = original.replace(/[.!?,;:–—]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+    for (let i = 0; i < words.length - 2; i++) {
+      const phrase = words.slice(i, i + 3).join(' ');
+      if (phrase.length >= 15) terms.push(phrase);
+    }
+    return [...new Set(terms)];
+  };
+
+  const findAllTermOccurrences = (chapterContent, terms) => {
+    if (!chapterContent || !terms.length) return [];
+    const results = [];
+    for (const term of terms) {
+      const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      let m;
+      while ((m = regex.exec(chapterContent)) !== null) {
+        results.push({ term, index: m.index, length: m[0].length, text: m[0] });
+      }
+    }
+    results.sort((a, b) => a.index - b.index);
+    const deduped = [];
+    for (const r of results) {
+      const last = deduped[deduped.length - 1];
+      if (last && r.index < last.index + last.length) continue;
+      deduped.push(r);
+    }
+    return deduped;
+  };
+
+  const navigateToTermOccurrence = (suggestionId, terms, occIdx) => {
+    const chapter = chapters.find(c => c.id === activeChapter);
+    if (!chapter) return;
+    let occs = findAllTermOccurrences(chapter.content, terms);
+    if (occs.length === 0 && terms.length > 0) {
+      const match = findInText(chapter.content, terms[0]);
+      if (match) occs = [{ term: terms[0], index: match.idx, length: match.len, text: chapter.content.slice(match.idx, match.idx + match.len) }];
+    }
+    if (occs.length === 0 && terms.length > 0) {
+      const paras = currentParagraphs;
+      const chContent = chapter.content || "";
+      let searchFrom = 0;
+      for (const para of paras) {
+        const pText = para.text || '';
+        const paraStart = chContent.indexOf(pText, searchFrom);
+        const globalOffset = paraStart >= 0 ? paraStart : searchFrom;
+        const match = findInText(pText, terms[0]);
+        if (match) { occs = [{ term: terms[0], index: globalOffset + match.idx, length: match.len, text: pText.slice(match.idx, match.idx + match.len) }]; break; }
+        searchFrom = globalOffset + pText.length;
+      }
+    }
+    if (occs.length === 0) return;
+    const idx = Math.min(occIdx, occs.length - 1);
+    setHighlightTermState({ suggestionId, occurrenceIdx: idx, terms, occurrences: occs });
+    setTimeout(() => {
+      const el = mainRef.current?.querySelector(`[data-term-highlight="${suggestionId}-${idx}"]`);
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+      else {
+        const searchText = occs[idx]?.text || terms[0];
+        const walker = document.createTreeWalker(mainRef.current, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          if (node.textContent.includes(searchText.substring(0, 30))) { node.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" }); break; }
+        }
+      }
+    }, 80);
+  };
+
   const findInText = (text, original, fromIndex = 0) => {
     // Exact match
     const exact = text.indexOf(original, fromIndex);
@@ -4876,40 +4915,80 @@ export default function App() {
     const norm = (s) => s.replace(/\s+/g, ' ');
     const origNorm = norm(original);
     const textNorm = norm(text);
-    const normIdx = textNorm.indexOf(origNorm, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
-    if (normIdx !== -1) {
-      // Map normalized index back to original text position
+    const mapNormToReal = (normTarget) => {
       let realIdx = 0, normPos = 0;
-      while (normPos < normIdx && realIdx < text.length) {
-        if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) {
-          realIdx++; continue;
-        }
+      while (normPos < normTarget && realIdx < text.length) {
+        if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
         realIdx++; normPos++;
       }
-      // Find end position
-      let realEnd = realIdx, normEnd = normIdx;
-      while (normEnd < normIdx + origNorm.length && realEnd < text.length) {
-        if (/\s/.test(text[realEnd]) && realEnd > realIdx && /\s/.test(text[realEnd - 1])) {
-          realEnd++; continue;
-        }
+      return realIdx;
+    };
+    const mapNormRange = (normStart, normLen) => {
+      const realIdx = mapNormToReal(normStart);
+      let realEnd = realIdx, normEnd = normStart;
+      while (normEnd < normStart + normLen && realEnd < text.length) {
+        if (/\s/.test(text[realEnd]) && realEnd > realIdx && /\s/.test(text[realEnd - 1])) { realEnd++; continue; }
         realEnd++; normEnd++;
       }
       return { idx: realIdx, len: realEnd - realIdx };
-    }
-    // Prefix match: find first 50 chars
-    const prefix = norm(original.substring(0, 50)).trim();
-    if (prefix.length > 15) {
-      const prefIdx = textNorm.indexOf(prefix, fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0);
-      if (prefIdx !== -1) {
-        let realIdx = 0, normPos = 0;
-        while (normPos < prefIdx && realIdx < text.length) {
-          if (/\s/.test(text[realIdx]) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
-          realIdx++; normPos++;
+    };
+    const normFrom = fromIndex > 0 ? norm(text.slice(0, fromIndex)).length : 0;
+    const normIdx = textNorm.indexOf(origNorm, normFrom);
+    if (normIdx !== -1) return mapNormRange(normIdx, origNorm.length);
+    // Prefix match: only for actual text excerpts (not patterns like "obehag... obehagliga")
+    const looksLikeExcerpt = !original.includes('...') && original.length > 60;
+    if (looksLikeExcerpt) {
+      const prefix = norm(original.substring(0, 50)).trim();
+      if (prefix.length > 15) {
+        const prefIdx = textNorm.indexOf(prefix, normFrom);
+        if (prefIdx !== -1) {
+          const realIdx = mapNormToReal(prefIdx);
+          return { idx: realIdx, len: Math.min(prefix.length + 10, text.length - realIdx) };
         }
-        // Try to match the full original length from this point
-        const approxLen = Math.min(original.length + 20, text.length - realIdx);
-        return { idx: realIdx, len: approxLen };
-
+      }
+    }
+    // Case-insensitive fallback
+    const textLower = textNorm.toLowerCase();
+    const origLower = origNorm.toLowerCase();
+    const ciIdx = textLower.indexOf(origLower, normFrom);
+    if (ciIdx !== -1) return mapNormRange(ciIdx, origLower.length);
+    // Punctuation-stripped fallback: ignore quotes, dashes, ellipsis differences
+    const stripPunct = (s) => s.replace(/[""''«»\-–—….,;:!?()[\]{}]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const textStripped = stripPunct(text);
+    const origStripped = stripPunct(original);
+    if (origStripped.length > 10) {
+      const stripIdx = textStripped.indexOf(origStripped);
+      if (stripIdx !== -1) {
+        let realIdx = 0, strippedPos = 0;
+        while (strippedPos < stripIdx && realIdx < text.length) {
+          const ch = text[realIdx];
+          if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realIdx++; continue; }
+          if (/\s/.test(ch) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
+          realIdx++; strippedPos++;
+        }
+        let realEnd = realIdx, strippedEnd = stripIdx;
+        while (strippedEnd < stripIdx + origStripped.length && realEnd < text.length) {
+          const ch = text[realEnd];
+          if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realEnd++; continue; }
+          if (/\s/.test(ch) && realEnd > realIdx && /\s/.test(text[realEnd - 1])) { realEnd++; continue; }
+          realEnd++; strippedEnd++;
+        }
+        return { idx: realIdx, len: realEnd - realIdx };
+      }
+      // Stripped prefix fallback
+      const strippedPrefix = origStripped.substring(0, 40);
+      if (strippedPrefix.length > 15) {
+        const prefStripIdx = textStripped.indexOf(strippedPrefix);
+        if (prefStripIdx !== -1) {
+          let realIdx = 0, strippedPos = 0;
+          while (strippedPos < prefStripIdx && realIdx < text.length) {
+            const ch = text[realIdx];
+            if (/[""''«»\-–—….,;:!?()[\]{}]/.test(ch)) { realIdx++; continue; }
+            if (/\s/.test(ch) && realIdx > 0 && /\s/.test(text[realIdx - 1])) { realIdx++; continue; }
+            realIdx++; strippedPos++;
+          }
+          return { idx: realIdx, len: Math.min(original.length + 20, text.length - realIdx) };
+        }
       }
     }
     return null;
@@ -5419,13 +5498,16 @@ export default function App() {
                       // Check if this suggestion actually renders with an inline highlight
                       const attachedPara = currentParagraphs.find(p => p.suggestions?.some(ps => ps.id === s.id));
                       const hasInline = !!(attachedPara && s.original && findInText(attachedPara.text, s.original) !== null);
+                      const terms = !hasInline && s.original ? extractSearchTerms(s.original) : [];
+                      const chapter = chapters.find(c => c.id === activeChapter);
+                      const termOccs = terms.length > 0 && chapter ? findAllTermOccurrences(chapter.content, terms) : [];
                       return (
                       <SuggestionCard key={s.id} s={s} isActive={activeSuggestion === s.id}
                         status={accepted.has(s.id) ? "accepted" : rejected.has(s.id) ? "rejected" : "pending"}
                         hasInlineHighlight={hasInline}
-                        termOccurrenceCount={0}
-                        currentTermIdx={null}
-                        onNavigateTerm={null}
+                        termOccurrenceCount={termOccs.length}
+                        currentTermIdx={highlightTermState?.suggestionId === s.id ? highlightTermState.occurrenceIdx : null}
+                        onNavigateTerm={termOccs.length > 0 ? (idx) => navigateToTermOccurrence(s.id, terms, idx) : null}
                         onToggle={() => { setActiveSuggestion(activeSuggestion === s.id ? null : s.id); if (activeSuggestion !== s.id) setHighlightTermState(null); }}
                         onAccept={() => {
                           setAccepted(prev => new Set([...prev, s.id]));
