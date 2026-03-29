@@ -3755,6 +3755,10 @@ export default function App() {
     setModules([]);
     setUploadedFile(null);
     setActiveChapter(null);
+    setActiveReviewRound(1);
+    setReviewHistory([]);
+    setServerProjectId(null);
+    setProcessingStatus("");
     setView("dashboard");
   };
 
