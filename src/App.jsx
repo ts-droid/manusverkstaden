@@ -363,7 +363,7 @@ function Sidebar({ chapters, activeChapter, setActiveChapter, onSplitChapter, on
                   width: ch.status === "active" ? 14 : 10,
                   height: ch.status === "active" ? 14 : 10,
                   borderRadius: "50%", marginLeft: "auto", flexShrink: 0,
-                  background: ch.status === "active" ? "#b8860b" : chapterHasSuggestions(ch.id) ? "#27864a" : "#c0392b",
+                  background: ch.status === "active" ? "#b8860b" : ch.status === "reviewed" ? "#d4a017" : chapterHasSuggestions(ch.id) ? "#27864a" : "#c0392b",
                   animation: ch.status === "active" ? "pulse 1.5s ease-in-out infinite" : "none",
                   boxShadow: ch.status === "active" ? "0 0 8px rgba(184,134,11,0.6)" : "none",
                   transition: "all 0.3s ease",
@@ -4377,7 +4377,8 @@ export default function App() {
         }
       }
 
-      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "done" } : c));
+      // Mark as reviewed (not "done" yet — wait until all chapters are complete)
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: success ? "reviewed" : "pending" } : c));
 
       if (i < chaptersToReview.length - 1) {
 
@@ -4386,6 +4387,8 @@ export default function App() {
       }
     }
 
+    // All chapters processed — now mark reviewed chapters as done
+    setChapters(prev => prev.map(c => c.status === "reviewed" ? { ...c, status: "done" } : c));
     setProcessingStatus("");
     setReReviewing(false);
   };
