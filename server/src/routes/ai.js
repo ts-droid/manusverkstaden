@@ -15,10 +15,10 @@ router.post('/review', async (req, res, next) => {
     const chapterId = String(req.body.chapterId);
     const { projectId, level = 'standard' } = req.body;
 
-    // Verify ownership
+    // Verify ownership — include all chapters for allText and dnaProfile
     const chapter = await prisma.chapter.findUnique({
       where: { id: chapterId },
-      include: { project: { select: { userId: true, genres: true, modules: true } } },
+      include: { project: { select: { userId: true, genres: true, modules: true, dnaProfile: true, chapters: { select: { content: true }, orderBy: { number: 'asc' } } } } },
     });
     if (!chapter || chapter.project.userId !== req.user.id) {
       return res.status(404).json({ error: 'Kapitlet hittades inte' });
@@ -33,22 +33,26 @@ router.post('/review', async (req, res, next) => {
     // Update status
     await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWING' } });
 
-    // Get all chapter text for DNA profiling (sample first 3 chapters)
-    const allChapters = await prisma.chapter.findMany({
-      where: { projectId: chapter.projectId },
-      select: { content: true },
-      take: 3,
-      orderBy: { number: 'asc' },
-    });
-    const allText = allChapters.map(c => c.content).join('\n\n');
+    // Use all chapter text for DNA profiling context
+    const allText = chapter.project.chapters.map(c => c.content).join('\n\n');
+    const existingDna = chapter.project.dnaProfile;
 
-    // Call AI — multi-pass analysis
-    console.log(`[AI Review] Starting ${level} analysis for chapter ${chapterId} (${chapter.wordCount} words)`);
+    // Call AI — multi-pass analysis with stored DNA
+    console.log(`[AI Review] Starting ${level} analysis for chapter ${chapterId} (${chapter.wordCount} words, DNA: ${existingDna ? 'yes' : 'no'})`);
     const { result: suggestions, meta, dnaProfile: dna } = await reviewChapterMultiPass(chapter.content, {
       genres: chapter.project.genres,
       level,
+      dnaProfile: existingDna,
       allText,
     });
+
+    // Save DNA if newly generated and not stored yet
+    if (dna && !existingDna) {
+      await prisma.project.update({
+        where: { id: chapter.projectId },
+        data: { dnaProfile: dna },
+      });
+    }
 
     // Save suggestions – preserve accepted/rejected, only replace pending
     const existing = await prisma.suggestion.findMany({ where: { chapterId } });
