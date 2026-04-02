@@ -184,11 +184,66 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
 }
 
 /**
+ * Format author DNA profile as a structured, human-readable string for AI prompts.
+ * This replaces raw JSON.stringify — gives the AI explicit field labels and context.
+ */
+function formatAuthorDnaForPrompt(dna) {
+  if (!dna) return '';
+  const confidence = dna.manuscriptsAnalyzed > 1
+    ? `(baserad på ${dna.manuscriptsAnalyzed} manus — förstärkt profil)`
+    : '(baserad på ett manus — initial profil)';
+  return `\n\nFÖRFATTARENS STIL-DNA ${confidence}:
+- Perspektiv: ${dna.perspective || 'ej identifierat'}
+- Tempus: ${dna.tense || 'ej identifierat'}
+- Tonalitet: ${dna.tonality || 'ej identifierat'}
+- Genomsnittlig meningslängd: ${dna.avgSentenceLen || '?'} ord
+- Dialogstil: ${dna.dialogStyle || 'ej identifierat'}
+- Bildspråk: ${dna.dominantImagery || 'ej identifierat'}
+- Ordval/register: ${dna.vocabulary?.notes || dna.vocabulary?.level || 'ej identifierat'}
+- Meningsstruktur: ${dna.sentenceStructure?.notes || 'ej identifierat'} (variation: ${dna.sentenceStructure?.variation || '?'})
+- Ton: ${dna.tone?.primary || '?'} / ${dna.tone?.secondary || '—'} — ${dna.tone?.notes || ''}
+- Tempo: ${dna.pacing?.overall || '?'} (variation: ${dna.pacing?.variation || '?'}) — ${dna.pacing?.notes || ''}
+- Berättartekniker: ${(dna.narrativeTechniques || []).join(', ') || '—'}
+- Styrkor: ${(dna.strengths || []).join(', ') || 'ej identifierade'}
+- Utvecklingsområden: ${(dna.areasForImprovement || []).join(', ') || 'ej identifierade'}
+- Jämförbara författare: ${(dna.comparableAuthors || []).join(', ') || '—'}
+- Sammanfattning: ${dna.summary || '—'}`;
+}
+
+/**
+ * Format story DNA as a structured string for AI prompts.
+ */
+function formatStoryDnaForPrompt(storyDna) {
+  if (!storyDna) return '';
+  return `\n\nBERÄTTELSENS DNA:
+- Huvudtema: ${storyDna.themes?.primary || '?'} — ${storyDna.themes?.notes || ''}
+- Underteman: ${(storyDna.themes?.secondary || []).join(', ') || '—'}
+- Dramaturgi: ${storyDna.dramaturgy?.structure || '?'} — ${storyDna.dramaturgy?.tensionArc || ''}
+- Karaktärstyper: ${(storyDna.characters?.archetypes || []).join(', ') || '—'} (djup: ${storyDna.characters?.depth || '?'})
+- Miljö: ${storyDna.setting?.type || '?'}, ${storyDna.setting?.period || '?'} — ${storyDna.setting?.atmosphere || ''}
+- Emotionellt register: ${storyDna.emotionalRange?.primary || '?'}, ${(storyDna.emotionalRange?.secondary || []).join(', ') || '—'}
+- Unik karaktär: ${storyDna.uniqueCharacter || '—'}`;
+}
+
+/**
+ * Format combined DNA (backward compatible with old single-profile format).
+ */
+function formatDnaForPrompt(dna, storyDna) {
+  if (!dna) return '';
+  // If we have separate story DNA, format both
+  if (storyDna) {
+    return formatAuthorDnaForPrompt(dna) + formatStoryDnaForPrompt(storyDna);
+  }
+  // Fallback: legacy combined format
+  return formatAuthorDnaForPrompt(dna);
+}
+
+/**
  * Multi-pass chapter review with DNA profiling and validation.
  * level: "basic" (2 pass + validate), "standard" (3 pass + validate), "deep" (4 pass + validate)
  * onProgress: callback(step, total, message) for frontend updates
  */
-export async function reviewChapterMultiPass(content, { genres = [], level = 'basic', dnaProfile = null, allText = '', onProgress } = {}) {
+export async function reviewChapterMultiPass(content, { genres = [], level = 'basic', dnaProfile = null, storyDna = null, allText = '', onProgress } = {}) {
   const totalSteps = level === 'deep' ? 5 : level === 'standard' ? 4 : 3;
   let step = 0;
   const progress = (msg) => { step++; onProgress?.(step, totalSteps, msg); };
@@ -283,6 +338,7 @@ BARA priority: "red". BARA FEL som INTE redan finns i listan nedan.
 Returnera JSON-array (samma format som pass 1). Tom array [] om inga nya fel hittades.`);
 
   const dnaStr = dna ? `\n\nFörfattarens DNA-profil:\n${JSON.stringify(dna, null, 2)}` : '';
+  const dnaStrFormatted = formatDnaForPrompt(dna, storyDna); // Structured format for pass 3/4
   const pass1Summary = pass1Suggestions.length > 0
     ? `\n\nRedan hittade fel (${pass1Suggestions.length} st):\n${pass1Suggestions.map(s => `- "${s.original?.slice(0, 50)}" → ${s.reason}`).join('\n')}`
     : '\n\nInga fel hittades i pass 1.';
@@ -349,26 +405,65 @@ Returnera JSON:
   if (level === 'standard' || level === 'deep') {
     progress('Analyserar stil och struktur...');
 
-    const pass3Prompt = await getPrompt('ai:review_pass3', `Med författarens DNA-profil, hitta nu STILISTISKA problem (priority: "yellow" — bör övervägas):
+    const pass3Prompt = await getPrompt('ai:review_pass3', `Du är en erfaren svensk stilistisk redaktör. Detta är PASS 3 – stilistisk granskning.
 
-- Ordupprepningar inom 2-3 meningar
+Du har tillgång till författarens DNA-profil nedan. Använd den AKTIVT för att bedöma varje förslag.
+
+DIN UPPGIFT:
+Hitta priority: "yellow" (bör övervägas) stilistiska problem:
+- Ordupprepningar inom 2-3 meningar (samma ord/stam upprepas)
 - "Telling" istället för "showing" i emotionella scener
-- Överflödiga adverb/adjektiv
+- Stilbrott som avviker från författarens etablerade ton
+- Tempoproblem (för hastigt eller för utdraget)
 - Passiv röst där aktiv vore starkare
-- Klumpiga meningar
-- Klichéer
+- Klichéer som kan ersättas med originella formuleringar
+- Överflödiga adverb/adjektiv som försvagar prosan
 - Oklara pronomenreferenser
-- Tempoproblem
-- Svaga scenöppningar/avslutningar
+- Svag scenöppning eller -avslutning
 
-BARA priority: "yellow". INGA röda (redan hanterade). INGA gröna.
+FÖRBUD:
+- Inga gröna förslag (smaksaker) – de hör till Pass 4.
+- Inga röda förslag (språkfel) – de hanteras i Pass 1-2.
+- ALLA förslag ska ha priority: "yellow".
 
-Returnera JSON-array (samma format).`);
+RESPEKTERA DNA-PROFILEN — KRITISKT:
+- PERSPEKTIV: Föreslå inte perspektivbyten om författaren konsekvent använder sitt berättarperspektiv.
+- TEMPUS: Flagga bara tempusbrytningar som är oavsiktliga, inte stilistiska val.
+- TONALITET: Alla förslag ska matcha författarens ton. Om tonen är lakonisk — föreslå INTE utsmyckat språk. Om tonen är lyrisk — föreslå INTE kortare formuleringar.
+- MENINGSLÄNGD: Om författaren medvetet använder korta eller långa meningar — flagga INTE det som problem.
+- DIALOGSTIL: Korrigera inte dialogstilen om den matchar DNA-profilen.
+- BILDSPRÅK: Förslag ska använda samma typ av bildspråk och metaforik som författaren redan använder.
+- ORDVAL/REGISTER: Håll dig till författarens register. Föreslå inte akademiskt språk i informell text eller vice versa.
+- STYRKOR: Flagga ALDRIG författarens listade styrkor som problem — de definierar rösten.
+
+KVALITETSKONTROLL:
+- Varje förslag MÅSTE motiveras med "detta avviker från författarens etablerade stil".
+- Om texten redan är konsekvent med DNA-profilen — ge INGET förslag.
+- Hellre för FÅ förslag än för många irrelevanta.
+- Replacement-texten ska låta som FÖRFATTAREN — inte som dig.
+
+CITATPRECISION:
+- "original"-fältet MÅSTE vara en EXAKT ordagrann kopia från texten.
+- Inkludera ALLTID hela meningen eller meningarna som berörs.
+
+Returnera ENBART giltig JSON-array:
+[
+  {
+    "type": "style|repetition|structure",
+    "priority": "yellow",
+    "level": 2,
+    "original": "exakt citat från texten – hela meningen/meningarna",
+    "replacement": "föreslagen förbättring som matchar författarens röst",
+    "reason": "kort motivering — förklara VARFÖR detta avviker från författarens DNA och HUR förslaget matchar bättre"
+  }
+]
+
+Om inga stilistiska problem hittas, returnera en tom array: []`);
 
     const existingSummary = `\n\nRedan hittade fel (${allSuggestions.length} st validerade röda).`;
 
     const pass3Response = await sendMessage({
-      system: `${pass3Prompt}${dnaStr}${existingSummary}`,
+      system: `${pass3Prompt}${dnaStrFormatted}${existingSummary}`,
       messages: [{ role: 'user', content: `Analysera stil:\n\n${content}` }],
       max_tokens: 8192,
     });
@@ -384,24 +479,59 @@ Returnera JSON-array (samma format).`);
   if (level === 'deep') {
     progress('Djupanalys — dramaturgi och utveckling...');
 
-    const pass4Prompt = await getPrompt('ai:review_pass4', `Djupanalys med författarens DNA-profil. Hitta nu FINSLIPNING och UTVECKLINGSFÖRSLAG:
+    const pass4Prompt = await getPrompt('ai:review_pass4', `Du är en erfaren svensk utvecklingsredaktör. Detta är PASS 4 – djupgranskning.
 
-priority: "green" (smaksak/finslipning):
-- Alternativa formuleringar som ger bättre rytm
-- Finslipning av ordval
-- Stilistiska alternativ
-MAX 5 gröna förslag per kapitel — välj de som gör störst skillnad.
+Du har tillgång till författarens DNA-profil nedan. Använd den AKTIVT — alla förslag ska låta som författaren på sin bästa dag.
 
-level: 1 (Utvecklingsredaktionellt):
-- Dramaturgisk effektivitet i scenen
-- Karaktärsutveckling och konsistens
-- Tematisk koherens
-- Tempo och spänningskurva
+DIN UPPGIFT:
+Hitta två typer av förslag:
 
-Returnera JSON-array (samma format). Max 8 förslag totalt.`);
+A) Priority: "green" (smaksaker/finslipning) – MAX 3 per kapitel:
+- Alternativa formuleringar som ger bättre rytm — i författarens EGEN stil
+- Finslipning av ordval för ökad precision — med författarens EGET register
+- Stilistiska alternativ som stärker uttrycket — som författaren SJÄLV skulle uttrycka det
+- Välj de 3 som gör STÖRST skillnad
+
+B) Priority: "yellow", level: 1 (utvecklingsredaktionellt) – MAX 3 per kapitel:
+- Dramaturgiska svagheter (scenen saknar riktning eller stakes)
+- Karaktärsutveckling (agerande ur karaktär, platt karaktärisering)
+- Scenbygge (saknade sinnesintryck, svag miljöskildring)
+- Tempo och pacing (scenen drar ut eller hastar)
+- Tematisk koherens (avviker från manuskriptets teman)
+
+RESPEKTERA DNA-PROFILEN — KRITISKT:
+- Gröna förslag ska låta som författaren PÅ SIN BÄSTA DAG — inte som en annan författare.
+- Använd samma register, tonalitet och meningsrytm som DNA-profilen beskriver.
+- Utvecklingsredaktionella förslag ska stärka det författaren REDAN gör bra (se styrkor), inte införa nya stilar.
+- Referera till författarens specifika styrkor i motiveringen.
+- Om ett textstycke redan uppvisar det DNA-profilen listar som styrkor — föreslå INGET.
+- Replacement-texten MÅSTE matcha författarens röst och register exakt.
+
+KVALITETSKONTROLL:
+- Max 3 gröna + max 3 utvecklingsredaktionella = MAX 6 förslag totalt.
+- Kvalitet > kvantitet. Hellre 2 träffsäkra förslag än 6 generiska.
+- Om kapitlet redan är starkt — returnera en tom array.
+
+CITATPRECISION:
+- "original"-fältet MÅSTE vara en EXAKT ordagrann kopia från texten.
+- Inkludera ALLTID hela meningen eller meningarna som berörs.
+
+Returnera ENBART giltig JSON-array:
+[
+  {
+    "type": "style|structure",
+    "priority": "green eller yellow",
+    "level": 1 eller 2,
+    "original": "exakt citat från texten",
+    "replacement": "föreslagen förbättring i författarens egen stil, eller null för strukturella kommentarer",
+    "reason": "motivering — referera till DNA-profilen och förklara VARFÖR och HUR detta stärker texten"
+  }
+]
+
+Om inga förslag hittas, returnera en tom array: []`);
 
     const pass4Response = await sendMessage({
-      system: `${pass4Prompt}${dnaStr}`,
+      system: `${pass4Prompt}${dnaStrFormatted}`,
       messages: [{ role: 'user', content: `Djupanalysera:\n\n${content}` }],
       max_tokens: 8192,
     });
@@ -425,39 +555,200 @@ Returnera JSON-array (samma format). Max 8 förslag totalt.`);
 }
 
 /**
- * Generate a linguistic DNA profile for the entire manuscript.
+ * Addon review: run only pass 3 and/or pass 4 on an already-reviewed chapter.
+ * This appends new suggestions without re-running the basic review pipeline.
  */
-export async function generateDNAProfile(allText, { genres = [] } = {}) {
-  const systemPrompt = await getPrompt('ai:dna_profile', `Du är en litterär analytiker. Analysera textens språkliga DNA-profil.
+export async function reviewChapterAddon(content, { passes = ['pass3'], dnaProfile = null, storyDna = null, existingSuggestions = [], genres = [] } = {}) {
+  const dnaStrFormatted = formatDnaForPrompt(dnaProfile, storyDna);
+  const allSuggestions = [];
+  const totalMeta = { inputTokens: 0, outputTokens: 0, models: {} };
+  const addMeta = (m) => {
+    totalMeta.inputTokens += m.inputTokens || 0;
+    totalMeta.outputTokens += m.outputTokens || 0;
+    for (const [model, tokens] of Object.entries(m.models || {})) {
+      totalMeta.models[model] = totalMeta.models[model] || { input: 0, output: 0 };
+      totalMeta.models[model].input += tokens.input || 0;
+      totalMeta.models[model].output += tokens.output || 0;
+    }
+  };
 
-Returnera JSON:
-{
-  "vocabulary": { "level": "hög/medel/låg", "uniqueRatio": 0.0-1.0, "notes": "..." },
-  "sentenceStructure": { "avgLength": 0, "variation": "hög/medel/låg", "notes": "..." },
-  "tone": { "primary": "...", "secondary": "...", "notes": "..." },
-  "pacing": { "overall": "snabb/medel/långsam", "variation": "hög/medel/låg", "notes": "..." },
-  "strengths": ["...", "..."],
-  "areasForImprovement": ["...", "..."],
-  "comparableAuthors": ["...", "..."],
-  "summary": "Kort sammanfattning av textens karaktär"
+  if (passes.includes('pass3')) {
+    const pass3Prompt = await getPrompt('ai:review_pass3', `Du är en erfaren svensk stilistisk redaktör. Hitta STILISTISKA problem (priority: "yellow").
+
+RESPEKTERA DNA-PROFILEN. Varje förslag MÅSTE motiveras med att det avviker från författarens etablerade stil.
+
+Returnera ENBART giltig JSON-array med objekt: { "type", "priority": "yellow", "level": 2, "original", "replacement", "reason" }
+Tom array [] om inga problem hittas.`);
+
+    const existingSummary = existingSuggestions.length > 0
+      ? `\n\nRedan hittade förslag (${existingSuggestions.length} st) — ge INGA dubbletter.`
+      : '';
+
+    const pass3Response = await sendMessage({
+      system: `${pass3Prompt}${dnaStrFormatted}${existingSummary}`,
+      messages: [{ role: 'user', content: `Analysera stil:\n\n${content}` }],
+      max_tokens: 8192,
+    });
+
+    addMeta(extractMeta(pass3Response));
+    try {
+      const pass3 = parseJsonResponse(extractText(pass3Response));
+      if (Array.isArray(pass3)) allSuggestions.push(...pass3);
+    } catch { /* skip */ }
+  }
+
+  if (passes.includes('pass4')) {
+    const pass4Prompt = await getPrompt('ai:review_pass4', `Du är en erfaren svensk utvecklingsredaktör. Hitta FINSLIPNING (priority: "green", max 3) och UTVECKLINGSFÖRSLAG (priority: "yellow", level: 1, max 3).
+
+RESPEKTERA DNA-PROFILEN. Förslag ska låta som författaren på sin bästa dag.
+
+Returnera ENBART giltig JSON-array med objekt: { "type", "priority", "level", "original", "replacement", "reason" }
+Tom array [] om inga förslag hittas.`);
+
+    const pass4Response = await sendMessage({
+      system: `${pass4Prompt}${dnaStrFormatted}`,
+      messages: [{ role: 'user', content: `Djupanalysera:\n\n${content}` }],
+      max_tokens: 8192,
+    });
+
+    addMeta(extractMeta(pass4Response));
+    try {
+      const pass4 = parseJsonResponse(extractText(pass4Response));
+      if (Array.isArray(pass4)) allSuggestions.push(...pass4);
+    } catch { /* skip */ }
+  }
+
+  return {
+    result: allSuggestions,
+    meta: totalMeta,
+    passesRun: passes,
+  };
 }
 
-Returnera ENBART JSON, inga andra kommentarer.`);
+/**
+ * Generate a two-part DNA profile: story DNA (per-project) + author DNA (per-user, cumulative).
+ * Returns { storyDna, authorDna, combined (legacy format), meta }
+ */
+export async function generateDNAProfile(allText, { genres = [], existingAuthorDna = null } = {}) {
+  const totalMeta = { inputTokens: 0, outputTokens: 0, models: {} };
+  const addMeta = (m) => {
+    totalMeta.inputTokens += m.inputTokens || 0;
+    totalMeta.outputTokens += m.outputTokens || 0;
+    for (const [model, tokens] of Object.entries(m.models || {})) {
+      totalMeta.models[model] = totalMeta.models[model] || { input: 0, output: 0 };
+      totalMeta.models[model].input += tokens.input || 0;
+      totalMeta.models[model].output += tokens.output || 0;
+    }
+  };
 
-  const response = await sendMessage({
-    system: systemPrompt,
-    messages: [{ role: 'user', content: `Analysera följande manus:\n\n${allText.slice(0, 50000)}` }],
-    max_tokens: 4096,
-  });
+  // ─── PART 1: Story DNA (unique to this manuscript) ───
+  const storyPrompt = await getPrompt('ai:dna_story', `Du är en litterär analytiker specialiserad på narrativ analys. Analysera BERÄTTELSENS unika DNA — det som gör just denna historia speciell.
 
-  const meta = extractMeta(response);
-  const text = extractText(response);
+Analysera följande dimensioner:
+1. TEMAN — Identifiera huvudteman och underteman
+2. DRAMATURGISK STRUKTUR — Berättelsens uppbyggnad, spänningskurva, vändpunkter
+3. KARAKTÄRSTYPOLOGI — Typ av karaktärer, deras roller och relationer
+4. HANDLINGSSTRUKTUR — Plotmönster, subplot-hantering, pacing
+5. MILJÖ OCH VÄRLDSBYGGE — Typ av miljö, tidsepok, atmosfär
+6. GENREMARKÖRER — Genrespecifika element och konventioner
+7. EMOTIONELLT REGISTER — Vilka känslor berättelsen rör sig i
+8. UNIK KARAKTÄR — Vad som skiljer denna berättelse från andra i samma genre
+
+Returnera ENBART giltig JSON utan förklaringar:
+{
+  "themes": { "primary": "huvudtema", "secondary": ["undertema 1", "undertema 2"], "notes": "beskrivning" },
+  "dramaturgy": { "structure": "typ av struktur", "turningPoints": "beskrivning", "tensionArc": "beskrivning" },
+  "characters": { "archetypes": ["typ 1", "typ 2"], "relationships": "beskrivning", "depth": "hög/medel/låg" },
+  "plot": { "pattern": "plotmönster", "subplots": "beskrivning", "resolution": "typ" },
+  "setting": { "type": "typ av miljö", "period": "tidsepok", "atmosphere": "atmosfärbeskrivning" },
+  "genreMarkers": ["markör 1", "markör 2"],
+  "emotionalRange": { "primary": "huvudkänsla", "secondary": ["känsla 1", "känsla 2"], "notes": "beskrivning" },
+  "uniqueCharacter": "2-3 meningar som sammanfattar berättelsens unika karaktär"
+}`);
+
+  // ─── PART 2: Author DNA (writing style — accumulates across manuscripts) ───
+  const authorPrompt = await getPrompt('ai:dna_author', `Du är en litterär analytiker specialiserad på stilistisk fingeravtrycksanalys. Analysera FÖRFATTARENS skrivstil — det som är unikt för hur denna person skriver, oberoende av vilken berättelse det handlar om.
+
+Analysera följande dimensioner:
+1. PERSPEKTIV — Berättarperspektiv (första person, tredje person begränsad, allvetande, etc.)
+2. TEMPUS — Berättartempus (preteritum, presens, växlande)
+3. TONALITET — Övergripande ton (lyrisk, lakonisk, varm, distanserad, etc.)
+4. MENINGSSTRUKTUR — Genomsnittlig meningslängd, variation kort/lång, rytmmönster
+5. DIALOGSTIL — Hur dialog presenteras (naturalistisk, stiliserad, minimal, etc.)
+6. BILDSPRÅK — Typ av metaforer, sinnesintryck, bildval
+7. ORDVAL — Registernivå, favoritord, stilistiska preferenser
+8. BERÄTTARTEKNIK — Specifika tekniker (stream of consciousness, foreshadowing, etc.)
+
+${existingAuthorDna ? `
+VIKTIGT: Du har tillgång till en TIDIGARE analyserad författarprofil nedan. Jämför med det nya manuskriptet och FÖRSTÄRK de mönster som bekräftas. Om nya mönster upptäcks, lägg till dem. Om tidigare mönster INTE syns i det nya manuset, behåll dem men markera dem som "ej bekräftat i detta manus".
+
+Tidigare författarprofil:
+${JSON.stringify(existingAuthorDna, null, 2)}
+` : ''}
+
+Returnera ENBART giltig JSON utan förklaringar:
+{
+  "perspective": "berättarperspektiv",
+  "tense": "berättartempus",
+  "tonality": "tonalitetsbeskrivning",
+  "avgSentenceLen": 14.2,
+  "dialogStyle": "dialogstilsbeskrivning",
+  "dominantImagery": "dominerande bildspråk",
+  "vocabulary": { "level": "hög/medel/låg", "uniqueRatio": 0.65, "notes": "beskrivning" },
+  "sentenceStructure": { "avgLength": 14, "variation": "hög/medel/låg", "notes": "beskrivning" },
+  "tone": { "primary": "huvudton", "secondary": "sekundär ton", "notes": "beskrivning" },
+  "pacing": { "overall": "snabb/medel/långsam", "variation": "hög/medel/låg", "notes": "beskrivning" },
+  "narrativeTechniques": ["teknik 1", "teknik 2"],
+  "strengths": ["styrka 1", "styrka 2"],
+  "areasForImprovement": ["område 1", "område 2"],
+  "comparableAuthors": ["författare 1", "författare 2"],
+  "summary": "2-3 meningar som sammanfattar författarens unika stil",
+  "confidence": ${existingAuthorDna ? '"förstärkt — baserad på flera manus"' : '"initial — baserad på ett manus"'},
+  "manuscriptsAnalyzed": ${existingAuthorDna?.manuscriptsAnalyzed ? existingAuthorDna.manuscriptsAnalyzed + 1 : 1}
+}`);
+
+  const textSlice = allText.slice(0, 50000);
+
+  // Run both DNA analyses in parallel
+  const [storyResponse, authorResponse] = await Promise.all([
+    sendMessage({
+      system: storyPrompt,
+      messages: [{ role: 'user', content: `Analysera berättelsens DNA:\n\n${textSlice}` }],
+      max_tokens: 4096,
+    }),
+    sendMessage({
+      system: authorPrompt,
+      messages: [{ role: 'user', content: `Analysera författarens stil:\n\n${textSlice}` }],
+      max_tokens: 4096,
+    }),
+  ]);
+
+  addMeta(extractMeta(storyResponse));
+  addMeta(extractMeta(authorResponse));
+
+  let storyDna = null;
+  let authorDna = null;
+
   try {
-    return { result: parseJsonResponse(text), meta };
+    storyDna = parseJsonResponse(extractText(storyResponse));
   } catch {
-    console.error('Failed to parse DNA profile:', text.slice(0, 200));
-    return { result: null, meta };
+    console.error('Failed to parse story DNA:', extractText(storyResponse).slice(0, 200));
   }
+
+  try {
+    authorDna = parseJsonResponse(extractText(authorResponse));
+  } catch {
+    console.error('Failed to parse author DNA:', extractText(authorResponse).slice(0, 200));
+  }
+
+  // Build combined legacy format (backward compatible with existing code)
+  const combined = authorDna ? {
+    ...authorDna,
+    storyThemes: storyDna?.themes,
+    storyDramaturgy: storyDna?.dramaturgy,
+  } : null;
+
+  return { storyDna, authorDna, result: combined, meta: totalMeta };
 }
 
 /**

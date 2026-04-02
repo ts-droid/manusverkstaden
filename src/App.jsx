@@ -3600,6 +3600,8 @@ export default function App() {
   const [rightPanel, setRightPanel] = useState("suggestions");
   const [processingStatus, setProcessingStatus] = useState("");
   const [dnaProfile, setDnaProfile] = useState(null);
+  const [storyDna, setStoryDna] = useState(null);     // Story-specific DNA (themes, dramaturgy)
+  const [authorDna, setAuthorDna] = useState(null);    // Author style DNA (cumulative across manuscripts)
   const [emotionMaps, setEmotionMaps] = useState({}); // { chapterId: emotionMapData }
   const [selectionToolbar, setSelectionToolbar] = useState(null);
   const [developModal, setDevelopModal] = useState(null); // null or { initialText }
@@ -3968,6 +3970,8 @@ export default function App() {
         const dnaResult = await apiClient.generateDNAProfile(projId);
         if (dnaResult?.dnaProfile) {
           setDnaProfile(dnaResult.dnaProfile);
+          if (dnaResult.storyDna) setStoryDna(dnaResult.storyDna);
+          if (dnaResult.authorDna) setAuthorDna(dnaResult.authorDna);
           dnaGenerated = true;
         }
       } catch (err) {
@@ -4280,6 +4284,10 @@ export default function App() {
   const [reReviewLevel, setReReviewLevel] = useState(analysisLevel || "standard");
   const [reReviewSelectedChapters, setReReviewSelectedChapters] = useState(new Set()); // empty = all
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [addonReviewing, setAddonReviewing] = useState(false);
+  const [reReviewMode, setReReviewMode] = useState("full"); // "full" (new review) or "addon" (add passes)
+  const [addonPasses, setAddonPasses] = useState(["pass3"]); // which passes to add in addon mode
+  const [completedPasses, setCompletedPasses] = useState(new Set()); // tracks which passes have been run
 
   const handleReReview = async (level) => {
     if (reReviewing || batchAnalyzing) return;
@@ -4392,6 +4400,8 @@ export default function App() {
         const dnaResult = await apiClient.generateDNAProfile(serverProjectId);
         if (dnaResult?.dnaProfile) {
           setDnaProfile(dnaResult.dnaProfile);
+          if (dnaResult.storyDna) setStoryDna(dnaResult.storyDna);
+          if (dnaResult.authorDna) setAuthorDna(dnaResult.authorDna);
         }
       } catch (err) {
         console.error("DNA profile generation failed:", err);
@@ -4518,10 +4528,74 @@ export default function App() {
     setReReviewing(false);
   };
 
+  // ─── ADDON REVIEW: Add pass 3 and/or pass 4 to existing review results ───
+  const handleAddonReview = async (passes) => {
+    if (addonReviewing || reReviewing || batchAnalyzing) return;
+    setShowReReviewModal(false);
+    setAddonReviewing(true);
+
+    const chaptersToReview = reReviewSelectedChapters.size > 0
+      ? chapters.filter(c => reReviewSelectedChapters.has(c.id))
+      : chapters;
+    setReReviewSelectedChapters(new Set());
+
+    const passLabel = passes.includes("pass4") ? "Djupgranskning" : "Stilgranskning";
+
+    for (let i = 0; i < chaptersToReview.length; i++) {
+      if (abortProcessingRef.current) { abortProcessingRef.current = false; break; }
+      const ch = chaptersToReview[i];
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: "active" } : c));
+      setProcessingStatus(`${passLabel}: ${ch.title} (${i + 1}/${chaptersToReview.length})...`);
+
+      let success = false;
+      for (let attempt = 0; attempt < 3 && !success; attempt++) {
+        try {
+          if (attempt > 0) {
+            setProcessingStatus(`${passLabel}: ${ch.title} (försök ${attempt + 1})...`);
+            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 5000));
+          }
+          const result = await apiClient.reviewChapterAddon(ch.id, serverProjectId, passes);
+          const suggestions = result?.suggestions || [];
+
+          if (suggestions.length > 0) {
+            // Merge new suggestions into existing paragraphs
+            const existingParas = paragraphsByChapter[ch.id] || splitIntoParagraphs(ch.content);
+            const enriched = attachSuggestionsToParagraphs(existingParas, suggestions, ch.id);
+            setParagraphsByChapter(prev => ({ ...prev, [ch.id]: enriched }));
+          }
+          success = true;
+        } catch (err) {
+          console.error(`[Addon] ${ch.title} attempt ${attempt + 1}/3:`, err);
+          if (attempt === 2) {
+            setProcessingStatus(`${ch.title} — kunde inte slutföras`);
+            await new Promise(r => setTimeout(r, 1500));
+          }
+        }
+      }
+
+      setChapters(prev => prev.map(c => c.id === ch.id ? { ...c, status: success ? "done" : c.status } : c));
+
+      if (i < chaptersToReview.length - 1) {
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+
+    // Track completed passes
+    setCompletedPasses(prev => {
+      const next = new Set(prev);
+      passes.forEach(p => next.add(p));
+      return next;
+    });
+
+    setProcessingStatus("");
+    setAddonReviewing(false);
+  };
+
   const handleAbortProcessing = () => {
     abortProcessingRef.current = true;
     setBatchAnalyzing(false);
     setReReviewing(false);
+    setAddonReviewing(false);
     setProcessingStatus("");
   };
 
@@ -5338,15 +5412,15 @@ export default function App() {
           <button onClick={() => { if (window.confirm("Vill du börja om med ett nytt manus? Allt osparat arbete försvinner.")) handleStartFresh(); }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer", fontWeight: 500 }}>Nytt manus</button>
           {/* Review button */}
           <button
-            onClick={() => reReviewing ? null : setShowReReviewModal(true)}
-            disabled={reReviewing}
+            onClick={() => (reReviewing || addonReviewing) ? null : setShowReReviewModal(true)}
+            disabled={reReviewing || addonReviewing}
             style={{
-              fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, cursor: reReviewing ? "default" : "pointer",
-              border: `1px solid ${border}`, background: reReviewing ? "#e8ddd2" : surface, color: reReviewing ? muted : ink, fontWeight: 500,
+              fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, cursor: (reReviewing || addonReviewing) ? "default" : "pointer",
+              border: `1px solid ${border}`, background: (reReviewing || addonReviewing) ? "#e8ddd2" : surface, color: (reReviewing || addonReviewing) ? muted : ink, fontWeight: 500,
               display: "flex", alignItems: "center", gap: 4,
             }}
           >
-            {reReviewing ? "Granskar..." : `↻ Granska`}
+            {(reReviewing || addonReviewing) ? "Granskar..." : `↻ Granska`}
             {reviewHistory.length > 0 && (
               <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 8, background: accentLight, color: accent, fontWeight: 600 }}>
                 #{activeReviewRound}
@@ -5376,7 +5450,7 @@ export default function App() {
       )}
 
       {/* ANALYSIS STATUS BAR */}
-      {(batchAnalyzing || reanalyzingChapter || reReviewing) && processingStatus && (
+      {(batchAnalyzing || reanalyzingChapter || reReviewing || addonReviewing) && processingStatus && (
         <div style={{
           padding: "12px 20px", background: "linear-gradient(135deg, #fdf6e3 0%, #f5ead0 100%)",
           borderBottom: `1px solid #e8d9a8`,
@@ -5393,7 +5467,7 @@ export default function App() {
               Stäng inte webbläsaren — granskningen pågår i bakgrunden
             </div>
           </div>
-          {(batchAnalyzing || reanalyzingChapter || reReviewing) && (
+          {(batchAnalyzing || reanalyzingChapter || reReviewing || addonReviewing) && (
             <button onClick={handleAbortProcessing} style={{
               fontFamily: uiFont, fontSize: 11, padding: "6px 14px",
               borderRadius: 6, border: `1px solid #d4c0a0`, background: "rgba(255,255,255,0.7)",
@@ -6038,11 +6112,31 @@ export default function App() {
           <div onClick={() => setShowReReviewModal(false)} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
           <div style={{ position: "relative", background: surface, borderRadius: 16, width: 480, boxShadow: "0 24px 80px rgba(0,0,0,0.18)", padding: "28px 32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Ny granskning</h3>
+              <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>
+                {reReviewMode === "addon" ? "Lägg till analys" : "Ny granskning"}
+              </h3>
               <button onClick={() => setShowReReviewModal(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
             </div>
+
+            {/* Mode toggle */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderRadius: 8, overflow: "hidden", border: `1px solid ${border}` }}>
+              <button onClick={() => setReReviewMode("full")} style={{
+                flex: 1, padding: "8px 0", fontFamily: uiFont, fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none",
+                background: reReviewMode === "full" ? accent : surface, color: reReviewMode === "full" ? "#fff" : ink,
+                transition: "all 0.15s",
+              }}>Ny granskning</button>
+              <button onClick={() => setReReviewMode("addon")} style={{
+                flex: 1, padding: "8px 0", fontFamily: uiFont, fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none",
+                borderLeft: `1px solid ${border}`,
+                background: reReviewMode === "addon" ? accent : surface, color: reReviewMode === "addon" ? "#fff" : ink,
+                transition: "all 0.15s",
+              }}>Lägg till analys</button>
+            </div>
+
             <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 16px", lineHeight: 1.5 }}>
-              Godkända ändringar behålls i texten. Redan hanterade förslag filtreras bort.
+              {reReviewMode === "addon"
+                ? "Lägg till stilgranskning eller djupgranskning till redan granskade kapitel. Befintliga förslag behålls."
+                : "Godkända ändringar behålls i texten. Redan hanterade förslag filtreras bort."}
             </p>
 
             {/* Chapter selection */}
@@ -6052,10 +6146,8 @@ export default function App() {
                 <button onClick={() => {
                   const allSelected = reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.size === chapters.length;
                   if (allSelected) {
-                    // Currently all selected → deselect all
-                    setReReviewSelectedChapters(new Set(["__none__"])); // sentinel: nothing selected
+                    setReReviewSelectedChapters(new Set(["__none__"]));
                   } else {
-                    // Not all selected → select all
                     setReReviewSelectedChapters(new Set());
                   }
                 }} style={{ fontFamily: uiFont, fontSize: 10, color: accent, background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
@@ -6076,7 +6168,6 @@ export default function App() {
                           setReReviewSelectedChapters(prev => {
                             const next = new Set(prev.size === 0 ? chapters.map(c => c.id) : prev);
                             if (next.has(ch.id)) next.delete(ch.id); else next.add(ch.id);
-                            // If all selected, reset to empty (= all)
                             if (next.size === chapters.length) return new Set();
                             return next;
                           });
@@ -6097,39 +6188,103 @@ export default function App() {
               </div>
             </div>
 
-            {/* Analysis level */}
-            <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 8 }}>Analysnivå</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-              {Object.values(ANALYSIS_LEVELS).map(lvl => {
-                const active = reReviewLevel === lvl.id;
-                const selectedChapters = reReviewSelectedChapters.size > 0 && !reReviewSelectedChapters.has("__none__") ? reReviewSelectedChapters.size : chapters.length;
-                const estMinutes = Math.ceil(selectedChapters * lvl.estimatePerChapter / 60);
-                return (
-                  <button key={lvl.id} onClick={() => setReReviewLevel(lvl.id)} style={{
+            {reReviewMode === "full" ? (
+              <>
+                {/* Analysis level (full mode) */}
+                <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 8 }}>Analysnivå</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                  {Object.values(ANALYSIS_LEVELS).map(lvl => {
+                    const active = reReviewLevel === lvl.id;
+                    const selectedChapters = reReviewSelectedChapters.size > 0 && !reReviewSelectedChapters.has("__none__") ? reReviewSelectedChapters.size : chapters.length;
+                    const estMinutes = Math.ceil(selectedChapters * lvl.estimatePerChapter / 60);
+                    return (
+                      <button key={lvl.id} onClick={() => setReReviewLevel(lvl.id)} style={{
+                        padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                        border: active ? `2px solid ${accent}` : `1px solid ${border}`,
+                        background: active ? accentLight : surface, display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
+                      }}>
+                        <span style={{ fontSize: 20 }}>{lvl.icon}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>{lvl.label}</div>
+                          <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>{lvl.description}</div>
+                          <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 2, fontStyle: "italic" }}>{lvl.passes}</div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
+                          <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>{lvl.costPerChapter}/kap</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={() => handleReReview(reReviewLevel)}
+                  style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
+                >
+                  Starta {ANALYSIS_LEVELS[reReviewLevel].label.toLowerCase()}
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Addon mode — choose passes to add */}
+                <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 8 }}>Välj analys att lägga till</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                  {/* Pass 3: Style analysis */}
+                  <button onClick={() => setAddonPasses(["pass3"])} style={{
                     padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
-                    border: active ? `2px solid ${accent}` : `1px solid ${border}`,
-                    background: active ? accentLight : surface, display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
+                    border: addonPasses.length === 1 && addonPasses[0] === "pass3" ? `2px solid ${accent}` : `1px solid ${border}`,
+                    background: addonPasses.length === 1 && addonPasses[0] === "pass3" ? accentLight : surface,
+                    display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
+                    opacity: completedPasses.has("pass3") ? 0.5 : 1,
                   }}>
-                    <span style={{ fontSize: 20 }}>{lvl.icon}</span>
+                    <span style={{ fontSize: 20 }}>✦</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>{lvl.label}</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>{lvl.description}</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 2, fontStyle: "italic" }}>{lvl.passes}</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>
+                        Stilgranskning
+                        {completedPasses.has("pass3") && <span style={{ fontSize: 10, color: "#27864a", marginLeft: 6 }}>redan tillagd</span>}
+                      </div>
+                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>Ordupprepningar, stilbrott, tempo, klichéer</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9, color: "#b8860b", marginTop: 2 }}>Gula förslag (bör övervägas)</div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>{lvl.costPerChapter}/kap</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {Math.ceil((reReviewSelectedChapters.size > 0 ? reReviewSelectedChapters.size : chapters.length) * 15 / 60)} min</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>~0.40 kr/kap</div>
                     </div>
                   </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => handleReReview(reReviewLevel)}
-              style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
-            >
-              Starta {ANALYSIS_LEVELS[reReviewLevel].label.toLowerCase()}
-            </button>
+
+                  {/* Pass 3 + 4: Style + Deep */}
+                  <button onClick={() => setAddonPasses(["pass3", "pass4"])} style={{
+                    padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                    border: addonPasses.length === 2 ? `2px solid ${accent}` : `1px solid ${border}`,
+                    background: addonPasses.length === 2 ? accentLight : surface,
+                    display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
+                    opacity: completedPasses.has("pass3") && completedPasses.has("pass4") ? 0.5 : 1,
+                  }}>
+                    <span style={{ fontSize: 20 }}>◈</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>
+                        Stil + djupgranskning
+                        {completedPasses.has("pass3") && completedPasses.has("pass4") && <span style={{ fontSize: 10, color: "#27864a", marginLeft: 6 }}>redan tillagd</span>}
+                      </div>
+                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>Stilgranskning + dramaturgi, karaktärer, scenbygge</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 2 }}>
+                        <span style={{ color: "#b8860b" }}>Gula</span> + <span style={{ color: "#27864a" }}>gröna</span> förslag
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {Math.ceil((reReviewSelectedChapters.size > 0 ? reReviewSelectedChapters.size : chapters.length) * 35 / 60)} min</div>
+                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>~0.80 kr/kap</div>
+                    </div>
+                  </button>
+                </div>
+                <button
+                  onClick={() => handleAddonReview(addonPasses)}
+                  style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
+                >
+                  {addonPasses.length === 2 ? "Starta stil + djupgranskning" : "Starta stilgranskning"}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
