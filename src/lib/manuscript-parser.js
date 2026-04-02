@@ -192,22 +192,18 @@ function splitIntoChapters(text) {
 
     if (content.length === 0) continue; // Skip empty chapters (heading-only)
 
-    // Extract chapter number from heading for proper ordering
-    let displayTitle = title;
+    // Extract chapter number from heading for proper ordering (don't change the title)
     let chapterNumber = i + 1; // fallback to parse order
 
-    // Check ordinal format: "Tjugoandra kapitlet" → Kapitel 22
+    // Check ordinal format: "Tjugoandra kapitlet" → number 22
     const ordinalMatch = title.match(new RegExp(`^(${SWEDISH_ORDINALS})\\s+kapitlet`, 'i'));
     if (ordinalMatch) {
       const num = ordinalToNumber(ordinalMatch[1]);
-      if (num) {
-        displayTitle = `Kapitel ${num}`;
-        chapterNumber = num;
-      }
+      if (num) chapterNumber = num;
     }
 
     // Check numeric format: "Kapitel 19" → number 19
-    const numericMatch = displayTitle.match(/(?:kapitel|chapter)\s+(\d+)/i);
+    const numericMatch = title.match(/(?:kapitel|chapter)\s+(\d+)/i);
     if (numericMatch) {
       chapterNumber = parseInt(numericMatch[1], 10);
     }
@@ -215,8 +211,7 @@ function splitIntoChapters(text) {
     chapters.push({
       id: chapterNumber,
       number: chapterNumber,
-      title: displayTitle,
-      originalTitle: title,
+      title: title,
       content,
       wordCount: countWords(content),
       status: 'pending',
