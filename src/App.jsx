@@ -4288,11 +4288,14 @@ export default function App() {
   const [reReviewMode, setReReviewMode] = useState("full"); // "full" (new review) or "addon" (add passes)
   const [addonPasses, setAddonPasses] = useState(["pass3"]); // which passes to add in addon mode
   const [completedPasses, setCompletedPasses] = useState(new Set()); // tracks which passes have been run
+  const [savedSinceLastReview, setSavedSinceLastReview] = useState(false); // true after user saves new version
 
   const handleReReview = async (level) => {
     if (reReviewing || batchAnalyzing) return;
     setShowReReviewModal(false);
     setReReviewing(true);
+    setSavedSinceLastReview(false); // Reset — new review cycle starts
+    setCompletedPasses(new Set()); // Reset completed addon passes
     const useLevel = level || reReviewLevel;
 
     // Archive current review round (only if there are existing suggestions)
@@ -5410,14 +5413,31 @@ export default function App() {
             </span>
           )}
           <button onClick={() => { if (window.confirm("Vill du börja om med ett nytt manus? Allt osparat arbete försvinner.")) handleStartFresh(); }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: muted, cursor: "pointer", fontWeight: 500 }}>Nytt manus</button>
-          {/* Review button */}
+          {/* Review button — only allow full re-review after saving new version */}
           <button
-            onClick={() => (reReviewing || addonReviewing) ? null : setShowReReviewModal(true)}
+            onClick={() => {
+              if (reReviewing || addonReviewing) return;
+              if (!savedSinceLastReview && globalAllSuggestions.length > 0) {
+                // Not saved yet — tell user to handle suggestions and save first
+                if (globalPendingCount > 0) {
+                  alert("Gå igenom alla förslag först, spara sedan som ny version innan du gör en ny granskning.");
+                } else {
+                  alert("Spara som ny version innan du gör en ny granskning. Då analyseras det uppdaterade manuset.");
+                }
+                return;
+              }
+              setShowReReviewModal(true);
+            }}
             disabled={reReviewing || addonReviewing}
+            title={!savedSinceLastReview && globalAllSuggestions.length > 0 ? "Spara som ny version först" : "Starta ny grundgranskning"}
             style={{
-              fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7, cursor: (reReviewing || addonReviewing) ? "default" : "pointer",
-              border: `1px solid ${border}`, background: (reReviewing || addonReviewing) ? "#e8ddd2" : surface, color: (reReviewing || addonReviewing) ? muted : ink, fontWeight: 500,
-              display: "flex", alignItems: "center", gap: 4,
+              fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7,
+              cursor: (reReviewing || addonReviewing) ? "default" : "pointer",
+              border: `1px solid ${border}`,
+              background: (reReviewing || addonReviewing) ? "#e8ddd2" : surface,
+              color: (reReviewing || addonReviewing) ? muted : (!savedSinceLastReview && globalAllSuggestions.length > 0) ? muted : ink,
+              fontWeight: 500, display: "flex", alignItems: "center", gap: 4,
+              opacity: (!savedSinceLastReview && globalAllSuggestions.length > 0 && !reReviewing && !addonReviewing) ? 0.6 : 1,
             }}
           >
             {(reReviewing || addonReviewing) ? "Granskar..." : `↻ Granska`}
@@ -6269,37 +6289,65 @@ export default function App() {
               </button>
             </div>
 
-            {/* Secondary actions */}
-            <div style={{ borderTop: `1px solid ${border}`, paddingTop: 16, display: "flex", gap: 10 }}>
+            {/* Save & export actions */}
+            <div style={{ borderTop: `1px solid ${border}`, paddingTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* Save as new version — prominent action */}
               <button onClick={async () => {
-                setShowCompletionModal(false);
                 try {
                   const date = new Date().toLocaleDateString("sv-SE");
                   const versionName = `${uploadedFile?.name?.replace(/\.[^.]+$/, '') || 'Manus'} – version ${date}`;
                   const res = await apiClient.duplicateProject(serverProjectId, versionName);
-                  if (res?.project?.id) alert(`Ny version sparad: "${versionName}"`);
+                  if (res?.project?.id) {
+                    setSavedSinceLastReview(true);
+                    alert(`Ny version sparad: "${versionName}"\n\nDu kan nu göra en ny granskning av det uppdaterade manuset.`);
+                  }
                 } catch (e) {
                   console.error("Save version failed:", e);
                   alert("Kunde inte spara version.");
                 }
               }} style={{
-                flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: ink,
-                fontSize: 11.5, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
+                width: "100%", padding: "12px 0", borderRadius: 9, border: `1px solid ${border}`,
+                background: savedSinceLastReview ? "#dcfce7" : surface, color: ink,
+                fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}>
-                Spara version
+                {savedSinceLastReview ? "✓ Version sparad" : "Spara som ny version"}
               </button>
-              <button onClick={() => { setShowCompletionModal(false); setShowExport(true); }} style={{
-                flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: ink,
-                fontSize: 11.5, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
-              }}>
-                Exportera
-              </button>
-              <button onClick={() => setShowCompletionModal(false)} style={{
-                flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: muted,
-                fontSize: 11.5, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
-              }}>
-                Stäng
-              </button>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => { setShowCompletionModal(false); setShowExport(true); }} style={{
+                  flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: ink,
+                  fontSize: 11.5, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
+                }}>
+                  Exportera
+                </button>
+
+                {/* Ny granskning — only enabled after saving */}
+                {savedSinceLastReview && (
+                  <button onClick={() => {
+                    setShowCompletionModal(false);
+                    setShowReReviewModal(true);
+                  }} style={{
+                    flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${accent}`, background: accentLight, color: accent,
+                    fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
+                  }}>
+                    ↻ Ny granskning
+                  </button>
+                )}
+
+                <button onClick={() => setShowCompletionModal(false)} style={{
+                  flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: muted,
+                  fontSize: 11.5, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
+                }}>
+                  Stäng
+                </button>
+              </div>
+
+              {!savedSinceLastReview && (
+                <p style={{ fontFamily: uiFont, fontSize: 10, color: muted, margin: "4px 0 0", textAlign: "center", fontStyle: "italic" }}>
+                  Spara som ny version innan du gör en ny granskning — då analyseras det uppdaterade manuset.
+                </p>
+              )}
             </div>
           </div>
         </div>
