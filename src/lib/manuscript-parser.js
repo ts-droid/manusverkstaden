@@ -160,12 +160,6 @@ function splitIntoChapters(text) {
   // Fix 2: Decade prefix on own line — "TJUGO\nTREDJE KAPITLET" → "TJUGO TREDJE KAPITLET"
   normalized = normalized.replace(/\b(tjugo|trettio|fyrtio|femtio|sextio|sjuttio|[åa]ttio|nittio)\s*\n\s*(?=\S+\s+kapitlet)/gi, '$1 ');
   // Fix 3: Rejoin decade ordinals broken mid-word — "TRET\nTIONDE" or "TRETT\nIONDE" → "TRETTIONDE"
-  // Debug: find the chapter 30 heading area by searching for TIONDE KAPITLET after pos 80000
-  const tiondeIdx = normalized.indexOf('TIONDE KAPITLET', 80000);
-  if (tiondeIdx > 0) {
-    const slice = normalized.slice(tiondeIdx - 15, tiondeIdx + 20);
-    console.log('[Parser Fix3 debug] 30 chars before+after TIONDE KAPITLET:', [...slice].map((c,i) => `${i}:'${c}'(${c.charCodeAt(0)})`).join(' '));
-  }
   normalized = normalized.replace(/(trett?|fyrt?|femt?|sext?|sjutt?|[åa]tt?|nitt?)\s*\n\s*(t?i?onde\s+kapitlet)/gi, '$1$2');
   // Fix 3b: General word fragment on own line before KAPITLET
   normalized = normalized.replace(/\n\s*(\w{2,7})\s*\n\s*(\w+\s+kapitlet)/gi, '\n$1$2');
@@ -174,7 +168,8 @@ function splitIntoChapters(text) {
 
   // Pre-process: ensure chapter headings get their own line.
   // Mammoth/PDF extractors may merge headings with body text, losing the \n boundary.
-  const chapterWordPattern = new RegExp(`([^\\n])((?:${SWEDISH_ORDINALS})\\s+kapitlet)`, 'gi');
+  // Only match when preceded by a non-letter (prevents breaking compound ordinals like "TRETTIONDE")
+  const chapterWordPattern = new RegExp(`([^\\na-zA-ZåäöÅÄÖ])((?:${SWEDISH_ORDINALS})\\s+kapitlet)`, 'gi');
   normalized = normalized
     .replace(/([^\n])(KAPITEL\s+\d+)/gi, '$1\n$2')
     .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2')
@@ -195,14 +190,7 @@ function splitIntoChapters(text) {
   let bestSplits = [...numericMatches, ...ordinalMatches];
   bestSplits.sort((a, b) => a.index - b.index);
 
-  // Debug: find ALL occurrences of "KAPITLET" to see what we're missing
-  const kapitletPositions = [...normalized.matchAll(/kapitlet/gi)];
-  console.log(`[Parser] Found ${numericMatches.length} numeric + ${ordinalMatches.length} ordinal = ${bestSplits.length} chapter headings (${kapitletPositions.length} total KAPITLET occurrences)`);
-  kapitletPositions.forEach(m => {
-    const ctx = normalized.slice(Math.max(0, m.index - 40), m.index + 10).replace(/\n/g, '\\n');
-    console.log(`  KAPITLET @ ${m.index}: "...${ctx}"`);
-  });
-  bestSplits.forEach((m, i) => console.log(`  [${i}] "${m[1]?.trim().slice(0, 50)}" @ pos ${m.index}`));
+  console.log(`[Parser] Found ${numericMatches.length} numeric + ${ordinalMatches.length} ordinal = ${bestSplits.length} chapter headings`);
 
   // Fallback patterns if no chapter-style matches found
   if (bestSplits.length < 2) {
@@ -239,10 +227,7 @@ function splitIntoChapters(text) {
       : normalized.length;
     const content = normalized.slice(start, end).trim();
 
-    if (content.length === 0) {
-      console.log(`[Parser] Skipping empty chapter: "${title.slice(0, 50)}"`);
-      continue;
-    }
+    if (content.length === 0) continue; // Skip empty chapters (heading-only)
 
     // Extract chapter number from heading for proper ordering
     let chapterNumber = i + 1; // fallback to parse order
@@ -286,7 +271,7 @@ function splitIntoChapters(text) {
   for (const ch of chapters) {
     const existing = deduped.find(d => d.number === ch.number);
     if (existing) {
-      console.log(`[Parser] Dedup: chapter ${ch.number} duplicate — keeping ${ch.wordCount > existing.wordCount ? 'new' : 'existing'} (${ch.wordCount} vs ${existing.wordCount} words)`);
+      // Keep the one with more content (handles TOC entries that duplicate real chapters)
       if (ch.wordCount > existing.wordCount) {
         deduped[deduped.indexOf(existing)] = ch;
       }
