@@ -160,6 +160,12 @@ function splitIntoChapters(text) {
   // Fix 2: Decade prefix on own line — "TJUGO\nTREDJE KAPITLET" → "TJUGO TREDJE KAPITLET"
   normalized = normalized.replace(/\b(tjugo|trettio|fyrtio|femtio|sextio|sjuttio|[åa]ttio|nittio)\s*\n\s*(?=\S+\s+kapitlet)/gi, '$1 ');
   // Fix 3: Rejoin decade ordinals broken mid-word — "TRET\nTIONDE" or "TRETT\nIONDE" → "TRETTIONDE"
+  // Debug: dump char codes around "TRET" to find hidden characters
+  const tretIdx = normalized.search(/tret\s/i);
+  if (tretIdx > 0) {
+    const slice = normalized.slice(tretIdx, tretIdx + 25);
+    console.log('[Parser Fix3 debug] chars around TRET:', [...slice].map((c,i) => `${i}:${c}(${c.charCodeAt(0)})`).join(' '));
+  }
   normalized = normalized.replace(/(trett?|fyrt?|femt?|sext?|sjutt?|[åa]tt?|nitt?)\s*\n\s*(t?i?onde\s+kapitlet)/gi, '$1$2');
   // Fix 3b: General word fragment on own line before KAPITLET
   normalized = normalized.replace(/\n\s*(\w{2,7})\s*\n\s*(\w+\s+kapitlet)/gi, '\n$1$2');
