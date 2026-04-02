@@ -160,7 +160,8 @@ function splitIntoChapters(text) {
   // Fix 2: Decade prefix on own line — "TJUGO\nTREDJE KAPITLET" → "TJUGO TREDJE KAPITLET"
   normalized = normalized.replace(/\b(tjugo|trettio|fyrtio|femtio|sextio|sjuttio|[åa]ttio|nittio)\s*\n\s*(?=\S+\s+kapitlet)/gi, '$1 ');
   // Fix 3: Word fragment on own line — "TRET\nTIONDE KAPITLET" → "TRETTIONDE KAPITLET"
-  normalized = normalized.replace(/\n(\w{2,7})\n(\w+\s+kapitlet)/gi, '\n$1$2');
+  // Allow optional whitespace around fragment (mammoth may leave trailing spaces)
+  normalized = normalized.replace(/\n\s*(\w{2,7})\s*\n\s*(\w+\s+kapitlet)/gi, '\n$1$2');
   // Fix 4: Hyphenated word break — "TRET-\nTIONDE KAPITLET" → "TRETTIONDE KAPITLET"
   normalized = normalized.replace(/(\w+)-\n(\w+\s+kapitlet)/gi, '$1$2');
 
