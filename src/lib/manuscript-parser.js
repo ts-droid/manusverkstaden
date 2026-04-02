@@ -154,10 +154,14 @@ function splitIntoChapters(text) {
     return map[w] || null;
   };
 
-  // Pre-process: rejoin ordinal words split across lines by mammoth/PDF extraction
-  // Case 1: Decade prefix on own line — "TJUGO\nTREDJE KAPITLET" → "TJUGO TREDJE KAPITLET"
+  // Pre-process: fix mammoth/PDF extraction artifacts in chapter headings
+  // Fix 1: Insert space before KAPITLET when directly preceded by a letter — "TJUGOTREDJEKAPITLET" → "TJUGOTREDJE KAPITLET"
+  normalized = normalized.replace(/([a-zåäö])(kapitlet)/gi, '$1 $2');
+  // Fix 2: Decade prefix on own line — "TJUGO\nTREDJE KAPITLET" → "TJUGO TREDJE KAPITLET"
   normalized = normalized.replace(/\b(tjugo|trettio|fyrtio|femtio|sextio|sjuttio|[åa]ttio|nittio)\s*\n\s*(?=\S+\s+kapitlet)/gi, '$1 ');
-  // Case 2: Hyphenated word break — "TRET-\nTIONDE KAPITLET" → "TRETTIONDE KAPITLET"
+  // Fix 3: Word fragment on own line — "TRET\nTIONDE KAPITLET" → "TRETTIONDE KAPITLET"
+  normalized = normalized.replace(/\n(\w{2,7})\n(\w+\s+kapitlet)/gi, '\n$1$2');
+  // Fix 4: Hyphenated word break — "TRET-\nTIONDE KAPITLET" → "TRETTIONDE KAPITLET"
   normalized = normalized.replace(/(\w+)-\n(\w+\s+kapitlet)/gi, '$1$2');
 
   // Pre-process: ensure chapter headings get their own line.
