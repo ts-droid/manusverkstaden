@@ -192,28 +192,36 @@ function splitIntoChapters(text) {
 
     if (content.length === 0) continue; // Skip empty chapters (heading-only)
 
-    // Extract chapter number from heading for proper ordering (don't change the title)
+    // Extract chapter number from heading for proper ordering
     let chapterNumber = i + 1; // fallback to parse order
+    let displayTitle = `Kapitel ${i + 1}`; // sidebar label
 
     // Check ordinal format: "Tjugoandra kapitlet" → number 22
     const ordinalMatch = title.match(new RegExp(`^(${SWEDISH_ORDINALS})\\s+kapitlet`, 'i'));
     if (ordinalMatch) {
       const num = ordinalToNumber(ordinalMatch[1]);
-      if (num) chapterNumber = num;
+      if (num) {
+        chapterNumber = num;
+        displayTitle = `Kapitel ${num}`;
+      }
     }
 
     // Check numeric format: "Kapitel 19" → number 19
     const numericMatch = title.match(/(?:kapitel|chapter)\s+(\d+)/i);
     if (numericMatch) {
       chapterNumber = parseInt(numericMatch[1], 10);
+      displayTitle = `Kapitel ${chapterNumber}`;
     }
+
+    // Include original heading in content so the manuscript text is unmodified
+    const fullContent = title + '\n\n' + content;
 
     chapters.push({
       id: chapterNumber,
       number: chapterNumber,
-      title: title,
-      content,
-      wordCount: countWords(content),
+      title: displayTitle,
+      content: fullContent,
+      wordCount: countWords(fullContent),
       status: 'pending',
     });
   }
