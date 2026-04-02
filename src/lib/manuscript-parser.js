@@ -154,6 +154,12 @@ function splitIntoChapters(text) {
     return map[w] || null;
   };
 
+  // Pre-process: rejoin ordinal words split across lines by mammoth/PDF extraction
+  // Case 1: Decade prefix on own line — "TJUGO\nTREDJE KAPITLET" → "TJUGO TREDJE KAPITLET"
+  normalized = normalized.replace(/\b(tjugo|trettio|fyrtio|femtio|sextio|sjuttio|[åa]ttio|nittio)\s*\n\s*(?=\S+\s+kapitlet)/gi, '$1 ');
+  // Case 2: Hyphenated word break — "TRET-\nTIONDE KAPITLET" → "TRETTIONDE KAPITLET"
+  normalized = normalized.replace(/(\w+)-\n(\w+\s+kapitlet)/gi, '$1$2');
+
   // Pre-process: ensure chapter headings get their own line.
   // Mammoth/PDF extractors may merge headings with body text, losing the \n boundary.
   const chapterWordPattern = new RegExp(`([^\\n])((?:${SWEDISH_ORDINALS})\\s+kapitlet)`, 'gi');
