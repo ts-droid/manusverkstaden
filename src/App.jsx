@@ -4988,11 +4988,11 @@ export default function App() {
   // Show completion modal when all suggestions are handled
   const prevPendingRef = useRef(globalPendingCount);
   useEffect(() => {
-    if (prevPendingRef.current > 0 && globalPendingCount === 0 && manuscriptFullyHandled && !reReviewing && !batchAnalyzing) {
+    if (prevPendingRef.current > 0 && globalPendingCount === 0 && manuscriptFullyHandled && !reReviewing && !batchAnalyzing && !addonReviewing) {
       setShowCompletionModal(true);
     }
     prevPendingRef.current = globalPendingCount;
-  }, [globalPendingCount, manuscriptFullyHandled, reReviewing, batchAnalyzing]);
+  }, [globalPendingCount, manuscriptFullyHandled, reReviewing, batchAnalyzing, addonReviewing]);
 
   // ─── RENDER ───
 
@@ -6106,41 +6106,21 @@ export default function App() {
         />
       )}
 
-      {/* RE-REVIEW MODAL */}
+      {/* RE-REVIEW MODAL — simplified: chapter selection + grundgranskning */}
       {showReReviewModal && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div onClick={() => setShowReReviewModal(false)} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
           <div style={{ position: "relative", background: surface, borderRadius: 16, width: 480, boxShadow: "0 24px 80px rgba(0,0,0,0.18)", padding: "28px 32px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>
-                {reReviewMode === "addon" ? "Lägg till analys" : "Ny granskning"}
-              </h3>
+              <h3 style={{ fontFamily: font, fontSize: 19, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Grundgranskning</h3>
               <button onClick={() => setShowReReviewModal(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted, padding: 4 }}>✕</button>
             </div>
-
-            {/* Mode toggle */}
-            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderRadius: 8, overflow: "hidden", border: `1px solid ${border}` }}>
-              <button onClick={() => setReReviewMode("full")} style={{
-                flex: 1, padding: "8px 0", fontFamily: uiFont, fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none",
-                background: reReviewMode === "full" ? accent : surface, color: reReviewMode === "full" ? "#fff" : ink,
-                transition: "all 0.15s",
-              }}>Ny granskning</button>
-              <button onClick={() => setReReviewMode("addon")} style={{
-                flex: 1, padding: "8px 0", fontFamily: uiFont, fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none",
-                borderLeft: `1px solid ${border}`,
-                background: reReviewMode === "addon" ? accent : surface, color: reReviewMode === "addon" ? "#fff" : ink,
-                transition: "all 0.15s",
-              }}>Lägg till analys</button>
-            </div>
-
             <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 16px", lineHeight: 1.5 }}>
-              {reReviewMode === "addon"
-                ? "Lägg till stilgranskning eller djupgranskning till redan granskade kapitel. Befintliga förslag behålls."
-                : "Godkända ändringar behålls i texten. Redan hanterade förslag filtreras bort."}
+              Hittar stavfel, grammatik och språkliga problem. Godkända ändringar behålls i texten.
             </p>
 
             {/* Chapter selection */}
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink }}>Kapitel att granska</span>
                 <button onClick={() => {
@@ -6154,7 +6134,7 @@ export default function App() {
                   {reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.size === chapters.length ? "Avmarkera alla" : "Alla kapitel"}
                 </button>
               </div>
-              <div style={{ maxHeight: 150, overflowY: "auto", border: `1px solid ${border}`, borderRadius: 8, padding: "4px 0" }}>
+              <div style={{ maxHeight: 180, overflowY: "auto", border: `1px solid ${border}`, borderRadius: 8, padding: "4px 0" }}>
                 {chapters.map(ch => {
                   const isSelected = reReviewSelectedChapters.size === 0 || reReviewSelectedChapters.has(ch.id);
                   const hasSuggestions = (paragraphsByChapter[ch.id] || []).some(p => p.suggestions?.length > 0);
@@ -6188,158 +6168,137 @@ export default function App() {
               </div>
             </div>
 
-            {reReviewMode === "full" ? (
-              <>
-                {/* Analysis level (full mode) */}
-                <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 8 }}>Analysnivå</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-                  {Object.values(ANALYSIS_LEVELS).map(lvl => {
-                    const active = reReviewLevel === lvl.id;
-                    const selectedChapters = reReviewSelectedChapters.size > 0 && !reReviewSelectedChapters.has("__none__") ? reReviewSelectedChapters.size : chapters.length;
-                    const estMinutes = Math.ceil(selectedChapters * lvl.estimatePerChapter / 60);
-                    return (
-                      <button key={lvl.id} onClick={() => setReReviewLevel(lvl.id)} style={{
-                        padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
-                        border: active ? `2px solid ${accent}` : `1px solid ${border}`,
-                        background: active ? accentLight : surface, display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
-                      }}>
-                        <span style={{ fontSize: 20 }}>{lvl.icon}</span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>{lvl.label}</div>
-                          <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>{lvl.description}</div>
-                          <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 2, fontStyle: "italic" }}>{lvl.passes}</div>
-                        </div>
-                        <div style={{ textAlign: "right", flexShrink: 0 }}>
-                          <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {estMinutes} min</div>
-                          <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>{lvl.costPerChapter}/kap</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  onClick={() => handleReReview(reReviewLevel)}
-                  style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
-                >
-                  Starta {ANALYSIS_LEVELS[reReviewLevel].label.toLowerCase()}
-                </button>
-              </>
-            ) : (
-              <>
-                {/* Addon mode — choose passes to add */}
-                <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 8 }}>Välj analys att lägga till</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-                  {/* Pass 3: Style analysis */}
-                  <button onClick={() => setAddonPasses(["pass3"])} style={{
-                    padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
-                    border: addonPasses.length === 1 && addonPasses[0] === "pass3" ? `2px solid ${accent}` : `1px solid ${border}`,
-                    background: addonPasses.length === 1 && addonPasses[0] === "pass3" ? accentLight : surface,
-                    display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
-                    opacity: completedPasses.has("pass3") ? 0.5 : 1,
-                  }}>
-                    <span style={{ fontSize: 20 }}>✦</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>
-                        Stilgranskning
-                        {completedPasses.has("pass3") && <span style={{ fontSize: 10, color: "#27864a", marginLeft: 6 }}>redan tillagd</span>}
-                      </div>
-                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>Ordupprepningar, stilbrott, tempo, klichéer</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 9, color: "#b8860b", marginTop: 2 }}>Gula förslag (bör övervägas)</div>
-                    </div>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {Math.ceil((reReviewSelectedChapters.size > 0 ? reReviewSelectedChapters.size : chapters.length) * 15 / 60)} min</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>~0.40 kr/kap</div>
-                    </div>
-                  </button>
+            {/* Info box about the review pipeline */}
+            <div style={{ background: "#f7f4ef", borderRadius: 8, padding: "10px 14px", marginBottom: 20, border: `1px solid ${border}` }}>
+              <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 600, marginBottom: 4 }}>Granskningspipeline</div>
+              <div style={{ fontFamily: uiFont, fontSize: 10, color: muted, lineHeight: 1.6 }}>
+                1. Genomsökning — hittar stavfel, grammatik och uppenbara problem<br />
+                2. DNA-verifiering — kontrollerar mot författarens stilprofil<br />
+                3. Validering — filtrerar bort falska positiver<br />
+                <span style={{ color: ink, fontStyle: "italic", marginTop: 4, display: "inline-block" }}>
+                  Efter granskningen kan du fördjupa med stil- och djupgranskning.
+                </span>
+              </div>
+            </div>
 
-                  {/* Pass 3 + 4: Style + Deep */}
-                  <button onClick={() => setAddonPasses(["pass3", "pass4"])} style={{
-                    padding: "12px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
-                    border: addonPasses.length === 2 ? `2px solid ${accent}` : `1px solid ${border}`,
-                    background: addonPasses.length === 2 ? accentLight : surface,
-                    display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
-                    opacity: completedPasses.has("pass3") && completedPasses.has("pass4") ? 0.5 : 1,
-                  }}>
-                    <span style={{ fontSize: 20 }}>◈</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: uiFont, fontSize: 12.5, fontWeight: 600, color: ink }}>
-                        Stil + djupgranskning
-                        {completedPasses.has("pass3") && completedPasses.has("pass4") && <span style={{ fontSize: 10, color: "#27864a", marginLeft: 6 }}>redan tillagd</span>}
-                      </div>
-                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: muted, marginTop: 1 }}>Stilgranskning + dramaturgi, karaktärer, scenbygge</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 9, color: muted, marginTop: 2 }}>
-                        <span style={{ color: "#b8860b" }}>Gula</span> + <span style={{ color: "#27864a" }}>gröna</span> förslag
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {Math.ceil((reReviewSelectedChapters.size > 0 ? reReviewSelectedChapters.size : chapters.length) * 35 / 60)} min</div>
-                      <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>~0.80 kr/kap</div>
-                    </div>
-                  </button>
-                </div>
-                <button
-                  onClick={() => handleAddonReview(addonPasses)}
-                  style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
-                >
-                  {addonPasses.length === 2 ? "Starta stil + djupgranskning" : "Starta stilgranskning"}
-                </button>
-              </>
-            )}
+            <button
+              onClick={() => handleReReview("basic")}
+              style={{ width: "100%", padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont }}
+            >
+              Starta grundgranskning
+            </button>
           </div>
         </div>
       )}
 
-      {/* COMPLETION MODAL - all suggestions handled */}
+      {/* COMPLETION MODAL - all suggestions handled → offer deeper analysis */}
       {showCompletionModal && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div onClick={() => setShowCompletionModal(false)} style={{ position: "absolute", inset: 0, background: "rgba(26,20,16,0.45)", backdropFilter: "blur(4px)" }} />
-          <div style={{ position: "relative", background: surface, borderRadius: 16, width: 460, boxShadow: "0 24px 80px rgba(0,0,0,0.18)", padding: "32px 36px", textAlign: "center" }}>
+          <div style={{ position: "relative", background: surface, borderRadius: 16, width: 500, boxShadow: "0 24px 80px rgba(0,0,0,0.18)", padding: "32px 36px" }}>
             <button onClick={() => setShowCompletionModal(false)} style={{ position: "absolute", top: 12, right: 16, background: "none", border: "none", fontSize: 18, cursor: "pointer", color: muted }}>✕</button>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
-            <h3 style={{ fontFamily: font, fontSize: 22, fontWeight: 700, color: ink, margin: "0 0 8px", letterSpacing: "-0.02em" }}>
-              Alla förslag hanterade!
-            </h3>
-            <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 6px", lineHeight: 1.5 }}>
-              Du har gått igenom alla {globalAllSuggestions.length} förslag i manuskriptet.
+            <div style={{ textAlign: "center", marginBottom: 20 }}>
+              <div style={{ fontSize: 42, marginBottom: 10 }}>✓</div>
+              <h3 style={{ fontFamily: font, fontSize: 20, fontWeight: 700, color: ink, margin: "0 0 6px", letterSpacing: "-0.02em" }}>
+                Grundgranskning klar!
+              </h3>
+              <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: 0, lineHeight: 1.5 }}>
+                {globalAllSuggestions.filter(s => accepted.has(s.id)).length} godkända · {globalAllSuggestions.filter(s => rejected.has(s.id)).length} avvisade av {globalAllSuggestions.length} förslag
+              </p>
+            </div>
+
+            {/* Deeper analysis options */}
+            <div style={{ fontFamily: uiFont, fontSize: 12, fontWeight: 600, color: ink, marginBottom: 10 }}>Vill du fördjupa granskningen?</div>
+            <p style={{ fontFamily: uiFont, fontSize: 11, color: muted, margin: "0 0 14px", lineHeight: 1.5 }}>
+              Befintliga ändringar behålls. Nya förslag läggs till ovanpå — validerade mot dina scener och DNA-profilen.
             </p>
-            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 24px", lineHeight: 1.5 }}>
-              {globalAllSuggestions.filter(s => accepted.has(s.id)).length} godkända · {globalAllSuggestions.filter(s => rejected.has(s.id)).length} avvisade
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+              {/* Option 1: Style & Structure (pass 3) */}
+              <button onClick={() => {
+                setShowCompletionModal(false);
+                setAddonPasses(["pass3"]);
+                handleAddonReview(["pass3"]);
+              }} style={{
+                padding: "14px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                border: `1px solid ${border}`, background: surface,
+                display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
+                opacity: completedPasses.has("pass3") ? 0.5 : 1,
+              }}>
+                <span style={{ fontSize: 22, width: 32, textAlign: "center" }}>✦</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>
+                    Korrektur, stil & struktur
+                    {completedPasses.has("pass3") && <span style={{ fontSize: 10, color: "#27864a", marginLeft: 6 }}>redan genomförd</span>}
+                  </div>
+                  <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>Ordupprepningar, stilbrott, tempo, klichéer, svaga scener</div>
+                  <div style={{ fontFamily: uiFont, fontSize: 10, color: "#b8860b", marginTop: 3 }}>Gula förslag — bör övervägas</div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {Math.ceil(chapters.length * 15 / 60)} min</div>
+                  <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>~0.40 kr/kap</div>
+                </div>
+              </button>
+
+              {/* Option 2: Deep editorial (pass 3 + pass 4) */}
+              <button onClick={() => {
+                setShowCompletionModal(false);
+                setAddonPasses(["pass3", "pass4"]);
+                handleAddonReview(["pass3", "pass4"]);
+              }} style={{
+                padding: "14px 16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                border: `2px solid ${accent}`, background: accentLight,
+                display: "flex", gap: 12, alignItems: "center", transition: "all 0.15s",
+                opacity: completedPasses.has("pass3") && completedPasses.has("pass4") ? 0.5 : 1,
+              }}>
+                <span style={{ fontSize: 22, width: 32, textAlign: "center" }}>◈</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>
+                    Grundlig redaktionell granskning
+                    {completedPasses.has("pass3") && completedPasses.has("pass4") && <span style={{ fontSize: 10, color: "#27864a", marginLeft: 6 }}>redan genomförd</span>}
+                  </div>
+                  <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 2 }}>Allt ovan + dramaturgi, tematik, karaktärsutveckling, scenbygge</div>
+                  <div style={{ fontFamily: uiFont, fontSize: 10, color: muted, marginTop: 3 }}>
+                    <span style={{ color: "#b8860b" }}>Gula</span> + <span style={{ color: "#27864a" }}>gröna</span> förslag — rekommenderas
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontFamily: uiFont, fontSize: 10.5, color: ink, fontWeight: 500 }}>ca {Math.ceil(chapters.length * 35 / 60)} min</div>
+                  <div style={{ fontFamily: uiFont, fontSize: 9.5, color: muted }}>~0.80 kr/kap</div>
+                </div>
+              </button>
+            </div>
+
+            {/* Secondary actions */}
+            <div style={{ borderTop: `1px solid ${border}`, paddingTop: 16, display: "flex", gap: 10 }}>
               <button onClick={async () => {
-                // Save as new version (duplicate project)
                 setShowCompletionModal(false);
                 try {
                   const date = new Date().toLocaleDateString("sv-SE");
-                  const versionName = `${chapters[0]?.title ? uploadedFile?.name?.replace(/\.[^.]+$/, '') || 'Manus' : 'Manus'} – version ${date}`;
+                  const versionName = `${uploadedFile?.name?.replace(/\.[^.]+$/, '') || 'Manus'} – version ${date}`;
                   const res = await apiClient.duplicateProject(serverProjectId, versionName);
-                  if (res?.project?.id) {
-                    alert(`Ny version sparad: "${versionName}"`);
-                  }
+                  if (res?.project?.id) alert(`Ny version sparad: "${versionName}"`);
                 } catch (e) {
                   console.error("Save version failed:", e);
-                  alert("Kunde inte spara version. Exportera istället.");
+                  alert("Kunde inte spara version.");
                 }
               }} style={{
-                padding: "13px 0", borderRadius: 9, border: `1px solid ${border}`, background: surface, color: ink,
-                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: ink,
+                fontSize: 11.5, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
               }}>
-                📋 Spara som ny version
+                Spara version
               </button>
               <button onClick={() => { setShowCompletionModal(false); setShowExport(true); }} style={{
-                padding: "13px 0", borderRadius: 9, border: `1px solid ${border}`, background: surface, color: ink,
-                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: ink,
+                fontSize: 11.5, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
               }}>
-                📄 Exportera
+                Exportera
               </button>
-              <button onClick={() => { setShowCompletionModal(false); setShowReReviewModal(true); }} style={{
-                padding: "13px 0", borderRadius: 9, border: "none", background: accent, color: "#fff",
-                fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: uiFont,
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              <button onClick={() => setShowCompletionModal(false)} style={{
+                flex: 1, padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`, background: surface, color: muted,
+                fontSize: 11.5, fontWeight: 500, cursor: "pointer", fontFamily: uiFont,
               }}>
-                ↻ Gör ny granskning
+                Stäng
               </button>
             </div>
           </div>
