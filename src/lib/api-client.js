@@ -165,6 +165,13 @@ class ApiClient {
     });
   }
 
+  async reviewChapterAddon(chapterId, projectId, passes = ['pass3']) {
+    return this.request('/ai/review-addon', {
+      method: 'POST',
+      body: JSON.stringify({ chapterId, projectId, passes }),
+    });
+  }
+
   async generateDNAProfile(projectId) {
     return this.request('/ai/dna-profile', {
       method: 'POST',

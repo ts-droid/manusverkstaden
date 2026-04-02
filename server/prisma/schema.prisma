@@ -41,6 +41,8 @@ model User {
   disabled             Boolean       @default(false)
   stripeCustomerId     String?       @unique
   stripeSubscriptionId String?
+  authorDna            Json?         // Cumulative author style DNA — grows stronger with each manuscript
+  authorDnaVersion     Int           @default(0) // Incremented each time authorDna is updated
   projects             Project[]
   usageRecords         UsageRecord[]
   createdAt            DateTime      @default(now())
@@ -59,7 +61,8 @@ model Project {
   genres         String[]
   modules        String[]
   transLanguages String[]
-  dnaProfile     Json?
+  dnaProfile     Json?     // Legacy combined DNA (kept for backward compat)
+  storyDna       Json?     // Story-specific DNA: themes, dramaturgy, characters, plot structure
   userId         String
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   chapters       Chapter[]

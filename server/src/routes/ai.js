@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
-import { reviewChapter, reviewChapterMultiPass, generateDNAProfile, developText, translateText, finalCheck } from '../services/ai.js';
+import { reviewChapter, reviewChapterMultiPass, reviewChapterAddon, generateDNAProfile, developText, translateText, finalCheck } from '../services/ai.js';
 import { checkUsageLimit, recordUsage } from '../services/usage.js';
 
 const router = Router();
@@ -18,7 +18,7 @@ router.post('/review', async (req, res, next) => {
     // Verify ownership — include all chapters for allText and dnaProfile
     const chapter = await prisma.chapter.findUnique({
       where: { id: chapterId },
-      include: { project: { select: { userId: true, genres: true, modules: true, dnaProfile: true, chapters: { select: { content: true }, orderBy: { number: 'asc' } } } } },
+      include: { project: { select: { userId: true, genres: true, modules: true, dnaProfile: true, storyDna: true, chapters: { select: { content: true }, orderBy: { number: 'asc' } } } } },
     });
     if (!chapter || chapter.project.userId !== req.user.id) {
       return res.status(404).json({ error: 'Kapitlet hittades inte' });
@@ -43,6 +43,7 @@ router.post('/review', async (req, res, next) => {
       genres: chapter.project.genres,
       level,
       dnaProfile: existingDna,
+      storyDna: chapter.project.storyDna,
       allText,
     });
 
@@ -159,7 +160,7 @@ router.post('/review-multi', async (req, res, next) => {
 
     const chapter = await prisma.chapter.findFirst({
       where: { id: chapterId, project: { userId: req.user.id } },
-      include: { project: { include: { chapters: { orderBy: [{ number: 'asc' }, { createdAt: 'asc' }] } } } },
+      include: { project: { select: { id: true, genres: true, dnaProfile: true, storyDna: true, chapters: { orderBy: [{ number: 'asc' }, { createdAt: 'asc' }] } } } },
     });
     if (!chapter) return res.status(404).json({ error: 'Kapitlet hittades inte' });
 
@@ -180,6 +181,7 @@ router.post('/review-multi', async (req, res, next) => {
         genres: chapter.project.genres || [],
         level,
         dnaProfile: existingDna,
+        storyDna: chapter.project.storyDna,
         allText,
       }
     );
@@ -266,7 +268,117 @@ router.post('/review-multi', async (req, res, next) => {
   }
 });
 
-// ─── DNA PROFILE ───
+// ─── REVIEW ADDON (add pass 3/4 to already-reviewed chapter) ───
+router.post('/review-addon', async (req, res, next) => {
+  try {
+    const chapterId = String(req.body.chapterId);
+    const { projectId, passes = ['pass3'] } = req.body;
+
+    const chapter = await prisma.chapter.findFirst({
+      where: { id: chapterId, project: { userId: req.user.id } },
+      include: { project: { select: { id: true, genres: true, dnaProfile: true, storyDna: true, chapters: { orderBy: [{ number: 'asc' }, { createdAt: 'asc' }] } } } },
+    });
+    if (!chapter) return res.status(404).json({ error: 'Kapitlet hittades inte' });
+
+    const limit = await checkUsageLimit(req.user.id, 'review', chapter.wordCount || 0);
+    if (!limit.allowed) return res.status(429).json({ error: limit.reason, usage: limit });
+
+    // Update chapter status
+    await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWING' } });
+
+    // Get existing suggestions for context (so addon doesn't duplicate)
+    const existingSuggestions = await prisma.suggestion.findMany({ where: { chapterId } });
+    const existingDna = chapter.project.dnaProfile;
+
+    console.log(`[Review Addon] Running ${passes.join(', ')} for chapter ${chapterId} (${chapter.wordCount} words, DNA: ${existingDna ? 'yes' : 'no'})`);
+
+    // Run only the requested passes
+    const { result: suggestions, meta, passesRun } = await reviewChapterAddon(
+      chapter.content,
+      {
+        passes,
+        dnaProfile: existingDna,
+        storyDna: chapter.project.storyDna,
+        existingSuggestions: existingSuggestions.map(s => ({
+          original: s.original,
+          replacement: s.replacement,
+          reason: s.reason,
+          priority: s.priority,
+        })),
+        genres: chapter.project.genres || [],
+      }
+    );
+
+    console.log(`[Review Addon] ${passesRun.join(', ')}: ${suggestions.length} new suggestions for chapter ${chapterId}`);
+
+    // Dedup against existing suggestions
+    const existingOriginals = new Set(existingSuggestions.map(s => s.original?.trim().toLowerCase()).filter(Boolean));
+    const newSuggestions = suggestions.filter(s => {
+      const origKey = s.original?.trim().toLowerCase();
+      if (!origKey) return false;
+      if (existingOriginals.has(origKey)) return false;
+      for (const k of existingOriginals) {
+        if (origKey.includes(k) || k.includes(origKey)) return false;
+      }
+      return true;
+    });
+
+    // Internal dedup
+    const deduped = [];
+    for (const s of newSuggestions) {
+      const origKey = s.original?.trim().toLowerCase();
+      const isDup = deduped.some(e => {
+        const eKey = e.original?.trim().toLowerCase();
+        return eKey && origKey && (eKey.includes(origKey) || origKey.includes(eKey));
+      });
+      if (!isDup) deduped.push(s);
+    }
+
+    // Create new suggestions in DB
+    const created = await Promise.all(
+      deduped.map(s =>
+        prisma.suggestion.create({
+          data: {
+            chapterId,
+            type: s.type || 'style',
+            priority: s.priority || 'yellow',
+            level: s.level || 2,
+            original: s.original || '',
+            replacement: s.replacement || '',
+            reason: s.reason || '',
+            status: 'PENDING',
+          },
+        })
+      )
+    );
+
+    await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWED' } });
+
+    // Record usage
+    const passLabel = passes.includes('pass4') ? 'review-deep-addon' : 'review-standard-addon';
+    await recordUsage(req.user.id, passLabel, chapter.wordCount, meta);
+
+    // Return ALL suggestions (existing + new) so frontend has full picture
+    const allSuggestions = [...existingSuggestions, ...created];
+    res.json({
+      suggestions: allSuggestions,
+      passesRun,
+      stats: { total: allSuggestions.length, new: created.length, existing: existingSuggestions.length },
+    });
+  } catch (err) {
+    try {
+      const chapterId = String(req.body?.chapterId);
+      if (chapterId) {
+        await prisma.chapter.update({ where: { id: chapterId }, data: { status: 'REVIEWED' } });
+      }
+    } catch (resetErr) {
+      console.error('[Review Addon] Failed to reset status:', resetErr.message);
+    }
+    next(err);
+  }
+});
+
+// ─── DNA PROFILE (two-part: story DNA + author DNA) ───
 router.post('/dna-profile', async (req, res, next) => {
   try {
     const { projectId } = req.body;
@@ -277,6 +389,12 @@ router.post('/dna-profile', async (req, res, next) => {
     });
     if (!project) return res.status(404).json({ error: 'Projektet hittades inte' });
 
+    // Fetch existing author DNA for cumulative building
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { authorDna: true, authorDnaVersion: true },
+    });
+
     const totalWords = project.chapters.reduce((s, c) => s + c.wordCount, 0);
     const limit = await checkUsageLimit(req.user.id, 'dna_profile', totalWords);
     if (!limit.allowed) {
@@ -284,12 +402,39 @@ router.post('/dna-profile', async (req, res, next) => {
     }
 
     const allText = project.chapters.map(c => c.content).join('\n\n---\n\n');
-    const { result: profile, meta } = await generateDNAProfile(allText, { genres: project.genres });
+    const { storyDna, authorDna, result: combined, meta } = await generateDNAProfile(allText, {
+      genres: project.genres,
+      existingAuthorDna: user?.authorDna || null,
+    });
 
-    await prisma.project.update({ where: { id: projectId }, data: { dnaProfile: profile } });
+    // Save story DNA to project, combined profile for backward compat
+    await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        dnaProfile: combined,
+        storyDna: storyDna,
+      },
+    });
+
+    // Save/update cumulative author DNA on user
+    if (authorDna) {
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: {
+          authorDna: authorDna,
+          authorDnaVersion: (user?.authorDnaVersion || 0) + 1,
+        },
+      });
+    }
+
     await recordUsage(req.user.id, 'dna_profile', totalWords, meta);
 
-    res.json({ dnaProfile: profile });
+    res.json({
+      dnaProfile: combined,
+      storyDna,
+      authorDna,
+      authorDnaVersion: (user?.authorDnaVersion || 0) + 1,
+    });
   } catch (err) { next(err); }
 });
 
