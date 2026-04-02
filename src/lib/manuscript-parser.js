@@ -159,8 +159,9 @@ function splitIntoChapters(text) {
   normalized = normalized.replace(/([a-zåäö])(kapitlet)/gi, '$1 $2');
   // Fix 2: Decade prefix on own line — "TJUGO\nTREDJE KAPITLET" → "TJUGO TREDJE KAPITLET"
   normalized = normalized.replace(/\b(tjugo|trettio|fyrtio|femtio|sextio|sjuttio|[åa]ttio|nittio)\s*\n\s*(?=\S+\s+kapitlet)/gi, '$1 ');
-  // Fix 3: Word fragment on own line — "TRET\nTIONDE KAPITLET" → "TRETTIONDE KAPITLET"
-  // Allow optional whitespace around fragment (mammoth may leave trailing spaces)
+  // Fix 3: Rejoin decade ordinals broken mid-word — "TRET\nTIONDE" or "TRETT\nIONDE" → "TRETTIONDE"
+  normalized = normalized.replace(/(trett?|fyrt?|femt?|sext?|sjutt?|[åa]tt?|nitt?)\s*\n\s*(t?i?onde\s+kapitlet)/gi, '$1$2');
+  // Fix 3b: General word fragment on own line before KAPITLET
   normalized = normalized.replace(/\n\s*(\w{2,7})\s*\n\s*(\w+\s+kapitlet)/gi, '\n$1$2');
   // Fix 4: Hyphenated word break — "TRET-\nTIONDE KAPITLET" → "TRETTIONDE KAPITLET"
   normalized = normalized.replace(/(\w+)-\n(\w+\s+kapitlet)/gi, '$1$2');
