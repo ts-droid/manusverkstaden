@@ -183,7 +183,13 @@ function splitIntoChapters(text) {
   let bestSplits = [...numericMatches, ...ordinalMatches];
   bestSplits.sort((a, b) => a.index - b.index);
 
-  console.log(`[Parser] Found ${numericMatches.length} numeric + ${ordinalMatches.length} ordinal = ${bestSplits.length} chapter headings`);
+  // Debug: find ALL occurrences of "KAPITLET" to see what we're missing
+  const kapitletPositions = [...normalized.matchAll(/kapitlet/gi)];
+  console.log(`[Parser] Found ${numericMatches.length} numeric + ${ordinalMatches.length} ordinal = ${bestSplits.length} chapter headings (${kapitletPositions.length} total KAPITLET occurrences)`);
+  kapitletPositions.forEach(m => {
+    const ctx = normalized.slice(Math.max(0, m.index - 40), m.index + 10).replace(/\n/g, '\\n');
+    console.log(`  KAPITLET @ ${m.index}: "...${ctx}"`);
+  });
   bestSplits.forEach((m, i) => console.log(`  [${i}] "${m[1]?.trim().slice(0, 50)}" @ pos ${m.index}`));
 
   // Fallback patterns if no chapter-style matches found
