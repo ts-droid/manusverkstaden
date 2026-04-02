@@ -128,7 +128,12 @@ function splitIntoChapters(text) {
   const TWENTIES = `tjugo\\s*nionde|tjugo\\s*[åa]ttonde|tjugo\\s*sjunde|tjugo\\s*sj[äa]tte|tjugo\\s*femte|tjugo\\s*fj[äa]rde|tjugo\\s*tredje|tjugo\\s*andra|tjugo\\s*f[öo]rsta|tjugonde`;
   const THIRTIES = `trettio\\s*nionde|trettio\\s*[åa]ttonde|trettio\\s*sjunde|trettio\\s*sj[äa]tte|trettio\\s*femte|trettio\\s*fj[äa]rde|trettio\\s*tredje|trettio\\s*andra|trettio\\s*f[öo]rsta|trettionde`;
   const FORTIES = `fyrtio\\s*nionde|fyrtio\\s*[åa]ttonde|fyrtio\\s*sjunde|fyrtio\\s*sj[äa]tte|fyrtio\\s*femte|fyrtio\\s*fj[äa]rde|fyrtio\\s*tredje|fyrtio\\s*andra|fyrtio\\s*f[öo]rsta|fyrtionde`;
-  const SWEDISH_ORDINALS = `${FORTIES}|${THIRTIES}|${TWENTIES}|${TEENS}|${ONES}`;
+  const FIFTIES = `femtio\\s*nionde|femtio\\s*[åa]ttonde|femtio\\s*sjunde|femtio\\s*sj[äa]tte|femtio\\s*femte|femtio\\s*fj[äa]rde|femtio\\s*tredje|femtio\\s*andra|femtio\\s*f[öo]rsta|femtionde`;
+  const SIXTIES = `sextio\\s*nionde|sextio\\s*[åa]ttonde|sextio\\s*sjunde|sextio\\s*sj[äa]tte|sextio\\s*femte|sextio\\s*fj[äa]rde|sextio\\s*tredje|sextio\\s*andra|sextio\\s*f[öo]rsta|sextionde`;
+  const SEVENTIES = `sjuttio\\s*nionde|sjuttio\\s*[åa]ttonde|sjuttio\\s*sjunde|sjuttio\\s*sj[äa]tte|sjuttio\\s*femte|sjuttio\\s*fj[äa]rde|sjuttio\\s*tredje|sjuttio\\s*andra|sjuttio\\s*f[öo]rsta|sjuttionde`;
+  const EIGHTIES = `[åa]ttio\\s*nionde|[åa]ttio\\s*[åa]ttonde|[åa]ttio\\s*sjunde|[åa]ttio\\s*sj[äa]tte|[åa]ttio\\s*femte|[åa]ttio\\s*fj[äa]rde|[åa]ttio\\s*tredje|[åa]ttio\\s*andra|[åa]ttio\\s*f[öo]rsta|[åa]ttionde`;
+  const NINETIES = `nittio\\s*nionde|nittio\\s*[åa]ttonde|nittio\\s*sjunde|nittio\\s*sj[äa]tte|nittio\\s*femte|nittio\\s*fj[äa]rde|nittio\\s*tredje|nittio\\s*andra|nittio\\s*f[öo]rsta|nittionde`;
+  const SWEDISH_ORDINALS = `${NINETIES}|${EIGHTIES}|${SEVENTIES}|${SIXTIES}|${FIFTIES}|${FORTIES}|${THIRTIES}|${TWENTIES}|${TEENS}|${ONES}`;
 
   // Map ordinal words to numbers for display
   const ordinalToNumber = (word) => {
@@ -140,6 +145,11 @@ function splitIntoChapters(text) {
       tjugonde: 20, tjugoforsta: 21, tjugoandra: 22, tjugotredje: 23, tjugofjarde: 24, tjugofemte: 25, tjugosjatte: 26, tjugosjunde: 27, tjugoattonde: 28, tjugonionde: 29,
       trettionde: 30, trettioforsta: 31, trettioandra: 32, trettiotredje: 33, trettiofjarde: 34, trettiofemte: 35, trettiosjatte: 36, trettiosjunde: 37, trettioattonde: 38, trettionionde: 39,
       fyrtionde: 40, fyrtioforsta: 41, fyrtioandra: 42, fyrtiotredje: 43, fyrtiofjarde: 44, fyrtiofemte: 45, fyrtiosjatte: 46, fyrtiosjunde: 47, fyrtioattonde: 48, fyrtionionde: 49,
+      femtionde: 50, femtioforsta: 51, femtioandra: 52, femtiotredje: 53, femtiofjarde: 54, femtiofemte: 55, femtiosjatte: 56, femtiosjunde: 57, femtioattonde: 58, femtionionde: 59,
+      sextionde: 60, sextioforsta: 61, sextioandra: 62, sextiotredje: 63, sextiofjarde: 64, sextiofemte: 65, sextiosjatte: 66, sextiosjunde: 67, sextioattonde: 68, sextionionde: 69,
+      sjuttionde: 70, sjuttioforsta: 71, sjuttioandra: 72, sjuttiotredje: 73, sjuttiofjarde: 74, sjuttiofemte: 75, sjuttiosjatte: 76, sjuttiosjunde: 77, sjuttioattonde: 78, sjuttionionde: 79,
+      attionde: 80, attioforsta: 81, attioandra: 82, attiotredje: 83, attiofjarde: 84, attiofemte: 85, attiosjatte: 86, attiosjunde: 87, attioattonde: 88, attionionde: 89,
+      nittionde: 90, nittioforsta: 91, nittioandra: 92, nittiotredje: 93, nittiofjarde: 94, nittiofemte: 95, nittiosjatte: 96, nittiosjunde: 97, nittioattonde: 98, nittionionde: 99,
     };
     return map[w] || null;
   };
