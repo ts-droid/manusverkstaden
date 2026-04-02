@@ -140,26 +140,33 @@ function splitIntoChapters(text) {
     .replace(/([^\n])(Chapter\s+\d+)/gi, '$1\n$2')
     .replace(chapterWordPattern, '$1\n$2');
 
-  // Common chapter heading patterns - order matters, most specific first
+  // Combined chapter heading pattern — matches both "Kapitel X" and "Xte kapitlet" in a single pass
+  // This ensures we find ALL chapters even if the document mixes numeric and ordinal formats
   const ordinalChapterPattern = new RegExp(`(?:^|\\n)\\s*((${SWEDISH_ORDINALS})\\s+kapitlet[^\\n]*)`, 'gi');
-  const chapterPatterns = [
-    /(?:^|\n)\s*(KAPITEL\s+\d+[^\n]*)/gi,
-    /(?:^|\n)\s*(Kapitel\s+\d+[^\n]*)/g,
-    /(?:^|\n)\s*(Chapter\s+\d+[^\n]*)/gi,
-    ordinalChapterPattern, // "Första kapitlet", "Tionde kapitlet", etc.
-    /(?:^|\n)\s*(\d+\.\s+[A-ZÅÄÖ][^\n]*)/g,
-    /^(#{1,2}\s+[^\n]+)/gm, // Markdown headings
-  ];
+  const numericChapterPattern = /(?:^|\n)\s*((?:KAPITEL|Kapitel|kapitel|Chapter|chapter)\s+\d+[^\n]*)/gi;
 
-  let bestSplits = null;
-  let bestPattern = null;
+  // Collect all chapter-style matches from both patterns
+  numericChapterPattern.lastIndex = 0;
+  ordinalChapterPattern.lastIndex = 0;
+  const numericMatches = [...normalized.matchAll(numericChapterPattern)];
+  const ordinalMatches = [...normalized.matchAll(ordinalChapterPattern)];
 
-  for (const pattern of chapterPatterns) {
-    pattern.lastIndex = 0; // Reset regex state
-    const matches = [...normalized.matchAll(pattern)];
-    if (matches.length > 1 && (!bestSplits || matches.length > bestSplits.length)) {
-      bestSplits = matches;
-      bestPattern = pattern;
+  // Merge and sort by position in text
+  let bestSplits = [...numericMatches, ...ordinalMatches];
+  bestSplits.sort((a, b) => a.index - b.index);
+
+  // Fallback patterns if no chapter-style matches found
+  if (bestSplits.length < 2) {
+    const fallbackPatterns = [
+      /(?:^|\n)\s*(\d+\.\s+[A-ZÅÄÖ][^\n]*)/g,
+      /^(#{1,2}\s+[^\n]+)/gm, // Markdown headings
+    ];
+    for (const pattern of fallbackPatterns) {
+      pattern.lastIndex = 0;
+      const matches = [...normalized.matchAll(pattern)];
+      if (matches.length > 1 && matches.length > bestSplits.length) {
+        bestSplits = matches;
+      }
     }
   }
 
@@ -185,26 +192,55 @@ function splitIntoChapters(text) {
 
     if (content.length === 0) continue; // Skip empty chapters (heading-only)
 
-    // Map ordinal chapter names to "Kapitel N" for display
+    // Extract chapter number from heading for proper ordering
     let displayTitle = title;
+    let chapterNumber = i + 1; // fallback to parse order
+
+    // Check ordinal format: "Tjugoandra kapitlet" → Kapitel 22
     const ordinalMatch = title.match(new RegExp(`^(${SWEDISH_ORDINALS})\\s+kapitlet`, 'i'));
     if (ordinalMatch) {
       const num = ordinalToNumber(ordinalMatch[1]);
-      if (num) displayTitle = `Kapitel ${num}`;
+      if (num) {
+        displayTitle = `Kapitel ${num}`;
+        chapterNumber = num;
+      }
+    }
+
+    // Check numeric format: "Kapitel 19" → number 19
+    const numericMatch = displayTitle.match(/(?:kapitel|chapter)\s+(\d+)/i);
+    if (numericMatch) {
+      chapterNumber = parseInt(numericMatch[1], 10);
     }
 
     chapters.push({
-      id: i + 1,
-      number: i + 1,
+      id: chapterNumber,
+      number: chapterNumber,
       title: displayTitle,
-      originalTitle: title, // preserve author's chapter naming in manuscript text
+      originalTitle: title,
       content,
       wordCount: countWords(content),
       status: 'pending',
     });
   }
 
-  return chapters;
+  // Sort by chapter number and deduplicate (in case TOC entries were matched)
+  chapters.sort((a, b) => a.number - b.number);
+
+  // Deduplicate: if two chapters share the same number, keep the one with more content
+  const deduped = [];
+  for (const ch of chapters) {
+    const existing = deduped.find(d => d.number === ch.number);
+    if (existing) {
+      if (ch.wordCount > existing.wordCount) {
+        deduped[deduped.indexOf(existing)] = ch;
+      }
+    } else {
+      deduped.push(ch);
+    }
+  }
+
+  // Re-assign sequential IDs
+  return deduped.map((ch, idx) => ({ ...ch, id: idx + 1 }));
 }
 
 /**
