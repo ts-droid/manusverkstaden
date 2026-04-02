@@ -121,14 +121,26 @@ function splitIntoChapters(text) {
   let normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
   // Swedish ordinal words for chapter matching
-  // Swedish ordinal words — LONGEST FIRST to prevent partial matching
-  // (e.g. "tjugoförsta" must match before "första")
-  const SWEDISH_ORDINALS = "trettionde|tjugonionde|tjugo[åa]ttonde|tjugosjunde|tjugosj[äa]tte|tjugofemte|tjugofj[äa]rde|tjugotredje|tjugoandra|tjugof[öo]rsta|tjugonde|nittonde|artonde|sjuttonde|sextonde|femtonde|fjortonde|trettonde|tolfte|elfte|tionde|nionde|[åa]ttonde|sjunde|sj[äa]tte|femte|fj[äa]rde|tredje|andra|f[öo]rsta";
+  // LONGEST FIRST to prevent partial matching (e.g. "tjugoförsta" before "första")
+  // Uses \s* between prefix and suffix to handle both "tjugoandra" and "tjugo andra"
+  const ONES = "f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde";
+  const TEENS = "tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde";
+  const TWENTIES = `tjugo\\s*nionde|tjugo\\s*[åa]ttonde|tjugo\\s*sjunde|tjugo\\s*sj[äa]tte|tjugo\\s*femte|tjugo\\s*fj[äa]rde|tjugo\\s*tredje|tjugo\\s*andra|tjugo\\s*f[öo]rsta|tjugonde`;
+  const THIRTIES = `trettio\\s*nionde|trettio\\s*[åa]ttonde|trettio\\s*sjunde|trettio\\s*sj[äa]tte|trettio\\s*femte|trettio\\s*fj[äa]rde|trettio\\s*tredje|trettio\\s*andra|trettio\\s*f[öo]rsta|trettionde`;
+  const FORTIES = `fyrtio\\s*nionde|fyrtio\\s*[åa]ttonde|fyrtio\\s*sjunde|fyrtio\\s*sj[äa]tte|fyrtio\\s*femte|fyrtio\\s*fj[äa]rde|fyrtio\\s*tredje|fyrtio\\s*andra|fyrtio\\s*f[öo]rsta|fyrtionde`;
+  const SWEDISH_ORDINALS = `${FORTIES}|${THIRTIES}|${TWENTIES}|${TEENS}|${ONES}`;
 
   // Map ordinal words to numbers for display
   const ordinalToNumber = (word) => {
-    const w = word.toLowerCase().replace(/ö/g, 'o').replace(/ä/g, 'a').replace(/å/g, 'a');
-    const map = { forsta: 1, andra: 2, tredje: 3, fjarde: 4, femte: 5, sjatte: 6, sjunde: 7, attonde: 8, nionde: 9, tionde: 10, elfte: 11, tolfte: 12, trettonde: 13, fjortonde: 14, femtonde: 15, sextonde: 16, sjuttonde: 17, artonde: 18, nittonde: 19, tjugonde: 20, tjugoforsta: 21, tjugoandra: 22, tjugotredje: 23, tjugofjarde: 24, tjugofemte: 25, tjugosjatte: 26, tjugosjunde: 27, tjugoattonde: 28, tjugonionde: 29, trettionde: 30 };
+    // Normalize: lowercase, strip accents, collapse whitespace
+    const w = word.toLowerCase().replace(/ö/g, 'o').replace(/ä/g, 'a').replace(/å/g, 'a').replace(/\s+/g, '');
+    const map = {
+      forsta: 1, andra: 2, tredje: 3, fjarde: 4, femte: 5, sjatte: 6, sjunde: 7, attonde: 8, nionde: 9,
+      tionde: 10, elfte: 11, tolfte: 12, trettonde: 13, fjortonde: 14, femtonde: 15, sextonde: 16, sjuttonde: 17, artonde: 18, nittonde: 19,
+      tjugonde: 20, tjugoforsta: 21, tjugoandra: 22, tjugotredje: 23, tjugofjarde: 24, tjugofemte: 25, tjugosjatte: 26, tjugosjunde: 27, tjugoattonde: 28, tjugonionde: 29,
+      trettionde: 30, trettioforsta: 31, trettioandra: 32, trettiotredje: 33, trettiofjarde: 34, trettiofemte: 35, trettiosjatte: 36, trettiosjunde: 37, trettioattonde: 38, trettionionde: 39,
+      fyrtionde: 40, fyrtioforsta: 41, fyrtioandra: 42, fyrtiotredje: 43, fyrtiofjarde: 44, fyrtiofemte: 45, fyrtiosjatte: 46, fyrtiosjunde: 47, fyrtioattonde: 48, fyrtionionde: 49,
+    };
     return map[w] || null;
   };
 
