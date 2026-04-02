@@ -177,6 +177,9 @@ function splitIntoChapters(text) {
   let bestSplits = [...numericMatches, ...ordinalMatches];
   bestSplits.sort((a, b) => a.index - b.index);
 
+  console.log(`[Parser] Found ${numericMatches.length} numeric + ${ordinalMatches.length} ordinal = ${bestSplits.length} chapter headings`);
+  bestSplits.forEach((m, i) => console.log(`  [${i}] "${m[1]?.trim().slice(0, 50)}" @ pos ${m.index}`));
+
   // Fallback patterns if no chapter-style matches found
   if (bestSplits.length < 2) {
     const fallbackPatterns = [
@@ -212,7 +215,10 @@ function splitIntoChapters(text) {
       : normalized.length;
     const content = normalized.slice(start, end).trim();
 
-    if (content.length === 0) continue; // Skip empty chapters (heading-only)
+    if (content.length === 0) {
+      console.log(`[Parser] Skipping empty chapter: "${title.slice(0, 50)}"`);
+      continue;
+    }
 
     // Extract chapter number from heading for proper ordering
     let chapterNumber = i + 1; // fallback to parse order
@@ -256,6 +262,7 @@ function splitIntoChapters(text) {
   for (const ch of chapters) {
     const existing = deduped.find(d => d.number === ch.number);
     if (existing) {
+      console.log(`[Parser] Dedup: chapter ${ch.number} duplicate — keeping ${ch.wordCount > existing.wordCount ? 'new' : 'existing'} (${ch.wordCount} vs ${existing.wordCount} words)`);
       if (ch.wordCount > existing.wordCount) {
         deduped[deduped.indexOf(existing)] = ch;
       }
