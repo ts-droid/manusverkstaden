@@ -618,6 +618,50 @@ Tom array [] om inga förslag hittas.`);
     } catch { /* skip */ }
   }
 
+  // === VALIDATION PASS for addon suggestions ===
+  if (allSuggestions.length > 0) {
+    const validatePrompt = await getPrompt('ai:review_validate', `Du är kvalitetsgranskare. Gå igenom varje förslag och avgör om det är relevant och korrekt.
+
+Kontrollera särskilt:
+- Matchar förslaget författarens stil och DNA-profil?
+- Är replacement-texten konsekvent med författarens röst?
+- Är det ett verkligt stilistiskt problem eller bara en smaksak?
+- Passar förslaget i det narrativa sammanhanget?
+
+Returnera JSON:
+{"validated":[{"index":0,"approved":true,"reason":"..."},{"index":1,"approved":false,"reason":"..."}]}`);
+
+    const suggestionsForValidation = allSuggestions.map((s, i) => ({
+      index: i,
+      original: s.original,
+      replacement: s.replacement,
+      reason: s.reason,
+      priority: s.priority,
+    }));
+
+    try {
+      const validateResponse = await sendMessage({
+        model: 'claude-haiku-4-5-20251001',
+        system: `${validatePrompt}${dnaStrFormatted}`,
+        messages: [{ role: 'user', content: `Validera dessa ${allSuggestions.length} förslag:\n${JSON.stringify(suggestionsForValidation, null, 2)}\n\nOriginaltexten (för kontext):\n${content.slice(0, 8000)}` }],
+        max_tokens: 4096,
+      });
+
+      addMeta(extractMeta(validateResponse, 'claude-haiku-4-5-20251001'));
+      const validateResult = parseJsonResponse(extractText(validateResponse));
+      const validated = validateResult?.validated || validateResult;
+      if (Array.isArray(validated)) {
+        const rejected = new Set(validated.filter(v => !v.approved).map(v => v.index));
+        const beforeCount = allSuggestions.length;
+        const filtered = allSuggestions.filter((_, i) => !rejected.has(i));
+        console.log(`[Addon Validation] ${beforeCount} → ${filtered.length} (removed ${rejected.size} irrelevant suggestions)`);
+        return { result: filtered, meta: totalMeta, passesRun: passes };
+      }
+    } catch (e) {
+      console.warn('[Addon Validation] Parse failed, keeping all suggestions:', e.message);
+    }
+  }
+
   return {
     result: allSuggestions,
     meta: totalMeta,
