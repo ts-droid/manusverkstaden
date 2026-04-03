@@ -348,4 +348,116 @@ router.put('/prompts/:key', async (req, res, next) => {
   }
 });
 
+// ─── GET /word-list ───
+router.get('/word-list', async (req, res, next) => {
+  try {
+    const entries = await prisma.wordListEntry.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ entries });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /word-list ───
+router.post('/word-list', async (req, res, next) => {
+  try {
+    const { word, correction, isCorrect = true, note, category = 'general' } = req.body;
+
+    if (!word || !correction) {
+      return res.status(400).json({ error: 'Ord och felaktig rättning krävs' });
+    }
+
+    const entry = await prisma.wordListEntry.upsert({
+      where: { word_correction: { word: word.trim(), correction: correction.trim() } },
+      update: { isCorrect, note, category, addedBy: req.user.email },
+      create: {
+        word: word.trim(),
+        correction: correction.trim(),
+        isCorrect,
+        note,
+        category,
+        addedBy: req.user.email,
+      },
+    });
+
+    res.json({ entry });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── DELETE /word-list/:id ───
+router.delete('/word-list/:id', async (req, res, next) => {
+  try {
+    await prisma.wordListEntry.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      return res.status(404).json({ error: 'Posten hittades inte' });
+    }
+    next(err);
+  }
+});
+
+// ─── GET /rejected-suggestions (red suggestions that were rejected by users) ───
+router.get('/rejected-suggestions', async (req, res, next) => {
+  try {
+    const suggestions = await prisma.suggestion.findMany({
+      where: {
+        status: 'REJECTED',
+        priority: 'red',
+      },
+      select: {
+        id: true,
+        original: true,
+        replacement: true,
+        reason: true,
+        type: true,
+        createdAt: true,
+        chapter: {
+          select: {
+            title: true,
+            project: { select: { title: true, user: { select: { email: true } } } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    // Group by original→replacement pattern to find recurring false positives
+    const patterns = {};
+    for (const s of suggestions) {
+      const key = `${s.original?.trim().toLowerCase()}→${s.replacement?.trim().toLowerCase()}`;
+      if (!patterns[key]) {
+        patterns[key] = {
+          original: s.original,
+          replacement: s.replacement,
+          reason: s.reason,
+          count: 0,
+          examples: [],
+        };
+      }
+      patterns[key].count++;
+      if (patterns[key].examples.length < 3) {
+        patterns[key].examples.push({
+          chapter: s.chapter?.title,
+          project: s.chapter?.project?.title,
+          user: s.chapter?.project?.user?.email,
+          date: s.createdAt,
+        });
+      }
+    }
+
+    // Sort by frequency (most rejected first)
+    const sorted = Object.values(patterns).sort((a, b) => b.count - a.count);
+
+    res.json({ patterns: sorted, total: suggestions.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

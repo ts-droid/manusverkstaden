@@ -3037,12 +3037,17 @@ function SuperAdminView({ user, onBack, onDashboard }) {
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingUserData, setEditingUserData] = useState({});
   const [retryKey, setRetryKey] = useState(0);
+  // Word list state
+  const [wordList, setWordList] = useState([]);
+  const [rejectedPatterns, setRejectedPatterns] = useState([]);
+  const [newWord, setNewWord] = useState({ word: "", correction: "", note: "", category: "spelling" });
 
   const tabs = [
     { id: "overview", label: "Översikt" },
     { id: "users", label: "Användare" },
     { id: "usage", label: "Förbrukning" },
     { id: "prompts", label: "Prompter" },
+    { id: "wordlist", label: "Ordlista" },
   ];
 
   // Fetch data when tab changes
@@ -3067,6 +3072,15 @@ function SuperAdminView({ user, onBack, onDashboard }) {
             const list = data.prompts || data || [];
             setPrompts(list);
             setEditedPrompts({});
+          }
+        } else if (tab === "wordlist") {
+          const [wlData, rejData] = await Promise.all([
+            apiClient.getAdminWordList(),
+            apiClient.getAdminRejectedSuggestions(),
+          ]);
+          if (!cancelled) {
+            setWordList(wlData.entries || []);
+            setRejectedPatterns(rejData.patterns || []);
           }
         }
       } catch (err) {
@@ -3563,6 +3577,146 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                 </>
               );
             })()}
+          </div>
+        ))}
+
+        {/* ─── Tab: Ordlista ─── */}
+        {tab === "wordlist" && (loading ? spinner : error ? errorBox : (
+          <div>
+            <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 20px", lineHeight: 1.6 }}>
+              Hantera bekräftat korrekta ord som AI:n felaktigt flaggar. Dessa ord undantas automatiskt i alla framtida granskningar (globalt).
+            </p>
+
+            {/* Add new word form */}
+            <div style={{ background: surface, borderRadius: 12, padding: "18px 22px", border: `1px solid ${border}`, marginBottom: 24 }}>
+              <h3 style={{ fontFamily: uiFont, fontSize: 14, fontWeight: 600, color: ink, margin: "0 0 14px" }}>Lägg till ord</h3>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: "1 1 140px" }}>
+                  <label style={{ fontFamily: uiFont, fontSize: 11, color: muted, display: "block", marginBottom: 4 }}>Korrekt ord</label>
+                  <input value={newWord.word} onChange={e => setNewWord(p => ({ ...p, word: e.target.value }))}
+                    placeholder="t.ex. överbord" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: `1px solid ${border}`, fontFamily: font, fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+                <div style={{ flex: "1 1 140px" }}>
+                  <label style={{ fontFamily: uiFont, fontSize: 11, color: muted, display: "block", marginBottom: 4 }}>Felaktig rättning</label>
+                  <input value={newWord.correction} onChange={e => setNewWord(p => ({ ...p, correction: e.target.value }))}
+                    placeholder="t.ex. över bord" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: `1px solid ${border}`, fontFamily: font, fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+                <div style={{ flex: "1 1 100px" }}>
+                  <label style={{ fontFamily: uiFont, fontSize: 11, color: muted, display: "block", marginBottom: 4 }}>Kategori</label>
+                  <select value={newWord.category} onChange={e => setNewWord(p => ({ ...p, category: e.target.value }))}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: `1px solid ${border}`, fontFamily: uiFont, fontSize: 12, boxSizing: "border-box" }}>
+                    <option value="spelling">Stavning</option>
+                    <option value="compound">Sammansättning</option>
+                    <option value="loanword">Lånord</option>
+                    <option value="archaic">Ålderdomligt</option>
+                    <option value="dialectal">Dialektalt</option>
+                    <option value="general">Övrigt</option>
+                  </select>
+                </div>
+                <div style={{ flex: "2 1 180px" }}>
+                  <label style={{ fontFamily: uiFont, fontSize: 11, color: muted, display: "block", marginBottom: 4 }}>Anteckning (valfritt)</label>
+                  <input value={newWord.note} onChange={e => setNewWord(p => ({ ...p, note: e.target.value }))}
+                    placeholder="Varför detta är korrekt" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: `1px solid ${border}`, fontFamily: font, fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+                <button onClick={async () => {
+                  if (!newWord.word || !newWord.correction) return;
+                  try {
+                    const res = await apiClient.addAdminWordEntry(newWord);
+                    setWordList(prev => [res.entry, ...prev.filter(e => e.id !== res.entry?.id)]);
+                    setNewWord({ word: "", correction: "", note: "", category: "spelling" });
+                  } catch (err) { console.error("Add word failed:", err); }
+                }} disabled={!newWord.word || !newWord.correction}
+                  style={{ padding: "8px 20px", borderRadius: 6, border: "none", background: (!newWord.word || !newWord.correction) ? border : accent, color: "#fff", fontFamily: uiFont, fontSize: 12, fontWeight: 600, cursor: (!newWord.word || !newWord.correction) ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                  Lägg till
+                </button>
+              </div>
+            </div>
+
+            {/* Current word list */}
+            <div style={{ background: surface, borderRadius: 12, padding: "18px 22px", border: `1px solid ${border}`, marginBottom: 24 }}>
+              <h3 style={{ fontFamily: uiFont, fontSize: 14, fontWeight: 600, color: ink, margin: "0 0 14px" }}>
+                Bekräftade ord ({wordList.length})
+              </h3>
+              {wordList.length === 0 ? (
+                <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, padding: 16, textAlign: "center" }}>Inga ord tillagda ännu.</div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: uiFont, fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${border}` }}>
+                      <th style={{ textAlign: "left", padding: "8px 8px", color: muted, fontWeight: 500, fontSize: 10, textTransform: "uppercase" }}>Korrekt ord</th>
+                      <th style={{ textAlign: "left", padding: "8px 8px", color: muted, fontWeight: 500, fontSize: 10, textTransform: "uppercase" }}>Felaktig rättning</th>
+                      <th style={{ textAlign: "left", padding: "8px 8px", color: muted, fontWeight: 500, fontSize: 10, textTransform: "uppercase" }}>Kategori</th>
+                      <th style={{ textAlign: "left", padding: "8px 8px", color: muted, fontWeight: 500, fontSize: 10, textTransform: "uppercase" }}>Anteckning</th>
+                      <th style={{ width: 60 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wordList.map(e => (
+                      <tr key={e.id} style={{ borderBottom: `1px solid ${border}08` }}>
+                        <td style={{ padding: "10px 8px", color: ink, fontWeight: 600, fontFamily: font }}>{e.word}</td>
+                        <td style={{ padding: "10px 8px", color: "#c0392b", textDecoration: "line-through" }}>{e.correction}</td>
+                        <td style={{ padding: "10px 8px", color: muted }}>{e.category}</td>
+                        <td style={{ padding: "10px 8px", color: muted, fontSize: 11 }}>{e.note || "—"}</td>
+                        <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                          <button onClick={async () => {
+                            try {
+                              await apiClient.deleteAdminWordEntry(e.id);
+                              setWordList(prev => prev.filter(w => w.id !== e.id));
+                            } catch (err) { console.error("Delete failed:", err); }
+                          }} style={{ fontFamily: uiFont, fontSize: 10, padding: "4px 10px", borderRadius: 5, border: `1px solid ${border}`, background: "transparent", color: muted, cursor: "pointer" }}>
+                            Ta bort
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Rejected red suggestions — patterns for admin review */}
+            <div style={{ background: surface, borderRadius: 12, padding: "18px 22px", border: `1px solid ${border}` }}>
+              <h3 style={{ fontFamily: uiFont, fontSize: 14, fontWeight: 600, color: ink, margin: "0 0 6px" }}>
+                Avvisade &quot;måste åtgärdas&quot; — kandidater för ordlistan
+              </h3>
+              <p style={{ fontFamily: uiFont, fontSize: 11, color: muted, margin: "0 0 14px", lineHeight: 1.5 }}>
+                Röda förslag som författare avvisat. Återkommande mönster kan tyda på att AI:n flaggar korrekta ord. Klicka &quot;Lägg till&quot; för att lägga till i ordlistan.
+              </p>
+              {rejectedPatterns.length === 0 ? (
+                <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, padding: 16, textAlign: "center" }}>Inga avvisade röda förslag hittades.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {rejectedPatterns.slice(0, 30).map((p, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: bg, borderRadius: 8, border: `1px solid ${border}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontFamily: font, fontSize: 13, color: ink }}>
+                          <span style={{ fontWeight: 600 }}>{p.original}</span>
+                          <span style={{ color: muted, margin: "0 8px" }}>→</span>
+                          <span style={{ color: "#c0392b", textDecoration: "line-through" }}>{p.replacement}</span>
+                          <span style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginLeft: 10 }}>
+                            ({p.count}x avvisad)
+                          </span>
+                        </div>
+                        <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 3 }}>{p.reason}</div>
+                      </div>
+                      {!wordList.some(w => w.word.toLowerCase() === p.original?.toLowerCase() && w.correction.toLowerCase() === p.replacement?.toLowerCase()) && (
+                        <button onClick={async () => {
+                          try {
+                            const res = await apiClient.addAdminWordEntry({ word: p.original, correction: p.replacement, isCorrect: true, note: `Avvisad ${p.count}x av användare`, category: "spelling" });
+                            setWordList(prev => [res.entry, ...prev]);
+                          } catch (err) { console.error("Add from pattern failed:", err); }
+                        }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 6, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          Lägg till
+                        </button>
+                      )}
+                      {wordList.some(w => w.word.toLowerCase() === p.original?.toLowerCase() && w.correction.toLowerCase() === p.replacement?.toLowerCase()) && (
+                        <span style={{ fontFamily: uiFont, fontSize: 11, color: "#27ae60", fontWeight: 600 }}>✓ I ordlistan</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>

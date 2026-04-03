@@ -13,6 +13,10 @@ let promptCache = {};
 let promptCacheTime = 0;
 const CACHE_TTL = 60_000;
 
+// In-memory cache for word list (refreshed every 60s)
+let wordListCache = null;
+let wordListCacheTime = 0;
+
 /**
  * Get a prompt by key, falling back to the provided default.
  * Reads from PromptConfig DB table with in-memory caching.
@@ -28,6 +32,28 @@ async function getPrompt(key, fallback) {
     return promptCache[key] || fallback;
   } catch {
     return fallback;
+  }
+}
+
+/**
+ * Get the admin-curated word list formatted for injection into review prompts.
+ * Returns a prompt block listing words that should NOT be flagged as errors.
+ */
+async function getWordListBlock() {
+  try {
+    const now = Date.now();
+    if (!wordListCache || now - wordListCacheTime > CACHE_TTL) {
+      wordListCache = await prisma.wordListEntry.findMany({ where: { isCorrect: true } });
+      wordListCacheTime = now;
+    }
+    if (!wordListCache || wordListCache.length === 0) return '';
+
+    const lines = wordListCache.map(e =>
+      `- "${e.word}" är KORREKT — föreslå INTE "${e.correction}"${e.note ? ` (${e.note})` : ''}`
+    );
+    return `\n\nORDLISTA — BEKRÄFTAT KORREKTA ORD (flagga INTE dessa som fel):\n${lines.join('\n')}`;
+  } catch {
+    return '';
   }
 }
 
@@ -94,10 +120,29 @@ function parseJsonResponse(text) {
  * Validate suggestions against the actual chapter text.
  * Filters out false positives where the AI's reasoning doesn't match reality.
  */
-function validateSuggestions(suggestions, chapterContent) {
+function validateSuggestions(suggestions, chapterContent, wordList = []) {
+  // Build a lookup set from word list: "word→correction" pairs that should be blocked
+  const blockedCorrections = new Set(
+    wordList.filter(e => e.isCorrect).map(e => `${e.word.trim().toLowerCase()}→${e.correction.trim().toLowerCase()}`)
+  );
+
   return suggestions.filter(s => {
     if (!s.original || !s.replacement) return false;
     if (s.original.trim() === s.replacement.trim()) return false;
+
+    // Block suggestions that match admin word list (e.g. "överbord" → "över bord")
+    if (blockedCorrections.size > 0) {
+      const origWords = s.original.trim().toLowerCase().split(/\s+/);
+      const replWords = s.replacement.trim().toLowerCase().split(/\s+/);
+      // Check if the change involves a word list entry
+      for (const blocked of blockedCorrections) {
+        const [word, correction] = blocked.split('→');
+        if (s.original.toLowerCase().includes(word) && s.replacement.toLowerCase().includes(correction)) {
+          console.log(`[WordList] Blocked suggestion: "${word}" → "${correction}" (admin override)`);
+          return false;
+        }
+      }
+    }
     if (!chapterContent.includes(s.original)) {
       const prefix = s.original.substring(0, 30).trim();
       if (prefix.length < 10 || !chapterContent.includes(prefix)) return false;
@@ -184,6 +229,138 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
 }
 
 /**
+ * Aggregate suggestion accept/reject patterns for a user across all projects.
+ * Used to feed feedback into DNA reinforcement prompts.
+ * Returns null if fewer than 10 suggestions have been reviewed (cold start guard).
+ */
+export async function aggregateSuggestionFeedback(userId) {
+  // Get all handled suggestions for this user
+  const suggestions = await prisma.suggestion.findMany({
+    where: {
+      chapter: { project: { userId } },
+      status: { in: ['ACCEPTED', 'REJECTED'] },
+    },
+    select: {
+      type: true,
+      priority: true,
+      status: true,
+      reason: true,
+      original: true,
+      replacement: true,
+    },
+  });
+
+  if (suggestions.length < 10) return null;
+
+  const accepted = suggestions.filter(s => s.status === 'ACCEPTED');
+  const rejected = suggestions.filter(s => s.status === 'REJECTED');
+
+  // Group by type + priority
+  const byGroup = {};
+  for (const s of suggestions) {
+    const key = `${s.type}:${s.priority}`;
+    if (!byGroup[key]) byGroup[key] = { accepted: 0, rejected: 0, type: s.type, priority: s.priority };
+    byGroup[key][s.status === 'ACCEPTED' ? 'accepted' : 'rejected']++;
+  }
+
+  // Scan rejected reason fields for style-area keywords
+  const areaKeywords = {
+    sentence_length: /meningslängd|menings\s*längd|sentence.?len/i,
+    dialogue_style: /dialog|dialogue/i,
+    tone: /\bton\b|tonalitet|tonal/i,
+    imagery: /bildspråk|metafor|imagery/i,
+    pacing: /tempo|pacing|rytm/i,
+    vocabulary: /ordval|register|vokabulär|vocabulary/i,
+    repetition: /upprepa|repetit/i,
+  };
+
+  const areaRejections = {};
+  for (const s of rejected) {
+    const reason = (s.reason || '').toLowerCase();
+    for (const [area, regex] of Object.entries(areaKeywords)) {
+      if (regex.test(reason)) {
+        areaRejections[area] = (areaRejections[area] || 0) + 1;
+      }
+    }
+  }
+
+  // Find strongly rejected areas (>60% rejection rate for that area)
+  const stronglyRejected = [];
+  for (const [area, count] of Object.entries(areaRejections)) {
+    const totalForArea = count + (accepted.filter(s => areaKeywords[area].test(s.reason || '')).length);
+    const rejectRate = totalForArea > 0 ? count / totalForArea : 0;
+    if (rejectRate > 0.6 && count >= 3) {
+      stronglyRejected.push({ area, rejectRate: Math.round(rejectRate * 100), count });
+    }
+  }
+
+  // Find strongly rejected correction pairs (same original→replacement rejected multiple times)
+  const rejectedCorrections = [];
+  const correctionCounts = {};
+  for (const s of rejected) {
+    if (s.original && s.replacement && s.priority === 'red') {
+      // Normalize to find patterns like "överbord" → "över bord"
+      const key = `${s.original.trim().toLowerCase()}→${s.replacement.trim().toLowerCase()}`;
+      correctionCounts[key] = (correctionCounts[key] || 0) + 1;
+    }
+  }
+
+  return {
+    totalReviewed: suggestions.length,
+    acceptRate: Math.round((accepted.length / suggestions.length) * 100),
+    accepted: accepted.length,
+    rejected: rejected.length,
+    byGroup: Object.values(byGroup),
+    stronglyRejected,
+    rejectedRedCount: rejected.filter(s => s.priority === 'red').length,
+  };
+}
+
+/**
+ * Format aggregated feedback as a compact prompt block for DNA reinforcement.
+ */
+function formatFeedbackForDnaPrompt(feedback) {
+  if (!feedback) return '';
+
+  const lines = [`\n\nFEEDBACK FRÅN FÖRFATTARENS TIDIGARE GRANSKNINGAR (baserat på ${feedback.totalReviewed} hanterade förslag):`];
+  lines.push(`- Övergripande: ${feedback.acceptRate}% accepterade, ${100 - feedback.acceptRate}% avvisade`);
+
+  // Report by type
+  for (const g of feedback.byGroup) {
+    const total = g.accepted + g.rejected;
+    if (total >= 3) {
+      const acceptRate = Math.round((g.accepted / total) * 100);
+      const label = g.priority === 'red' ? 'felrättningar' : g.priority === 'yellow' ? 'stilförslag' : 'finslipning';
+      if (acceptRate < 40) {
+        lines.push(`- Författaren avvisar ${100 - acceptRate}% av ${g.type}/${label} → dessa typer av förslag bör undvikas`);
+      } else if (acceptRate > 80) {
+        lines.push(`- Författaren accepterar ${acceptRate}% av ${g.type}/${label} → bra matchning`);
+      }
+    }
+  }
+
+  // Report strongly rejected style areas
+  for (const { area, rejectRate } of feedback.stronglyRejected) {
+    const areaLabels = {
+      sentence_length: 'meningslängd',
+      dialogue_style: 'dialogstil',
+      tone: 'tonalitet',
+      imagery: 'bildspråk',
+      pacing: 'tempo/rytm',
+      vocabulary: 'ordval/register',
+      repetition: 'upprepningar',
+    };
+    lines.push(`- Författaren avvisar ${rejectRate}% av förslag om ${areaLabels[area] || area} → detta är ett STARKT medvetet stilval`);
+  }
+
+  if (feedback.stronglyRejected.length > 0) {
+    lines.push('\nINSTRUKTION: Förstärk dessa mönster i DNA-profilen. Lägg till konsekvent avvisade stilområden i "intentionalChoices". Markera dem som starkt intentionella stilval som INTE ska flaggas i framtida granskningar.');
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * Format author DNA profile as a structured, human-readable string for AI prompts.
  * This replaces raw JSON.stringify — gives the AI explicit field labels and context.
  */
@@ -207,7 +384,8 @@ function formatAuthorDnaForPrompt(dna) {
 - Styrkor: ${(dna.strengths || []).join(', ') || 'ej identifierade'}
 - Utvecklingsområden: ${(dna.areasForImprovement || []).join(', ') || 'ej identifierade'}
 - Jämförbara författare: ${(dna.comparableAuthors || []).join(', ') || '—'}
-- Sammanfattning: ${dna.summary || '—'}`;
+- Sammanfattning: ${dna.summary || '—'}
+- Intentionella stilval: ${(dna.intentionalChoices || []).join(', ') || 'ej identifierade'}`;
 }
 
 /**
@@ -281,10 +459,13 @@ Returnera ENBART JSON-arrayen.`);
     genreContext = genrePrompts.filter(Boolean).join('\n\n');
   }
 
+  // Load word list for injection into prompts
+  const wordListBlock = await getWordListBlock();
+
   // Run pass 1 and DNA generation in parallel
-  const pass1System = genreContext
+  const pass1System = (genreContext
     ? `${pass1Prompt}\n\n${genreContext}`
-    : pass1Prompt;
+    : pass1Prompt) + wordListBlock;
 
   const pass1Promise = sendMessage({
     system: pass1System,
@@ -344,7 +525,7 @@ Returnera JSON-array (samma format som pass 1). Tom array [] om inga nya fel hit
     : '\n\nInga fel hittades i pass 1.';
 
   const pass2Response = await sendMessage({
-    system: `${pass2Prompt}${dnaStr}${pass1Summary}`,
+    system: `${pass2Prompt}${dnaStr}${pass1Summary}${wordListBlock}`,
     messages: [{ role: 'user', content: `Granska igen:\n\n${content}` }],
     max_tokens: 8192,
   });
@@ -356,8 +537,15 @@ Returnera JSON-array (samma format som pass 1). Tom array [] om inga nya fel hit
     if (!Array.isArray(pass2Suggestions)) pass2Suggestions = [];
   } catch { pass2Suggestions = []; }
 
-  // Merge pass 1 + pass 2
+  // Merge pass 1 + pass 2, then filter against admin word list
   let allSuggestions = [...pass1Suggestions, ...pass2Suggestions];
+  if (wordListCache && wordListCache.length > 0) {
+    const before = allSuggestions.length;
+    allSuggestions = validateSuggestions(allSuggestions, content, wordListCache);
+    if (allSuggestions.length < before) {
+      console.log(`[Multi-pass] Word list filter: ${before} → ${allSuggestions.length}`);
+    }
+  }
 
   // === VALIDATION PASS (Haiku — cheap, fast) ===
   progress('Validerar förslag...');
@@ -435,6 +623,10 @@ RESPEKTERA DNA-PROFILEN — KRITISKT:
 - BILDSPRÅK: Förslag ska använda samma typ av bildspråk och metaforik som författaren redan använder.
 - ORDVAL/REGISTER: Håll dig till författarens register. Föreslå inte akademiskt språk i informell text eller vice versa.
 - STYRKOR: Flagga ALDRIG författarens listade styrkor som problem — de definierar rösten.
+
+INTENTIONELLA STILVAL:
+- Om DNA-profilen listar "intentionalChoices" (t.ex. meningslängd, dialogstil, tonalitet), ska dessa områden
+  ALDRIG flaggas som problem. Dessa är bekräftade av författarens egna granskningsbeslut.
 
 KVALITETSKONTROLL:
 - Varje förslag MÅSTE motiveras med "detta avviker från författarens etablerade stil".
@@ -673,7 +865,7 @@ Returnera JSON:
  * Generate a two-part DNA profile: story DNA (per-project) + author DNA (per-user, cumulative).
  * Returns { storyDna, authorDna, combined (legacy format), meta }
  */
-export async function generateDNAProfile(allText, { genres = [], existingAuthorDna = null } = {}) {
+export async function generateDNAProfile(allText, { genres = [], existingAuthorDna = null, feedbackSummary = null } = {}) {
   const totalMeta = { inputTokens: 0, outputTokens: 0, models: {} };
   const addMeta = (m) => {
     totalMeta.inputTokens += m.inputTokens || 0;
@@ -748,8 +940,12 @@ Returnera ENBART giltig JSON utan förklaringar:
   "comparableAuthors": ["författare 1", "författare 2"],
   "summary": "2-3 meningar som sammanfattar författarens unika stil",
   "confidence": ${existingAuthorDna ? '"förstärkt — baserad på flera manus"' : '"initial — baserad på ett manus"'},
-  "manuscriptsAnalyzed": ${existingAuthorDna?.manuscriptsAnalyzed ? existingAuthorDna.manuscriptsAnalyzed + 1 : 1}
+  "manuscriptsAnalyzed": ${existingAuthorDna?.manuscriptsAnalyzed ? existingAuthorDna.manuscriptsAnalyzed + 1 : 1},
+  "intentionalChoices": ["stilområde som författaren konsekvent avvisar ändringar inom"]
 }`);
+
+  // Inject feedback from accept/reject patterns
+  const feedbackBlock = formatFeedbackForDnaPrompt(feedbackSummary);
 
   const textSlice = allText.slice(0, 50000);
 
@@ -761,7 +957,7 @@ Returnera ENBART giltig JSON utan förklaringar:
       max_tokens: 4096,
     }),
     sendMessage({
-      system: authorPrompt,
+      system: `${authorPrompt}${feedbackBlock}`,
       messages: [{ role: 'user', content: `Analysera författarens stil:\n\n${textSlice}` }],
       max_tokens: 4096,
     }),

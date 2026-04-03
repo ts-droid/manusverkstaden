@@ -318,8 +318,11 @@ Returnera ENBART giltig JSON utan förklaringar:
   "comparableAuthors": ["författare 1", "författare 2"],
   "summary": "2-3 meningar som sammanfattar författarens unika stil",
   "confidence": "initial — baserad på ett manus",
-  "manuscriptsAnalyzed": 1
-}`,
+  "manuscriptsAnalyzed": 1,
+  "intentionalChoices": ["stilområden som författaren konsekvent avvisar ändringar inom, baserat på granskningsfeedback"]
+}
+
+OBS: Om feedbackdata från tidigare granskningar bifogas — analysera vilka stilområden författaren konsekvent avvisar förslag inom. Dessa ska listas under "intentionalChoices" och behandlas som STARKT medvetna val som inte ska flaggas i framtida granskningar.`,
   },
   {
     key: 'ai:develop_brainstorm',
@@ -577,6 +580,10 @@ RESPEKTERA DNA-PROFILEN — KRITISKT:
 - BILDSPRÅK: Förslag ska använda samma typ av bildspråk och metaforik som författaren redan använder.
 - ORDVAL/REGISTER: Håll dig till författarens register. Föreslå inte akademiskt språk i informell text eller vice versa.
 - STYRKOR: Flagga ALDRIG författarens listade styrkor som problem — de definierar rösten.
+
+INTENTIONELLA STILVAL:
+- Om DNA-profilen listar "intentionalChoices" (t.ex. meningslängd, dialogstil, tonalitet), ska dessa områden
+  ALDRIG flaggas som problem. Dessa är bekräftade av författarens egna granskningsbeslut.
 
 KVALITETSKONTROLL:
 - Varje förslag MÅSTE motiveras med "detta avviker från författarens etablerade stil".
