@@ -427,11 +427,13 @@ function extractDiff(original, replacement) {
     endRepl--;
   }
 
-  const word = origWords.slice(start, endOrig + 1).join(' ');
-  const correction = replWords.slice(start, endRepl + 1).join(' ');
+  // Strip trailing/leading punctuation from extracted words
+  const stripPunct = (s) => s.replace(/^[.,!?;:…"'"'«»\-–—]+/, '').replace(/[.,!?;:…"'"'«»\-–—]+$/, '');
+  const word = stripPunct(origWords.slice(start, endOrig + 1).join(' '));
+  const correction = stripPunct(replWords.slice(start, endRepl + 1).join(' '));
 
   // If diff is empty or identical, fall back to full strings (edge case)
-  if (!word && !correction) return { word: original.trim(), correction: replacement.trim() };
+  if (!word && !correction) return { word: stripPunct(original.trim()), correction: stripPunct(replacement.trim()) };
 
   return { word, correction };
 }
