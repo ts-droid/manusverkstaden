@@ -180,6 +180,23 @@ model PublishOrder {
   @@index([projectId])
 }
 
+// ─── ADMIN WORD LIST (verified correct/incorrect words) ───
+
+model WordListEntry {
+  id          String   @id @default(cuid())
+  word        String   // The word as written by the author (e.g. "överbord")
+  correction  String   // The incorrect "correction" that AI suggested (e.g. "över bord")
+  isCorrect   Boolean  @default(true) // true = the author's word IS correct, don't flag it
+  note        String?  // Admin note explaining why
+  category    String   @default("general") // "spelling", "compound", "loanword", "archaic", etc.
+  addedBy     String?  // Admin email
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([word, correction])
+  @@index([word])
+}
+
 // ─── ADMIN PROMPT MANAGEMENT ───
 
 model PromptConfig {

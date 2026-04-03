@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
-import { reviewChapter, reviewChapterMultiPass, reviewChapterAddon, generateDNAProfile, developText, translateText, finalCheck } from '../services/ai.js';
+import { reviewChapter, reviewChapterMultiPass, reviewChapterAddon, generateDNAProfile, aggregateSuggestionFeedback, developText, translateText, finalCheck } from '../services/ai.js';
 import { checkUsageLimit, recordUsage } from '../services/usage.js';
 
 const router = Router();
@@ -402,9 +402,17 @@ router.post('/dna-profile', async (req, res, next) => {
     }
 
     const allText = project.chapters.map(c => c.content).join('\n\n---\n\n');
+
+    // Aggregate feedback from previous accept/reject decisions
+    const feedbackSummary = await aggregateSuggestionFeedback(req.user.id);
+    if (feedbackSummary) {
+      console.log(`[DNA Profile] Including feedback from ${feedbackSummary.totalReviewed} reviewed suggestions (${feedbackSummary.acceptRate}% accept rate)`);
+    }
+
     const { storyDna, authorDna, result: combined, meta } = await generateDNAProfile(allText, {
       genres: project.genres,
       existingAuthorDna: user?.authorDna || null,
+      feedbackSummary,
     });
 
     // Save story DNA to project, combined profile for backward compat

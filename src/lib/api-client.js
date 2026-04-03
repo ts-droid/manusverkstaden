@@ -238,6 +238,12 @@ class ApiClient {
   async getAdminPrompts() { return this.request('/admin/prompts'); }
   async updateAdminPrompt(key, content) { return this.request(`/admin/prompts/${key}`, { method: 'PUT', body: JSON.stringify({ content }) }); }
 
+  // Admin word list
+  async getAdminWordList() { return this.request('/admin/word-list'); }
+  async addAdminWordEntry(data) { return this.request('/admin/word-list', { method: 'POST', body: JSON.stringify(data) }); }
+  async deleteAdminWordEntry(id) { return this.request(`/admin/word-list/${id}`, { method: 'DELETE' }); }
+  async getAdminRejectedSuggestions() { return this.request('/admin/rejected-suggestions'); }
+
   // ─── BILLING ───
 
   async createCheckout(priceId) {
