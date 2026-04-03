@@ -3840,7 +3840,7 @@ export default function App() {
               const loadedChapters = (data.chapters || []).map(ch => ({
                 id: ch.id, number: ch.number, title: ch.title,
                 content: ch.content, wordCount: ch.wordCount,
-                status: ch.suggestions?.length > 0 ? "done" : "pending",
+                status: (ch.status === "REVIEWED" || ch.suggestions?.length > 0) ? "done" : "pending",
               }));
               setChapters(loadedChapters);
               setParagraphsByChapter(parasMap);
@@ -4026,7 +4026,7 @@ export default function App() {
       const loadedChapters = (data.chapters || []).map(ch => ({
         id: ch.id, number: ch.number, title: ch.title,
         content: ch.content, wordCount: ch.wordCount,
-        status: ch.suggestions?.length > 0 ? "done" : "pending",
+        status: (ch.status === "REVIEWED" || ch.suggestions?.length > 0) ? "done" : "pending",
       }));
 
       if (loadedChapters.length === 0) {
@@ -5138,9 +5138,11 @@ export default function App() {
   const globalPendingCount = globalAllSuggestions.filter(s => !accepted.has(s.id) && !rejected.has(s.id)).length;
   const allChaptersReviewed = chapters.length > 0 && chapters.every(ch => {
     const paras = paragraphsByChapter[ch.id] || [];
-    return paras.some(p => p.suggestions?.length > 0);
+    const hasSuggestions = paras.some(p => p.suggestions?.length > 0);
+    // A chapter is "reviewed" if it has suggestions OR its status is "done"/"reviewed" (reviewed with 0 findings)
+    return hasSuggestions || ch.status === "done" || ch.status === "reviewed";
   });
-  const manuscriptFullyHandled = allChaptersReviewed && globalPendingCount === 0 && globalAllSuggestions.length > 0;
+  const manuscriptFullyHandled = allChaptersReviewed && globalPendingCount === 0;
 
   // Show completion modal when all suggestions are handled
   const prevPendingRef = useRef(globalPendingCount);
@@ -5572,12 +5574,12 @@ export default function App() {
             onClick={() => {
               if (reReviewing || addonReviewing) return;
               if (!savedSinceLastReview && globalAllSuggestions.length > 0) {
-                // Not saved yet — tell user to handle suggestions and save first
                 if (globalPendingCount > 0) {
                   alert("Gå igenom alla förslag först, spara sedan som ny version innan du gör en ny granskning.");
-                } else {
-                  alert("Spara som ny version innan du gör en ny granskning. Då analyseras det uppdaterade manuset.");
+                  return;
                 }
+                // All suggestions handled — show completion modal with deeper analysis options
+                setShowCompletionModal(true);
                 return;
               }
               setShowReReviewModal(true);
