@@ -5573,27 +5573,35 @@ export default function App() {
           <button
             onClick={() => {
               if (reReviewing || addonReviewing) return;
-              if (!savedSinceLastReview && globalAllSuggestions.length > 0) {
-                if (globalPendingCount > 0) {
-                  alert("Gå igenom alla förslag först, spara sedan som ny version innan du gör en ny granskning.");
-                  return;
-                }
-                // All suggestions handled — show completion modal with deeper analysis options
+              // If suggestions exist but not all handled yet
+              if (globalPendingCount > 0 && globalAllSuggestions.length > 0) {
+                alert("Gå igenom alla förslag först.");
+                return;
+              }
+              // If grundgranskning is done (chapters reviewed) and deeper passes not yet completed
+              const hasUnrunDeep = !completedPasses.has("pass3") || !completedPasses.has("pass4");
+              if (allChaptersReviewed && hasUnrunDeep) {
+                // Show completion modal with deeper analysis options (regardless of savedSinceLastReview)
                 setShowCompletionModal(true);
+                return;
+              }
+              // Otherwise, offer fresh grundgranskning (only after saving as new version)
+              if (!savedSinceLastReview && globalAllSuggestions.length > 0) {
+                alert("Spara som ny version innan du gör en ny granskning. Då analyseras det uppdaterade manuset.");
                 return;
               }
               setShowReReviewModal(true);
             }}
             disabled={reReviewing || addonReviewing}
-            title={!savedSinceLastReview && globalAllSuggestions.length > 0 ? "Spara som ny version först" : "Starta ny grundgranskning"}
+            title={allChaptersReviewed && (!completedPasses.has("pass3") || !completedPasses.has("pass4")) ? "Fördjupa granskningen" : "Starta ny grundgranskning"}
             style={{
               fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7,
               cursor: (reReviewing || addonReviewing) ? "default" : "pointer",
               border: `1px solid ${border}`,
               background: (reReviewing || addonReviewing) ? "#e8ddd2" : surface,
-              color: (reReviewing || addonReviewing) ? muted : (!savedSinceLastReview && globalAllSuggestions.length > 0) ? muted : ink,
+              color: (reReviewing || addonReviewing) ? muted : (globalPendingCount > 0 && globalAllSuggestions.length > 0) ? muted : ink,
               fontWeight: 500, display: "flex", alignItems: "center", gap: 4,
-              opacity: (!savedSinceLastReview && globalAllSuggestions.length > 0 && !reReviewing && !addonReviewing) ? 0.6 : 1,
+              opacity: (globalPendingCount > 0 && globalAllSuggestions.length > 0 && !reReviewing && !addonReviewing) ? 0.6 : 1,
             }}
           >
             {(reReviewing || addonReviewing) ? "Granskar..." : `↻ Granska`}
