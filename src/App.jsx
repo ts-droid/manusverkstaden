@@ -3562,7 +3562,7 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                       {/* Sub-tabs */}
                       <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: `1px solid ${border}` }}>
                         {[
-                          { id: "candidates", label: `Kandidater (${rejectedPatterns.filter(p => !dismissedPatterns.includes(`${(p.original||'').toLowerCase()}→${(p.replacement||'').toLowerCase()}`)).length})` },
+                          { id: "candidates", label: `Kandidater (${rejectedPatterns.filter(p => { const k = `${(p.original||'').toLowerCase()}→${(p.replacement||'').toLowerCase()}`; return !dismissedPatterns.includes(k) && !wordList.some(w => w.word.toLowerCase() === (p.original||'').toLowerCase() && w.correction.toLowerCase() === (p.replacement||'').toLowerCase()); }).length})` },
                           { id: "words", label: `Bekräftade ord (${wordList.length})` },
                         ].map(st => (
                           <button key={st.id} onClick={() => setWordListSubTab(st.id)} style={{
@@ -3673,7 +3673,9 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                           {(() => {
                             const visiblePatterns = rejectedPatterns.filter(p => {
                               const key = `${(p.original || '').toLowerCase()}→${(p.replacement || '').toLowerCase()}`;
-                              return !dismissedPatterns.includes(key);
+                              if (dismissedPatterns.includes(key)) return false;
+                              if (wordList.some(w => w.word.toLowerCase() === (p.original || '').toLowerCase() && w.correction.toLowerCase() === (p.replacement || '').toLowerCase())) return false;
+                              return true;
                             });
                             const dismissPattern = (p) => {
                               const key = `${(p.original || '').toLowerCase()}→${(p.replacement || '').toLowerCase()}`;
@@ -3695,8 +3697,7 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                             return (
                               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                                 {visiblePatterns.slice(0, 50).map((p, i) => {
-                                  const inList = wordList.some(w => w.word.toLowerCase() === p.original?.toLowerCase() && w.correction.toLowerCase() === p.replacement?.toLowerCase());
-                                  return (
+                                    return (
                                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: surface, borderRadius: 8, border: `1px solid ${border}` }}>
                                       <div style={{ flex: 1 }}>
                                         <div style={{ fontFamily: font, fontSize: 15, color: ink, marginBottom: 2 }}>
@@ -3715,25 +3716,18 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                                         <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 3 }}>{p.reason}</div>
                                       </div>
                                       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                                        {!inList && (
-                                          <>
-                                            <button onClick={async () => {
-                                              try {
-                                                const res = await apiClient.addAdminWordEntry({ word: p.original, correction: p.replacement, isCorrect: true, note: `Avvisad ${p.count}x av användare`, category: "spelling" });
-                                                setWordList(prev => [res.entry, ...prev]);
-                                              } catch (err) { console.error("Add from pattern failed:", err); }
-                                            }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 6, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
-                                              Lägg till
-                                            </button>
-                                            <button onClick={() => dismissPattern(p)}
-                                              style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 12px", borderRadius: 6, border: `1px solid ${border}`, background: "transparent", color: muted, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                              Bortse
-                                            </button>
-                                          </>
-                                        )}
-                                        {inList && (
-                                          <span style={{ fontFamily: uiFont, fontSize: 11, color: "#27ae60", fontWeight: 600 }}>✓ I ordlistan</span>
-                                        )}
+                                        <button onClick={async () => {
+                                          try {
+                                            const res = await apiClient.addAdminWordEntry({ word: p.original, correction: p.replacement, isCorrect: true, note: `Avvisad ${p.count}x av användare`, category: "spelling" });
+                                            setWordList(prev => [res.entry, ...prev]);
+                                          } catch (err) { console.error("Add from pattern failed:", err); }
+                                        }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 6, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                                          Lägg till
+                                        </button>
+                                        <button onClick={() => dismissPattern(p)}
+                                          style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 12px", borderRadius: 6, border: `1px solid ${border}`, background: "transparent", color: muted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                          Bortse
+                                        </button>
                                       </div>
                                     </div>
                                   );
@@ -3813,7 +3807,7 @@ function SuperAdminView({ user, onBack, onDashboard }) {
             <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: `1px solid ${border}` }}>
               {[
                 { id: "words", label: `Bekräftade ord (${wordList.length})` },
-                { id: "candidates", label: `Kandidater (${rejectedPatterns.filter(p => !dismissedPatterns.includes(`${(p.original||'').toLowerCase()}→${(p.replacement||'').toLowerCase()}`)).length})` },
+                { id: "candidates", label: `Kandidater (${rejectedPatterns.filter(p => { const k = `${(p.original||'').toLowerCase()}→${(p.replacement||'').toLowerCase()}`; return !dismissedPatterns.includes(k) && !wordList.some(w => w.word.toLowerCase() === (p.original||'').toLowerCase() && w.correction.toLowerCase() === (p.replacement||'').toLowerCase()); }).length})` },
               ].map(st => (
                 <button key={st.id} onClick={() => setWordListSubTab(st.id)} style={{
                   fontFamily: uiFont, fontSize: 12, fontWeight: wordListSubTab === st.id ? 600 : 400,
@@ -3923,7 +3917,9 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                 {(() => {
                   const visiblePatterns = rejectedPatterns.filter(p => {
                     const key = `${(p.original || '').toLowerCase()}→${(p.replacement || '').toLowerCase()}`;
-                    return !dismissedPatterns.includes(key);
+                    if (dismissedPatterns.includes(key)) return false;
+                    if (wordList.some(w => w.word.toLowerCase() === (p.original || '').toLowerCase() && w.correction.toLowerCase() === (p.replacement || '').toLowerCase())) return false;
+                    return true;
                   });
                   const dismissPattern = (p) => {
                     const key = `${(p.original || '').toLowerCase()}→${(p.replacement || '').toLowerCase()}`;
@@ -3945,7 +3941,6 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                   return (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {visiblePatterns.slice(0, 50).map((p, i) => {
-                        const inList = wordList.some(w => w.word.toLowerCase() === p.original?.toLowerCase() && w.correction.toLowerCase() === p.replacement?.toLowerCase());
                         return (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: surface, borderRadius: 8, border: `1px solid ${border}` }}>
                             <div style={{ flex: 1 }}>
@@ -3965,25 +3960,18 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                               <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 3 }}>{p.reason}</div>
                             </div>
                             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                              {!inList && (
-                                <>
-                                  <button onClick={async () => {
-                                    try {
-                                      const res = await apiClient.addAdminWordEntry({ word: p.original, correction: p.replacement, isCorrect: true, note: `Avvisad ${p.count}x av användare`, category: "spelling" });
-                                      setWordList(prev => [res.entry, ...prev]);
-                                    } catch (err) { console.error("Add from pattern failed:", err); }
+                              <button onClick={async () => {
+                                try {
+                                  const res = await apiClient.addAdminWordEntry({ word: p.original, correction: p.replacement, isCorrect: true, note: `Avvisad ${p.count}x av användare`, category: "spelling" });
+                                  setWordList(prev => [res.entry, ...prev]);
+                                } catch (err) { console.error("Add from pattern failed:", err); }
                                   }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 6, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
                                     Lägg till
                                   </button>
-                                  <button onClick={() => dismissPattern(p)}
-                                    style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 12px", borderRadius: 6, border: `1px solid ${border}`, background: "transparent", color: muted, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                    Bortse
-                                  </button>
-                                </>
-                              )}
-                              {inList && (
-                                <span style={{ fontFamily: uiFont, fontSize: 11, color: "#27ae60", fontWeight: 600 }}>✓ I ordlistan</span>
-                              )}
+                              <button onClick={() => dismissPattern(p)}
+                                style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 12px", borderRadius: 6, border: `1px solid ${border}`, background: "transparent", color: muted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                Bortse
+                              </button>
                             </div>
                           </div>
                         );
