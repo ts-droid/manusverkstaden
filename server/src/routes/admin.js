@@ -401,6 +401,36 @@ router.delete('/word-list/:id', async (req, res, next) => {
   }
 });
 
+// ─── Extract the differing word(s) between two strings ───
+function extractDiff(original, replacement) {
+  if (!original || !replacement) return { word: original || '', correction: replacement || '' };
+
+  const origWords = original.trim().split(/\s+/);
+  const replWords = replacement.trim().split(/\s+/);
+
+  // Find first diverging index from the start
+  let start = 0;
+  while (start < origWords.length && start < replWords.length && origWords[start] === replWords[start]) {
+    start++;
+  }
+
+  // Find first diverging index from the end
+  let endOrig = origWords.length - 1;
+  let endRepl = replWords.length - 1;
+  while (endOrig > start && endRepl > start && origWords[endOrig] === replWords[endRepl]) {
+    endOrig--;
+    endRepl--;
+  }
+
+  const word = origWords.slice(start, endOrig + 1).join(' ');
+  const correction = replWords.slice(start, endRepl + 1).join(' ');
+
+  // If diff is empty or identical, fall back to full strings (edge case)
+  if (!word && !correction) return { word: original.trim(), correction: replacement.trim() };
+
+  return { word, correction };
+}
+
 // ─── GET /rejected-suggestions (red suggestions that were rejected by users) ───
 router.get('/rejected-suggestions', async (req, res, next) => {
   try {
@@ -427,14 +457,17 @@ router.get('/rejected-suggestions', async (req, res, next) => {
       take: 200,
     });
 
-    // Group by original→replacement pattern to find recurring false positives
+    // Group by the actual differing word(s), not full sentences
     const patterns = {};
     for (const s of suggestions) {
-      const key = `${s.original?.trim().toLowerCase()}→${s.replacement?.trim().toLowerCase()}`;
+      const { word, correction } = extractDiff(s.original, s.replacement);
+      const key = `${word.toLowerCase()}→${correction.toLowerCase()}`;
       if (!patterns[key]) {
         patterns[key] = {
-          original: s.original,
-          replacement: s.replacement,
+          original: word,
+          replacement: correction,
+          fullOriginal: s.original,
+          fullReplacement: s.replacement,
           reason: s.reason,
           count: 0,
           examples: [],
