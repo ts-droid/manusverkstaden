@@ -5595,16 +5595,16 @@ export default function App() {
             disabled={reReviewing || addonReviewing}
             title={allChaptersReviewed && (!completedPasses.has("pass3") || !completedPasses.has("pass4")) ? "Fördjupa granskningen" : "Starta ny grundgranskning"}
             style={{
-              fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7,
+              fontFamily: uiFont, fontSize: 12, padding: "7px 18px", borderRadius: 8,
               cursor: (reReviewing || addonReviewing) ? "default" : "pointer",
-              border: `1px solid ${border}`,
-              background: (reReviewing || addonReviewing) ? "#e8ddd2" : surface,
-              color: (reReviewing || addonReviewing) ? muted : (globalPendingCount > 0 && globalAllSuggestions.length > 0) ? muted : ink,
-              fontWeight: 500, display: "flex", alignItems: "center", gap: 4,
-              opacity: (globalPendingCount > 0 && globalAllSuggestions.length > 0 && !reReviewing && !addonReviewing) ? 0.6 : 1,
+              border: "none",
+              background: (reReviewing || addonReviewing) ? "#e8ddd2" : accent,
+              color: (reReviewing || addonReviewing) ? muted : "#fff",
+              fontWeight: 600, display: "flex", alignItems: "center", gap: 4,
+              opacity: (globalPendingCount > 0 && globalAllSuggestions.length > 0 && !reReviewing && !addonReviewing) ? 0.5 : 1,
             }}
           >
-            {(reReviewing || addonReviewing) ? "Granskar..." : `↻ Granska`}
+            {(reReviewing || addonReviewing) ? "Granskar..." : "Granska"}
             {reviewHistory.length > 0 && (
               <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 8, background: accentLight, color: accent, fontWeight: 600 }}>
                 #{activeReviewRound}
