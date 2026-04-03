@@ -3655,16 +3655,21 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                         ) : (
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             {rejectedPatterns.slice(0, 30).map((p, i) => (
-                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: bg, borderRadius: 8, border: `1px solid ${border}` }}>
+                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: bg, borderRadius: 8, border: `1px solid ${border}` }}>
                                 <div style={{ flex: 1 }}>
-                                  <div style={{ fontFamily: font, fontSize: 13, color: ink }}>
-                                    <span style={{ fontWeight: 600 }}>{p.original}</span>
+                                  <div style={{ fontFamily: font, fontSize: 15, color: ink, marginBottom: 4 }}>
+                                    <span style={{ fontWeight: 700 }}>{p.original}</span>
                                     <span style={{ color: muted, margin: "0 8px" }}>→</span>
                                     <span style={{ color: "#c0392b", textDecoration: "line-through" }}>{p.replacement}</span>
                                     <span style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginLeft: 10 }}>
                                       ({p.count}x avvisad)
                                     </span>
                                   </div>
+                                  {p.fullOriginal && p.fullOriginal !== p.original && (
+                                    <div style={{ fontFamily: font, fontSize: 11, color: muted, marginTop: 2, fontStyle: "italic", lineHeight: 1.4 }}>
+                                      Kontext: &quot;...{p.fullOriginal.length > 80 ? p.fullOriginal.substring(0, 80) + '...' : p.fullOriginal}&quot;
+                                    </div>
+                                  )}
                                   <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 3 }}>{p.reason}</div>
                                 </div>
                                 {!wordList.some(w => w.word.toLowerCase() === p.original?.toLowerCase() && w.correction.toLowerCase() === p.replacement?.toLowerCase()) && (
