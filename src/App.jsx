@@ -3041,6 +3041,9 @@ function SuperAdminView({ user, onBack, onDashboard }) {
   const [wordList, setWordList] = useState([]);
   const [rejectedPatterns, setRejectedPatterns] = useState([]);
   const [newWord, setNewWord] = useState({ word: "", correction: "", note: "", category: "spelling" });
+  const [dismissedPatterns, setDismissedPatterns] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("mv_dismissed_patterns") || "[]"); } catch { return []; }
+  });
 
   const tabs = [
     { id: "overview", label: "Översikt" },
@@ -3650,45 +3653,77 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                         <p style={{ fontFamily: uiFont, fontSize: 11, color: muted, margin: "0 0 14px", lineHeight: 1.5 }}>
                           Röda förslag som författare avvisat. Återkommande mönster kan tyda på att AI:n flaggar korrekta ord. Klicka &quot;Lägg till&quot; för att lägga till i ordlistan.
                         </p>
-                        {rejectedPatterns.length === 0 ? (
-                          <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, padding: 16, textAlign: "center" }}>Inga avvisade röda förslag hittades.</div>
-                        ) : (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            {rejectedPatterns.slice(0, 30).map((p, i) => (
-                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: bg, borderRadius: 8, border: `1px solid ${border}` }}>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontFamily: font, fontSize: 15, color: ink, marginBottom: 4 }}>
-                                    <span style={{ fontWeight: 700 }}>{p.original}</span>
-                                    <span style={{ color: muted, margin: "0 8px" }}>→</span>
-                                    <span style={{ color: "#c0392b", textDecoration: "line-through" }}>{p.replacement}</span>
-                                    <span style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginLeft: 10 }}>
-                                      ({p.count}x avvisad)
-                                    </span>
-                                  </div>
-                                  {p.fullOriginal && p.fullOriginal !== p.original && (
-                                    <div style={{ fontFamily: font, fontSize: 11, color: muted, marginTop: 2, fontStyle: "italic", lineHeight: 1.4 }}>
-                                      Kontext: &quot;...{p.fullOriginal.length > 80 ? p.fullOriginal.substring(0, 80) + '...' : p.fullOriginal}&quot;
+                        {(() => {
+                          const visiblePatterns = rejectedPatterns.filter(p => {
+                            const key = `${(p.original || '').toLowerCase()}→${(p.replacement || '').toLowerCase()}`;
+                            return !dismissedPatterns.includes(key);
+                          });
+                          const dismissPattern = (p) => {
+                            const key = `${(p.original || '').toLowerCase()}→${(p.replacement || '').toLowerCase()}`;
+                            const updated = [...dismissedPatterns, key];
+                            setDismissedPatterns(updated);
+                            try { localStorage.setItem("mv_dismissed_patterns", JSON.stringify(updated)); } catch {}
+                          };
+                          if (visiblePatterns.length === 0) return (
+                            <div style={{ fontFamily: uiFont, fontSize: 12, color: muted, padding: 16, textAlign: "center" }}>
+                              {rejectedPatterns.length > 0 ? "Alla mönster hanterade." : "Inga avvisade röda förslag hittades."}
+                              {dismissedPatterns.length > 0 && (
+                                <button onClick={() => { setDismissedPatterns([]); localStorage.removeItem("mv_dismissed_patterns"); }}
+                                  style={{ display: "block", margin: "10px auto 0", fontFamily: uiFont, fontSize: 11, padding: "4px 12px", borderRadius: 5, border: `1px solid ${border}`, background: "transparent", color: muted, cursor: "pointer" }}>
+                                  Visa bortsedda ({dismissedPatterns.length})
+                                </button>
+                              )}
+                            </div>
+                          );
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {visiblePatterns.slice(0, 30).map((p, i) => {
+                                const inList = wordList.some(w => w.word.toLowerCase() === p.original?.toLowerCase() && w.correction.toLowerCase() === p.replacement?.toLowerCase());
+                                return (
+                                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: bg, borderRadius: 8, border: `1px solid ${border}` }}>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontFamily: font, fontSize: 15, color: ink, marginBottom: 2 }}>
+                                        <span style={{ fontWeight: 700 }}>{p.original}</span>
+                                        <span style={{ color: muted, margin: "0 8px" }}>→</span>
+                                        <span style={{ color: "#c0392b", textDecoration: "line-through" }}>{p.replacement}</span>
+                                        <span style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginLeft: 10 }}>
+                                          ({p.count}x avvisad)
+                                        </span>
+                                      </div>
+                                      {p.fullOriginal && p.fullOriginal !== p.original && (
+                                        <div style={{ fontFamily: font, fontSize: 11, color: muted, marginTop: 2, fontStyle: "italic", lineHeight: 1.4, maxWidth: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          &quot;{p.fullOriginal}&quot;
+                                        </div>
+                                      )}
+                                      <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 3 }}>{p.reason}</div>
                                     </div>
-                                  )}
-                                  <div style={{ fontFamily: uiFont, fontSize: 11, color: muted, marginTop: 3 }}>{p.reason}</div>
-                                </div>
-                                {!wordList.some(w => w.word.toLowerCase() === p.original?.toLowerCase() && w.correction.toLowerCase() === p.replacement?.toLowerCase()) && (
-                                  <button onClick={async () => {
-                                    try {
-                                      const res = await apiClient.addAdminWordEntry({ word: p.original, correction: p.replacement, isCorrect: true, note: `Avvisad ${p.count}x av användare`, category: "spelling" });
-                                      setWordList(prev => [res.entry, ...prev]);
-                                    } catch (err) { console.error("Add from pattern failed:", err); }
-                                  }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 6, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
-                                    Lägg till
-                                  </button>
-                                )}
-                                {wordList.some(w => w.word.toLowerCase() === p.original?.toLowerCase() && w.correction.toLowerCase() === p.replacement?.toLowerCase()) && (
-                                  <span style={{ fontFamily: uiFont, fontSize: 11, color: "#27ae60", fontWeight: 600 }}>✓ I ordlistan</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                                      {!inList && (
+                                        <>
+                                          <button onClick={async () => {
+                                            try {
+                                              const res = await apiClient.addAdminWordEntry({ word: p.original, correction: p.replacement, isCorrect: true, note: `Avvisad ${p.count}x av användare`, category: "spelling" });
+                                              setWordList(prev => [res.entry, ...prev]);
+                                            } catch (err) { console.error("Add from pattern failed:", err); }
+                                          }} style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 6, border: "none", background: accent, color: "#fff", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                                            Lägg till
+                                          </button>
+                                          <button onClick={() => dismissPattern(p)}
+                                            style={{ fontFamily: uiFont, fontSize: 11, padding: "6px 12px", borderRadius: 6, border: `1px solid ${border}`, background: "transparent", color: muted, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                            Bortse
+                                          </button>
+                                        </>
+                                      )}
+                                      {inList && (
+                                        <span style={{ fontFamily: uiFont, fontSize: 11, color: "#27ae60", fontWeight: 600 }}>✓ I ordlistan</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}

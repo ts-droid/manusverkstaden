@@ -405,8 +405,13 @@ router.delete('/word-list/:id', async (req, res, next) => {
 function extractDiff(original, replacement) {
   if (!original || !replacement) return { word: original || '', correction: replacement || '' };
 
-  const origWords = original.trim().split(/\s+/);
-  const replWords = replacement.trim().split(/\s+/);
+  // Normalize: strip leading/trailing punctuation and whitespace for comparison
+  const normalize = (s) => s.replace(/^[\s….\-–—"'"'«»]+/, '').replace(/[\s….\-–—"'"'«»]+$/, '');
+  const origNorm = normalize(original);
+  const replNorm = normalize(replacement);
+
+  const origWords = origNorm.split(/\s+/);
+  const replWords = replNorm.split(/\s+/);
 
   // Find first diverging index from the start
   let start = 0;
