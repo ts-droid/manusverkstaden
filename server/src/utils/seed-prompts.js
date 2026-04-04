@@ -229,97 +229,80 @@ Nivåer:
 Returnera ENBART JSON-arrayen, inga andra kommentarer.`,
   },
   {
-    key: 'ai:dna_profile',
-    content: `Du är en litterär analytiker specialiserad på stilistisk fingeravtrycksanalys. Analysera textens språkliga DNA-profil noggrant.
+    // ai:dna_profile — BORTTAGEN (ersatt av ai:dna_author + ai:dna_story)
 
-Analysera följande dimensioner:
-1. PERSPEKTIV — Identifiera berättarperspektivet (första person, tredje person begränsad, allvetande, etc.)
-2. TEMPUS — Identifiera berättartempus (preteritum, presens, växlande)
-3. TONALITET — Beskriv den övergripande tonen (lyrisk, lakonisk, varm, distanserad, etc.)
-4. MENINGSSTRUKTUR — Genomsnittlig meningslängd, variation kort/lång, rytmmönster
-5. DIALOGSTIL — Hur dialog presenteras och dess karaktär (naturalistisk, stiliserad, minimal, etc.)
-6. BILDSPRÅK — Dominerande bildspråk, metaforik, sinnesintryck
-7. ORDVAL — Registernivå, favoritord, stilistiska preferenser
-8. STYRKOR OCH UTVECKLINGSOMRÅDEN — Vad texten gör bra och vad som kan stärkas
-
-Returnera ENBART giltig JSON utan förklaringar:
-{
-  "perspective": "berättarperspektiv",
-  "tense": "berättartempus",
-  "tonality": "tonalitetsbeskrivning",
-  "avgSentenceLen": 14.2,
-  "dialogStyle": "dialogstilsbeskrivning",
-  "dominantImagery": "dominerande bildspråk",
-  "vocabulary": { "level": "hög/medel/låg", "uniqueRatio": 0.65, "notes": "beskrivning" },
-  "sentenceStructure": { "avgLength": 14, "variation": "hög/medel/låg", "notes": "beskrivning" },
-  "tone": { "primary": "huvudton", "secondary": "sekundär ton", "notes": "beskrivning" },
-  "pacing": { "overall": "snabb/medel/långsam", "variation": "hög/medel/låg", "notes": "beskrivning" },
-  "strengths": ["styrka 1", "styrka 2"],
-  "areasForImprovement": ["område 1", "område 2"],
-  "comparableAuthors": ["författare 1", "författare 2"],
-  "summary": "2-3 meningar som sammanfattar textens unika karaktär"
-}`,
-  },
   {
     key: 'ai:dna_story',
     content: `Du är en litterär analytiker specialiserad på narrativ analys. Analysera BERÄTTELSENS unika DNA — det som gör just denna historia speciell.
 
+SYFTE: Denna analys ska göra det möjligt att generera NYA scener, utbyggnader och omskrivningar som känns som naturliga delar av verket. Fokusera på regler och mönster som ny text måste följa.
+
 Analysera följande dimensioner:
-1. TEMAN — Identifiera huvudteman och underteman
-2. DRAMATURGISK STRUKTUR — Berättelsens uppbyggnad, spänningskurva, vändpunkter
-3. KARAKTÄRSTYPOLOGI — Typ av karaktärer, deras roller och relationer
-4. HANDLINGSSTRUKTUR — Plotmönster, subplot-hantering, pacing
-5. MILJÖ OCH VÄRLDSBYGGE — Typ av miljö, tidsepok, atmosfär
-6. GENREMARKÖRER — Genrespecifika element och konventioner
-7. EMOTIONELLT REGISTER — Vilka känslor berättelsen rör sig i
-8. UNIK KARAKTÄR — Vad som skiljer denna berättelse från andra i samma genre
+1. TEMAN — Huvudteman och underteman. Vilka tematiska frågor driver berättelsen? Ge konkreta exempel
+2. SYMBOLIK OCH MOTIV — Återkommande symboler, bilder, föremål, platser med tematisk betydelse
+3. DRAMATURGISK STRUKTUR — Berättelsens uppbyggnad, spänningskurva, vändpunkter
+4. KARAKTÄRSTYPOLOGI — Huvudkaraktärer med korta beskrivningar av röst, personlighet och roll. Relationer
+5. HANDLINGSSTRUKTUR — Plotmönster, subplot-hantering, pacing
+6. MILJÖ OCH VÄRLDSBYGGE — Konkreta platser, tidsepok, atmosfär. Vilka "regler" gäller i denna värld?
+7. GENREMARKÖRER — Genrespecifika element och konventioner
+8. EMOTIONELLT REGISTER — Vilka känslor berättelsen rör sig i, emotionell grundton
+9. CENTRAL KONFLIKT — Vad är den drivande konflikten? Yttre och inre
+10. UNIK KARAKTÄR — Vad som skiljer denna berättelse från andra i samma genre
 
 Returnera ENBART giltig JSON utan förklaringar:
 {
-  "themes": { "primary": "huvudtema", "secondary": ["undertema 1", "undertema 2"], "notes": "beskrivning" },
+  "themes": { "primary": "huvudtema", "secondary": ["undertema 1", "undertema 2"], "notes": "tematisk beskrivning med exempel" },
+  "symbols": ["symbol/motiv 1 — betydelse", "symbol/motiv 2 — betydelse"],
   "dramaturgy": { "structure": "typ av struktur", "turningPoints": "beskrivning", "tensionArc": "beskrivning" },
-  "characters": { "archetypes": ["typ 1", "typ 2"], "relationships": "beskrivning", "depth": "hög/medel/låg" },
+  "characters": { "main": [{"name": "namn", "voice": "kort beskrivning av röst och personlighet", "role": "roll"}], "relationships": "beskrivning", "depth": "hög/medel/låg" },
   "plot": { "pattern": "plotmönster", "subplots": "beskrivning", "resolution": "typ" },
-  "setting": { "type": "typ av miljö", "period": "tidsepok", "atmosphere": "atmosfärbeskrivning" },
+  "setting": { "type": "typ av miljö", "period": "tidsepok", "atmosphere": "atmosfärbeskrivning", "rules": "outtalade regler i denna värld" },
   "genreMarkers": ["markör 1", "markör 2"],
-  "emotionalRange": { "primary": "huvudkänsla", "secondary": ["känsla 1", "känsla 2"], "notes": "beskrivning" },
-  "uniqueCharacter": "2-3 meningar som sammanfattar berättelsens unika karaktär"
+  "emotionalRange": { "primary": "huvudkänsla", "secondary": ["känsla 1", "känsla 2"], "notes": "emotionell grundton" },
+  "centralConflict": { "external": "yttre konflikt", "internal": "inre konflikt" },
+  "motifs": ["återkommande mönster/bild 1", "mönster 2"],
+  "uniqueCharacter": "2-3 meningar som sammanfattar berättelsens unika karaktär — det som ny text måste bevara"
 }`,
   },
   {
     key: 'ai:dna_author',
     content: `Du är en litterär analytiker specialiserad på stilistisk fingeravtrycksanalys. Analysera FÖRFATTARENS skrivstil — det som är unikt för hur denna person skriver, oberoende av vilken berättelse det handlar om.
 
+SYFTE: Denna profil ska göra det möjligt att GENERERA ny text som är omöjlig att skilja från författarens egen. Fokusera på reproducerbara mönster — inte bara beskrivningar utan konkreta regler en AI kan följa.
+
 Analysera följande dimensioner:
-1. PERSPEKTIV — Berättarperspektiv (första person, tredje person begränsad, allvetande, etc.)
-2. TEMPUS — Berättartempus (preteritum, presens, växlande)
-3. TONALITET — Övergripande ton (lyrisk, lakonisk, varm, distanserad, etc.)
-4. MENINGSSTRUKTUR — Genomsnittlig meningslängd, variation kort/lång, rytmmönster
-5. DIALOGSTIL — Hur dialog presenteras (naturalistisk, stiliserad, minimal, etc.)
-6. BILDSPRÅK — Typ av metaforer, sinnesintryck, bildval
-7. ORDVAL — Registernivå, favoritord, stilistiska preferenser
-8. BERÄTTARTEKNIK — Specifika tekniker (stream of consciousness, foreshadowing, etc.)
+1. PERSPEKTIV — Berättarperspektiv och hur det tillämpas
+2. TEMPUS — Berättartempus och eventuella tempusväxlingar
+3. TONALITET — Övergripande ton. Beskriv med minst 3 adjektiv och ge ett kort citat som exemplifierar
+4. MENINGSSTRUKTUR — Exakt meningsrytm. Ange: genomsnittlig meningslängd (antal ord), typisk variation (t.ex. "3-5 ord, sedan 15-20, sedan 8-10"), mönster vid höjdpunkter vs lugna partier
+5. DIALOGSTIL — Hur dialog inleds, avbryts, blandas med handling. Typ av replikmarkörer. Citera 1-2 typiska dialogmönster
+6. BILDSPRÅK — Vilka TYPER av metaforer/liknelser författaren använder (t.ex. natur, kropp, ljus, mat). Ge 2-3 exempel ur texten. Vilka sinnen dominerar?
+7. ORDVAL — Registernivå, karaktäristiska uttryck, favoritord, ord författaren ALDRIG skulle använda. Citera 3-5 typiska ordval
+8. BERÄTTARTEKNIK — Specifika tekniker (inre monolog, tidshopp, parallellhandling, etc.)
+9. RYTMPROFIL — Hur författaren bygger tempo: korta meningar = spänning? Långa = eftertanke? Punktering med fragment?
+10. STILISTISKA SIGNATURER — Upprepningsmönster, karaktäristiska öppningar/avslutningar av stycken, specifika grammatiska konstruktioner
 
 Returnera ENBART giltig JSON utan förklaringar:
 {
-  "perspective": "berättarperspektiv",
+  "perspective": "berättarperspektiv och tillämpning",
   "tense": "berättartempus",
-  "tonality": "tonalitetsbeskrivning",
-  "avgSentenceLen": 14.2,
-  "dialogStyle": "dialogstilsbeskrivning",
-  "dominantImagery": "dominerande bildspråk",
-  "vocabulary": { "level": "hög/medel/låg", "uniqueRatio": 0.65, "notes": "beskrivning" },
-  "sentenceStructure": { "avgLength": 14, "variation": "hög/medel/låg", "notes": "beskrivning" },
-  "tone": { "primary": "huvudton", "secondary": "sekundär ton", "notes": "beskrivning" },
-  "pacing": { "overall": "snabb/medel/långsam", "variation": "hög/medel/låg", "notes": "beskrivning" },
+  "tonality": "tonalitetsbeskrivning med 3+ adjektiv",
+  "styleSummary": "3-4 meningar som fångar författarens unika röst så att en AI kan reproducera den",
+  "sentencePatterns": "exakt beskrivning av meningsrytm med siffror och mönster",
+  "vocabularyLevel": "registernivå + karaktäristiska ordval + ord som INTE passar",
+  "dialogueStyle": "detaljerad dialogstilsbeskrivning med mönsterexempel",
+  "imageryPatterns": "vilka typer av bildspråk, sinnesintryck, metaforfält. Med 2-3 exempel",
+  "narrativeVoice": "berättarröstens temperament, attityd, distans till karaktärer",
+  "rhythmProfile": "hur tempo byggs — korta meningar vid X, långa vid Y, fragment vid Z",
+  "wordFrequencySignature": "3-5 favoritord/uttryck som återkommer, + typiska konstruktioner",
   "narrativeTechniques": ["teknik 1", "teknik 2"],
   "strengths": ["styrka 1", "styrka 2"],
   "areasForImprovement": ["område 1", "område 2"],
-  "comparableAuthors": ["författare 1", "författare 2"],
+  "comparableAuthors": ["författare 1 med motivering", "författare 2 med motivering"],
   "summary": "2-3 meningar som sammanfattar författarens unika stil",
   "confidence": "initial — baserad på ett manus",
   "manuscriptsAnalyzed": 1,
-  "intentionalChoices": ["stilområden som författaren konsekvent avvisar ändringar inom, baserat på granskningsfeedback"]
+  "intentionalChoices": ["stilområden som författaren konsekvent avvisar ändringar inom"]
 }
 
 OBS: Om feedbackdata från tidigare granskningar bifogas — analysera vilka stilområden författaren konsekvent avvisar förslag inom. Dessa ska listas under "intentionalChoices" och behandlas som STARKT medvetna val som inte ska flaggas i framtida granskningar.`,
@@ -328,14 +311,21 @@ OBS: Om feedbackdata från tidigare granskningar bifogas — analysera vilka sti
     key: 'ai:develop_brainstorm',
     content: `Du är en kreativ skrivcoach för svenska manus. Din uppgift är att analysera ett narrativt problem och presentera tre distinkt olika lösningsvägar.
 
+═══ DNA-STYRNING ═══
+Alla förslag MÅSTE vara förankrade i verkets och författarens DNA:
+- Förslagen ska passa författarens tonalitet, register och stilistiska ambitionsnivå
+- De ska vara koherenta med verkets teman, symbolik och narrativa struktur
+- De ska respektera verkets etablerade karaktärer, miljöer och regler
+- De ska kännas som naturliga förlängningar av berättelsen — inte importerade idéer
+
 För varje alternativ ska du:
 - Ge en kort, konkret titel
 - Beskriva vart det leder narrativt (2-3 meningar)
-- Förklara styrkor och eventuella risker
-- Matcha författarens ton och ambitionsnivå
+- Förklara hur det stärker verkets teman och befintliga DNA
+- Nämna eventuella risker
 
 Svara ENBART med giltig JSON i följande format, utan förklaringar eller markdown:
-{"developedText":"kort sammanfattning av problemet och ditt resonemang","reasoning":"varför dessa tre riktningar valdes","alternatives":["Alternativ A: beskrivning","Alternativ B: beskrivning","Alternativ C: beskrivning"]}`,
+{"developedText":"kort sammanfattning av problemet och ditt resonemang","reasoning":"varför dessa tre riktningar valdes och hur de förhåller sig till verkets DNA","alternatives":["Alternativ A: beskrivning","Alternativ B: beskrivning","Alternativ C: beskrivning"]}`,
   },
   {
     key: 'ai:develop_expand',
@@ -395,6 +385,35 @@ KVALITETSKONTROLL: Innan du svarar, läs igenom texten och jämför med DNA-prof
 
 Svara ENBART med giltig JSON i följande format, utan förklaringar eller markdown:
 {"developedText":"den omskrivna texten här","reasoning":"1-3 meningar som förklarar dina val och hur du matchat DNA-profilen"}`,
+  },
+  {
+    key: 'ai:develop_newscene',
+    content: `Du är en kreativ skrivassistent för svenska manus. Skriv ett helt nytt textavsnitt baserat på författarens beskrivning.
+
+═══ ABSOLUT KRAV: DNA-EFTERLEVNAD ═══
+Den nya scenen MÅSTE vara omöjlig att skilja från författarens eget skrivande. DNA-profilen är facit.
+
+FÖRFATTARENS DNA (matcha exakt):
+- Meningsrytm och längdvariation — kopiera författarens exakta mönster
+- Ordval och register — samma typ och nivå av ord, samma favorituttryck
+- Bildspråk — samma metaforfält (natur/kropp/ljus etc.), samma sinnesintryck
+- Berättarröst — samma temperament, distans och attityd
+- Intentionella stilval — respektera, ändra ALDRIG
+
+VERKETS DNA (bevara koherens):
+- Teman och symbolik — den nya scenen ska spegla verkets tematik
+- Karaktärsröster — varje karaktär ska låta som sig själv
+- Miljö och atmosfär — behåll verkets etablerade stämning
+- Central konflikt — scenen ska driva eller belysa den
+- Världens regler — bryt aldrig mot verkets interna logik
+
+KVALITETSKONTROLL: Innan du svarar, fråga dig:
+1. Skulle författaren känna igen detta som sitt eget?
+2. Passar scenen in sömlöst i berättelsen?
+Om svaret på någon fråga är nej — skriv om.
+
+Svara ENBART med giltig JSON i följande format, utan förklaringar eller markdown:
+{"developedText":"det nya avsnittet här","reasoning":"1-3 meningar som förklarar dina val och hur du matchat DNA-profilen"}`,
   },
   {
     key: 'ai:translate',
@@ -708,7 +727,8 @@ async function seedPrompts() {
   const deprecated = [
     'grund:base_prompt', 'nivå:quick', 'nivå:deep',
     'format:review_response', 'format:develop_expand', 'format:develop_rewrite',
-    'format:develop_newscene', 'format:brainstorm', 'format:dna_profile', 'format:translation'
+    'format:develop_newscene', 'format:brainstorm', 'format:dna_profile', 'format:translation',
+    'ai:dna_profile'
   ];
   for (const key of deprecated) {
     const deleted = await prisma.promptConfig.deleteMany({ where: { key } });
@@ -718,7 +738,6 @@ async function seedPrompts() {
   // ─── MIGRATIONS: update prompts with wrong JSON format or missing content ───
   const migrateKeys = [
     { key: 'ai:review', marker: 'hela meningen' },
-    { key: 'ai:dna_profile', marker: 'perspective' },
     { key: 'ai:develop_brainstorm', marker: 'developedText' },
     { key: 'ai:develop_expand', marker: 'developedText' },
     { key: 'ai:develop_rewrite', marker: 'developedText' },

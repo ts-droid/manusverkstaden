@@ -473,17 +473,17 @@ Returnera ENBART JSON-arrayen.`);
     max_tokens: 8192,
   });
 
-  let dnaPromise = null;
+  // If no DNA exists, generate it properly via the two-part system
+  let dnaGenerationPromise = null;
   if (!dnaProfile && allText) {
-    const dnaPromptText = await getPrompt('ai:dna_profile', 'Analysera textens språkliga DNA-profil. Returnera JSON.');
-    dnaPromise = sendMessage({
-      system: dnaPromptText,
-      messages: [{ role: 'user', content: `Analysera:\n\n${allText.slice(0, 50000)}` }],
-      max_tokens: 4096,
+    console.log('[AI Review] No DNA exists — generating via two-part DNA system in parallel with pass 1');
+    dnaGenerationPromise = generateDNAProfile(allText, { genres }).catch(err => {
+      console.error('[AI Review] DNA generation failed, continuing without:', err.message);
+      return null;
     });
   }
 
-  const [pass1Response, dnaResponse] = await Promise.all([pass1Promise, dnaPromise || Promise.resolve(null)]);
+  const [pass1Response, dnaResult] = await Promise.all([pass1Promise, dnaGenerationPromise || Promise.resolve(null)]);
 
   const pass1Meta = extractMeta(pass1Response);
   addMeta(pass1Meta);
@@ -493,13 +493,11 @@ Returnera ENBART JSON-arrayen.`);
     if (!Array.isArray(pass1Suggestions)) pass1Suggestions = [];
   } catch { pass1Suggestions = []; }
 
-  // Parse DNA if generated
+  // Use generated DNA or existing
   let dna = dnaProfile;
-  let dnaMeta = null;
-  if (dnaResponse) {
-    dnaMeta = extractMeta(dnaResponse);
-    addMeta(dnaMeta);
-    try { dna = parseJsonResponse(extractText(dnaResponse)); } catch { dna = null; }
+  if (dnaResult) {
+    addMeta(dnaResult.meta);
+    dna = dnaResult.result; // combined legacy format from generateDNAProfile
   }
 
   // === PASS 2: Complement with DNA (red only) ===
@@ -1016,15 +1014,27 @@ export async function developText(mode, input, options = {}) {
     const parts = [];
     parts.push('\n\n═══ FÖRFATTARENS DNA-PROFIL (HÖGSTA PRIORITET) ═══');
     parts.push('All genererad text MÅSTE matcha denna profil. DNA-profilen är facit för författarens röst.');
+    // New detailed fields
     if (authorDna.styleSummary) parts.push(`\nStilsammanfattning: ${authorDna.styleSummary}`);
     if (authorDna.sentencePatterns) parts.push(`Meningsrytm: ${authorDna.sentencePatterns}`);
+    if (authorDna.rhythmProfile) parts.push(`Rytmprofil: ${authorDna.rhythmProfile}`);
     if (authorDna.vocabularyLevel) parts.push(`Ordnivå: ${authorDna.vocabularyLevel}`);
+    if (authorDna.wordFrequencySignature) parts.push(`Ordfrekvens/signaturer: ${authorDna.wordFrequencySignature}`);
     if (authorDna.dialogueStyle) parts.push(`Dialogstil: ${authorDna.dialogueStyle}`);
     if (authorDna.imageryPatterns) parts.push(`Bildspråk: ${authorDna.imageryPatterns}`);
     if (authorDna.narrativeVoice) parts.push(`Berättarröst: ${authorDna.narrativeVoice}`);
     if (authorDna.tonality) parts.push(`Tonalitet: ${authorDna.tonality}`);
-    if (authorDna.rhythmProfile) parts.push(`Rytmprofil: ${authorDna.rhythmProfile}`);
-    if (authorDna.wordFrequencySignature) parts.push(`Ordfrekvens: ${authorDna.wordFrequencySignature}`);
+    // Legacy fields (backward compatibility)
+    if (!authorDna.styleSummary && authorDna.summary) parts.push(`\nSammanfattning: ${authorDna.summary}`);
+    if (!authorDna.sentencePatterns && authorDna.sentenceStructure) {
+      const ss = authorDna.sentenceStructure;
+      parts.push(`Meningsstruktur: snitt ${ss.avgLength || authorDna.avgSentenceLen} ord, variation: ${ss.variation || 'okänd'}`);
+    }
+    if (!authorDna.dialogueStyle && authorDna.dialogStyle) parts.push(`Dialogstil: ${authorDna.dialogStyle}`);
+    if (!authorDna.imageryPatterns && authorDna.dominantImagery) parts.push(`Bildspråk: ${authorDna.dominantImagery}`);
+    if (authorDna.perspective) parts.push(`Perspektiv: ${authorDna.perspective}`);
+    if (authorDna.tense) parts.push(`Tempus: ${authorDna.tense}`);
+    if (authorDna.narrativeTechniques?.length > 0) parts.push(`Berättartekniker: ${authorDna.narrativeTechniques.join(', ')}`);
     if (authorDna.intentionalChoices?.length > 0) {
       parts.push(`\nIntentionella stilval (RESPEKTERA, ändra ALDRIG): ${authorDna.intentionalChoices.join(', ')}`);
     }
@@ -1033,15 +1043,19 @@ export async function developText(mode, input, options = {}) {
 
   // ── STORY DNA (per-project: themes, symbols, structure) ──
   if (storyDna && typeof storyDna === 'object') {
+    const fmt = (v) => typeof v === 'object' ? JSON.stringify(v) : String(v);
     const parts = [];
     parts.push('\n\n═══ VERKETS DNA ═══');
-    if (storyDna.themes) parts.push(`Teman: ${Array.isArray(storyDna.themes) ? storyDna.themes.join(', ') : storyDna.themes}`);
-    if (storyDna.symbols) parts.push(`Symbolik: ${Array.isArray(storyDna.symbols) ? storyDna.symbols.join(', ') : storyDna.symbols}`);
-    if (storyDna.narrativeStructure) parts.push(`Narrativ struktur: ${storyDna.narrativeStructure}`);
-    if (storyDna.worldRules) parts.push(`Världens regler: ${storyDna.worldRules}`);
-    if (storyDna.centralConflict) parts.push(`Central konflikt: ${storyDna.centralConflict}`);
-    if (storyDna.motifs) parts.push(`Motiv: ${Array.isArray(storyDna.motifs) ? storyDna.motifs.join(', ') : storyDna.motifs}`);
-    if (storyDna.settingDetails) parts.push(`Miljö: ${storyDna.settingDetails}`);
+    if (storyDna.themes) parts.push(`Teman: ${fmt(storyDna.themes)}`);
+    if (storyDna.symbols) parts.push(`Symbolik: ${Array.isArray(storyDna.symbols) ? storyDna.symbols.join('; ') : fmt(storyDna.symbols)}`);
+    if (storyDna.motifs) parts.push(`Motiv: ${Array.isArray(storyDna.motifs) ? storyDna.motifs.join('; ') : fmt(storyDna.motifs)}`);
+    if (storyDna.centralConflict) parts.push(`Central konflikt: ${fmt(storyDna.centralConflict)}`);
+    if (storyDna.characters) parts.push(`Karaktärer: ${fmt(storyDna.characters)}`);
+    if (storyDna.setting) parts.push(`Miljö: ${fmt(storyDna.setting)}`);
+    if (storyDna.dramaturgy) parts.push(`Dramaturgi: ${fmt(storyDna.dramaturgy)}`);
+    if (storyDna.emotionalRange) parts.push(`Emotionellt register: ${fmt(storyDna.emotionalRange)}`);
+    if (storyDna.uniqueCharacter) parts.push(`Unik karaktär: ${storyDna.uniqueCharacter}`);
+    if (storyDna.genreMarkers) parts.push(`Genremarkörer: ${Array.isArray(storyDna.genreMarkers) ? storyDna.genreMarkers.join(', ') : storyDna.genreMarkers}`);
     systemPrompt += parts.join('\n');
   }
 
