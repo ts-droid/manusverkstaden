@@ -495,9 +495,13 @@ Returnera ENBART JSON-arrayen.`);
 
   // Use generated DNA or existing
   let dna = dnaProfile;
+  let newStoryDna = null;
+  let newAuthorDna = null;
   if (dnaResult) {
     addMeta(dnaResult.meta);
     dna = dnaResult.result; // combined legacy format from generateDNAProfile
+    newStoryDna = dnaResult.storyDna;
+    newAuthorDna = dnaResult.authorDna;
   }
 
   // === PASS 2: Complement with DNA (red only) ===
@@ -739,6 +743,8 @@ Om inga förslag hittas, returnera en tom array: []`);
     result: allSuggestions,
     meta: totalMeta,
     dnaProfile: dna,
+    storyDna: newStoryDna,
+    authorDna: newAuthorDna,
     passCount: totalSteps,
     level,
   };

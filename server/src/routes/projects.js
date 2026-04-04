@@ -3,7 +3,6 @@ import { PrismaClient } from '@prisma/client';
 import multer from 'multer';
 import { requireAuth } from '../middleware/auth.js';
 import { parseUploadedFile } from '../services/manuscriptParser.js';
-import { generateDNAProfile } from '../services/ai.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -128,46 +127,7 @@ router.post('/:id/upload', upload.single('file'), async (req, res, next) => {
       )
     );
 
-    // Return response immediately
     res.json({ chapters: created });
-
-    // Generate DNA asynchronously in the background (don't block response)
-    const allText = chapters.map(ch => ch.content).join('\n\n');
-    if (allText.length > 500) {
-      // Fetch existing author DNA so it accumulates across manuscripts
-      const existingUser = await prisma.user.findUnique({
-        where: { id: req.user.id },
-        select: { authorDna: true },
-      }).catch(() => null);
-
-      console.log(`[DNA Auto] Generating DNA for project ${project.id} after upload (${chapters.length} chapters, existing author DNA: ${existingUser?.authorDna ? 'yes' : 'no'})`);
-      generateDNAProfile(allText, { genres: project.genres || [], existingAuthorDna: existingUser?.authorDna || null })
-        .then(async ({ storyDna, authorDna, result: combined }) => {
-          // Save story DNA + combined profile on project
-          await prisma.project.update({
-            where: { id: project.id },
-            data: { dnaProfile: combined, storyDna },
-          });
-          console.log(`[DNA Auto] Story DNA saved for project ${project.id}`);
-
-          // Update cumulative author DNA on user
-          if (authorDna) {
-            const user = await prisma.user.findUnique({
-              where: { id: req.user.id },
-              select: { authorDnaVersion: true },
-            });
-            await prisma.user.update({
-              where: { id: req.user.id },
-              data: {
-                authorDna,
-                authorDnaVersion: (user?.authorDnaVersion || 0) + 1,
-              },
-            });
-            console.log(`[DNA Auto] Author DNA updated for user ${req.user.id} (v${(user?.authorDnaVersion || 0) + 1})`);
-          }
-        })
-        .catch(err => console.error(`[DNA Auto] Failed for project ${project.id}:`, err.message));
-    }
   } catch (err) { next(err); }
 });
 

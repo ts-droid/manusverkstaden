@@ -39,7 +39,7 @@ router.post('/review', async (req, res, next) => {
 
     // Call AI — multi-pass analysis with stored DNA
     console.log(`[AI Review] Starting ${level} analysis for chapter ${chapterId} (${chapter.wordCount} words, DNA: ${existingDna ? 'yes' : 'no'})`);
-    const { result: suggestions, meta, dnaProfile: dna } = await reviewChapterMultiPass(chapter.content, {
+    const { result: suggestions, meta, dnaProfile: dna, storyDna: newStoryDna, authorDna: newAuthorDna } = await reviewChapterMultiPass(chapter.content, {
       genres: chapter.project.genres,
       level,
       dnaProfile: existingDna,
@@ -47,12 +47,31 @@ router.post('/review', async (req, res, next) => {
       allText,
     });
 
-    // Save DNA if newly generated and not stored yet
+    // Save DNA if newly generated (first review generates full DNA)
     if (dna && !existingDna) {
       await prisma.project.update({
         where: { id: chapter.projectId },
-        data: { dnaProfile: dna },
+        data: {
+          dnaProfile: dna,
+          ...(newStoryDna ? { storyDna: newStoryDna } : {}),
+        },
       });
+
+      // Save/update cumulative author DNA on user
+      if (newAuthorDna) {
+        const user = await prisma.user.findUnique({
+          where: { id: req.user.id },
+          select: { authorDnaVersion: true },
+        });
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: {
+            authorDna: newAuthorDna,
+            authorDnaVersion: (user?.authorDnaVersion || 0) + 1,
+          },
+        });
+        console.log(`[AI Review] Author DNA updated for user ${req.user.id} (v${(user?.authorDnaVersion || 0) + 1})`);
+      }
     }
 
     // Save suggestions – preserve accepted/rejected, only replace pending
@@ -175,7 +194,7 @@ router.post('/review-multi', async (req, res, next) => {
     const existingDna = chapter.project.dnaProfile;
 
     // Run multi-pass analysis
-    const { result: suggestions, meta, dnaProfile, passCount } = await reviewChapterMultiPass(
+    const { result: suggestions, meta, dnaProfile, storyDna: newStoryDna, authorDna: newAuthorDna, passCount } = await reviewChapterMultiPass(
       chapter.content,
       {
         genres: chapter.project.genres || [],
@@ -188,12 +207,31 @@ router.post('/review-multi', async (req, res, next) => {
 
     console.log(`[Multi-pass] ${level}: ${passCount} passes, ${suggestions.length} suggestions for chapter ${chapterId}`);
 
-    // Save DNA if newly generated
+    // Save DNA if newly generated (first review generates full DNA)
     if (dnaProfile && !existingDna) {
       await prisma.project.update({
         where: { id: chapter.projectId },
-        data: { dnaProfile },
+        data: {
+          dnaProfile,
+          ...(newStoryDna ? { storyDna: newStoryDna } : {}),
+        },
       });
+
+      // Save/update cumulative author DNA on user
+      if (newAuthorDna) {
+        const user = await prisma.user.findUnique({
+          where: { id: req.user.id },
+          select: { authorDnaVersion: true },
+        });
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: {
+            authorDna: newAuthorDna,
+            authorDnaVersion: (user?.authorDnaVersion || 0) + 1,
+          },
+        });
+        console.log(`[Multi-pass] Author DNA updated for user ${req.user.id} (v${(user?.authorDnaVersion || 0) + 1})`);
+      }
     }
 
     // Save suggestions — preserve accepted/rejected, only replace pending
