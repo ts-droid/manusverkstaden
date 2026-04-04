@@ -1063,9 +1063,16 @@ export async function developText(mode, input, options = {}) {
 /**
  * Literary translation.
  */
-export async function translateText(content, language) {
-  const langNames = { en: 'engelska', de: 'tyska', es: 'spanska', ar: 'arabiska' };
-  const langName = langNames[language] || language;
+export async function translateText(content, language, options = {}) {
+  const { authorDna, storyDna, wordList, guidelines, existingGlossary } = options;
+
+  const langConfig = {
+    en: { name: 'engelska', variant: 'British English' },
+    de: { name: 'tyska', variant: 'Hochdeutsch' },
+    es: { name: 'spanska', variant: 'Kastiliansk spanska' },
+    ar: { name: 'arabiska', variant: 'Modern Standard Arabic (MSA)' },
+  };
+  const lang = langConfig[language] || { name: language, variant: '' };
 
   const defaultTranslatePrompt = `Du är en professionell litterär översättare. Översätt texten till målspråket med hög litterär kvalitet. Behåll stil, ton och känsla.
 
@@ -1076,11 +1083,49 @@ Returnera JSON:
   "glossary": [{ "original": "...", "translated": "...", "note": "..." }]
 }`;
 
-  const baseTranslatePrompt = await getPrompt('ai:translate', defaultTranslatePrompt);
+  const [baseTranslatePrompt, langPrompt] = await Promise.all([
+    getPrompt('ai:translate', defaultTranslatePrompt),
+    getPrompt(`ai:translate_${language}`, ''),
+  ]);
+
+  // Build context sections
+  const sections = [`Översätt till: ${lang.name} (${lang.variant})`];
+
+  // Language-specific prompt (from DB, editable in admin)
+  if (langPrompt) {
+    sections.push(`\n${langPrompt}`);
+  }
+
+  // Author DNA for voice preservation
+  if (authorDna) {
+    const dna = typeof authorDna === 'string' ? JSON.parse(authorDna) : authorDna;
+    const voiceNotes = [];
+    if (dna.tonality) voiceNotes.push(`Tonalitet: ${dna.tonality}`);
+    if (dna.sentencePatterns) voiceNotes.push(`Meningsrytm: ${dna.sentencePatterns}`);
+    if (dna.vocabularyLevel) voiceNotes.push(`Register: ${dna.vocabularyLevel}`);
+    if (dna.dialogueStyle) voiceNotes.push(`Dialogstil: ${dna.dialogueStyle}`);
+    if (dna.imageryPatterns) voiceNotes.push(`Bildspråk: ${dna.imageryPatterns}`);
+    if (voiceNotes.length > 0) {
+      sections.push(`\nFÖRFATTARENS RÖST (bevara i översättningen):\n${voiceNotes.join('\n')}`);
+    }
+  }
+
+  // Word list entries (admin-confirmed terms)
+  if (wordList && wordList.length > 0) {
+    sections.push(`\nBEKRÄFTAD ORDLISTA (följ dessa exakt):\n${wordList.map(w => `- "${w.word}" → ${w.correction || w.word}${w.context ? ` (${w.context})` : ''}`).join('\n')}`);
+  }
+
+  // Existing glossary from previous translations in the same project
+  if (existingGlossary && existingGlossary.length > 0) {
+    sections.push(`\nETABLERAD TERMINOLOGI (från tidigare kapitel — var konsekvent):\n${existingGlossary.map(g => `- "${g.original}" → "${g.translated}"${g.note ? ` (${g.note})` : ''}`).join('\n')}`);
+  }
+
+  const systemPrompt = `${baseTranslatePrompt}\n\n${sections.join('\n')}`;
+
   const model = 'claude-sonnet-4-20250514';
   const response = await sendMessage({
     model,
-    system: `${baseTranslatePrompt}\n\nÖversätt till: ${langName}`,
+    system: systemPrompt,
     messages: [{ role: 'user', content }],
     max_tokens: 8192,
   });

@@ -538,7 +538,23 @@ router.post('/translate', async (req, res, next) => {
 
     const chapter = await prisma.chapter.findUnique({
       where: { id: chapterId },
-      include: { project: { select: { userId: true } } },
+      include: {
+        project: {
+          select: { userId: true, id: true, storyDna: true },
+          include: {
+            chapters: {
+              select: { id: true },
+              where: { id: { not: chapterId } },
+              include: {
+                translations: {
+                  where: { language },
+                  select: { glossary: true },
+                },
+              },
+            },
+          },
+        },
+      },
     });
     if (!chapter || chapter.project.userId !== req.user.id) {
       return res.status(404).json({ error: 'Kapitlet hittades inte' });
@@ -549,7 +565,38 @@ router.post('/translate', async (req, res, next) => {
       return res.status(429).json({ error: limit.reason, usage: limit });
     }
 
-    const { result: translation, meta } = await translateText(chapter.content, language);
+    // Gather context for better translation
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { authorDna: true },
+    });
+
+    // Collect established glossary from other chapters' translations
+    const existingGlossary = [];
+    for (const ch of chapter.project.chapters || []) {
+      for (const tr of ch.translations || []) {
+        if (Array.isArray(tr.glossary)) {
+          existingGlossary.push(...tr.glossary);
+        }
+      }
+    }
+    // Deduplicate by original term
+    const glossaryMap = new Map();
+    for (const g of existingGlossary) {
+      if (g.original && !glossaryMap.has(g.original.toLowerCase())) {
+        glossaryMap.set(g.original.toLowerCase(), g);
+      }
+    }
+
+    // Get admin word list
+    const wordList = await prisma.wordListEntry.findMany({ take: 200 });
+
+    const { result: translation, meta } = await translateText(chapter.content, language, {
+      authorDna: user?.authorDna,
+      storyDna: chapter.project.storyDna,
+      wordList,
+      existingGlossary: [...glossaryMap.values()],
+    });
 
     const saved = await prisma.translation.upsert({
       where: { id: `${chapterId}-${language}` },
