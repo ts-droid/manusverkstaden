@@ -746,6 +746,13 @@ async function seedPrompts() {
     { key: 'ai:review_validate', marker: 'VALIDERA' },
     { key: 'ai:review_pass3', marker: 'PASS 3' },
     { key: 'ai:review_pass4', marker: 'PASS 4' },
+    // v3 migrations: refined DNA + develop prompts with DNA-STYRNING/EFTERLEVNAD
+    { key: 'ai:dna_story', marker: 'CENTRAL KONFLIKT' },
+    { key: 'ai:dna_author', marker: 'RYTMPROFIL' },
+    { key: 'ai:develop_brainstorm', marker: 'DNA-STYRNING' },
+    { key: 'ai:develop_expand', marker: 'DNA-EFTERLEVNAD' },
+    { key: 'ai:develop_rewrite', marker: 'DNA-EFTERLEVNAD' },
+    { key: 'ai:develop_newscene', marker: 'DNA-EFTERLEVNAD' },
   ];
 
   for (const { key, marker } of migrateKeys) {
@@ -755,7 +762,7 @@ async function seedPrompts() {
       if (updated) {
         await prisma.promptConfig.update({
           where: { key },
-          data: { content: updated.content, version: { increment: 1 }, updatedBy: 'migration-v2' },
+          data: { content: updated.content, version: { increment: 1 }, updatedBy: 'migration-v3' },
         });
         console.log(`  ↑ ${key} upgraded`);
       }
