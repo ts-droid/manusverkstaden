@@ -230,7 +230,7 @@ Returnera ENBART JSON-arrayen, inga andra kommentarer.`,
   },
   {
     // ai:dna_profile — BORTTAGEN (ersatt av ai:dna_author + ai:dna_story)
-
+  },
   {
     key: 'ai:dna_story',
     content: `Du är en litterär analytiker specialiserad på narrativ analys. Analysera BERÄTTELSENS unika DNA — det som gör just denna historia speciell.
