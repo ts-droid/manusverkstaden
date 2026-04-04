@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
-import { reviewChapter, reviewChapterMultiPass, reviewChapterAddon, generateDNAProfile, aggregateSuggestionFeedback, developText, translateText, finalCheck } from '../services/ai.js';
+import { reviewChapterMultiPass, reviewChapterAddon, generateDNAProfile, aggregateSuggestionFeedback, developText, translateText, finalCheck } from '../services/ai.js';
 import { checkUsageLimit, recordUsage } from '../services/usage.js';
 
 const router = Router();

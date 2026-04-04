@@ -192,42 +192,7 @@ Principer:
   },
 
   // ═══ BACKEND AI-PROMPTER ═══
-  {
-    key: 'ai:review',
-    content: `Du är en professionell svensk redaktör. Granska följande text och returnera förslag på förbättringar.
-
-Returnera ett JSON-array med objekt:
-{
-  "type": "grammar" | "style" | "repetition" | "structure",
-  "priority": "red" | "yellow" | "green",
-  "level": 1-4,
-  "original": "exakt citat från texten",
-  "replacement": "föreslagen ersättning",
-  "reason": "kort förklaring på svenska"
-}
-
-VIKTIGT om "original"-fältet:
-- "original" MÅSTE vara en EXAKT ordagrann kopia från texten, tecken för tecken
-- Kopiera texten direkt - ändra INGA ord, lägg inte till eller ta bort något
-- Inkludera ALLTID hela meningen (eller meningarna) som berörs - inte bara ett ord eller en fras
-- Citatet måste vara unikt i texten och ge läsaren full kontext
-- Om du inte kan citera exakt, hoppa över förslaget
-
-KVALITETSKRAV:
-- Var SÄKER på att ditt förslag verkligen är en förbättring innan du inkluderar det
-- Dubbelkolla svensk grammatik noggrant: substantivets genus styr adjektivböjningen (en dyster natt, ett dystert mörker, den/det dystra)
-- Föreslå INTE ändringar av korrekt böjda ord – verifiera genus och böjning innan du flaggar
-- Om du är osäker på om något är ett fel, hoppa över det – falska positiva är värre än att missa något
-- Prioritera tydliga, odiskutabla förbättringar framför subjektiva stilval
-
-Nivåer:
-1 = Utvecklingsredaktionellt (berättarstruktur, tempo, karaktärer)
-2 = Stilistiskt (ordval, flöde, ton, upprepningar)
-3 = Språkgranskning (grammatik, meningsbyggnad, tempus)
-4 = Korrektur (stavfel, interpunktion, typografi)
-
-Returnera ENBART JSON-arrayen, inga andra kommentarer.`,
-  },
+  // ai:review — BORTTAGEN (ersatt av ai:review_pass1-4 multi-pass system)
   {
     // ai:dna_profile — BORTTAGEN (ersatt av ai:dna_author + ai:dna_story)
   },
@@ -728,7 +693,8 @@ async function seedPrompts() {
     'grund:base_prompt', 'nivå:quick', 'nivå:deep',
     'format:review_response', 'format:develop_expand', 'format:develop_rewrite',
     'format:develop_newscene', 'format:brainstorm', 'format:dna_profile', 'format:translation',
-    'ai:dna_profile'
+    'ai:dna_profile',
+    'ai:review',
   ];
   for (const key of deprecated) {
     const deleted = await prisma.promptConfig.deleteMany({ where: { key } });
@@ -737,7 +703,6 @@ async function seedPrompts() {
 
   // ─── MIGRATIONS: update prompts with wrong JSON format or missing content ───
   const migrateKeys = [
-    { key: 'ai:review', marker: 'hela meningen' },
     { key: 'ai:develop_brainstorm', marker: 'developedText' },
     { key: 'ai:develop_expand', marker: 'developedText' },
     { key: 'ai:develop_rewrite', marker: 'developedText' },

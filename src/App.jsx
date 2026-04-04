@@ -3489,26 +3489,28 @@ function SuperAdminView({ user, onBack, onDashboard }) {
             {(() => {
               const categories = [
                 { id: "all", label: "Alla" },
-                { id: "grund", label: "Grundprompt" },
                 { id: "genre", label: "Genretillägg" },
-                { id: "modul", label: "Moduler" },
                 { id: "ai", label: "Backend AI" },
-                { id: "nivå", label: "Analysnivåer" },
-                { id: "format", label: "Responsformat" },
                 { id: "wordlist", label: "📖 Ordlista (facit)", special: true },
               ];
-              const categoryLabels = { grund: "Grundprompt", genre: "Genretillägg", modul: "Modul", ai: "Backend AI", "nivå": "Analysnivå", format: "Responsformat" };
+              const categoryLabels = { genre: "Genretillägg", ai: "Backend AI" };
               const friendlyName = (key) => {
                 const [cat, name] = key.split(":");
                 const nameMap = {
-                  base_prompt: "Huvudprompt", realistic: "Realistisk fiktion", crime: "Deckare / Thriller",
+                  // Genre
+                  realistic: "Realistisk fiktion", crime: "Deckare / Thriller",
                   fantasy: "Fantasy / Sci-fi", romance: "Romantik / Feelgood", horror: "Skräck / Gothic",
                   historical: "Historisk roman", ya: "Barn & Ungdom", memoir: "Memoar / Sakprosa",
-                  poetry: "Lyrik / Poesi", develop: "Skrivutveckling", translate: "Översättning",
-                  review: "Granskning", dna_profile: "DNA-profil", develop_brainstorm: "Brainstorm",
-                  develop_expand: "Scenutbyggnad", develop_rewrite: "Omskrivning", develop_newscene: "Ny scen",
-                  quick: "Snabbanalys", deep: "Djupanalys", review_response: "Granskningssvar",
-                  brainstorm: "Brainstorming", translation: "Översättning",
+                  poetry: "Lyrik / Poesi", adventure: "Äventyr", feelgood: "Feelgood",
+                  nonfiction: "Facklitteratur", truecrime: "True Crime", humor: "Humor", erotica: "Erotik",
+                  // AI backend
+                  dna_story: "Story-DNA", dna_author: "Författar-DNA",
+                  develop_brainstorm: "Brainstorm", develop_expand: "Scenutbyggnad",
+                  develop_rewrite: "Omskrivning", develop_newscene: "Ny scen",
+                  translate: "Översättning", final_check: "Slutkontroll",
+                  review_pass1: "Pass 1 – Grundgranskning", review_pass2: "Pass 2 – DNA-förstärkt",
+                  review_validate: "Validering", review_pass3: "Pass 3 – Stilistik",
+                  review_pass4: "Pass 4 – Djupgranskning",
                 };
                 return nameMap[name] || name;
               };
