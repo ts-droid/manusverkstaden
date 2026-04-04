@@ -167,68 +167,6 @@ function validateSuggestions(suggestions, chapterContent, wordList = []) {
 }
 
 /**
- * Review a chapter and return suggestions.
- */
-export async function reviewChapter(content, { genres = [], modules = [] } = {}) {
-  const defaultPrompt = `Du är en professionell svensk redaktör. Granska följande text och returnera förslag på förbättringar.
-
-Returnera ett JSON-array med objekt:
-{
-  "type": "grammar" | "style" | "repetition" | "structure",
-  "priority": "red" | "yellow" | "green",
-  "level": 1-4,
-  "original": "exakt citat från texten",
-  "replacement": "föreslagen ersättning",
-  "reason": "kort förklaring på svenska"
-}
-
-VIKTIGT om "original"-fältet:
-- "original" MÅSTE vara en EXAKT ordagrann kopia från texten, tecken för tecken
-- Kopiera texten direkt - ändra INGA ord, lägg inte till eller ta bort något
-- Inkludera tillräckligt med kontext (hela meningen eller frasen) så att citatet är unikt i texten
-- Om du inte kan citera exakt, hoppa över förslaget
-
-KVALITETSKRAV:
-- Var SÄKER på att ditt förslag verkligen är en förbättring innan du inkluderar det
-- Dubbelkolla svensk grammatik noggrant: substantivets genus styr adjektivböjningen (en dyster natt, ett dystert mörker, den/det dystra)
-- Föreslå INTE ändringar av korrekt böjda ord – verifiera genus och böjning innan du flaggar
-- Om du är osäker på om något är ett fel, hoppa över det – falska positiva är värre än att missa något
-- Prioritera tydliga, odiskutabla förbättringar framför subjektiva stilval
-
-Nivåer:
-1 = Utvecklingsredaktionellt (berättarstruktur, tempo, karaktärer)
-2 = Stilistiskt (ordval, flöde, ton, upprepningar)
-3 = Språkgranskning (grammatik, meningsbyggnad, tempus)
-4 = Korrektur (stavfel, interpunktion, typografi)
-
-Returnera ENBART JSON-arrayen, inga andra kommentarer.`;
-
-  const basePrompt = await getPrompt('ai:review', defaultPrompt);
-  const systemPrompt = `${basePrompt}\n\nGenrer aktiva: ${genres.join(', ') || 'inga'}`;
-
-  const response = await sendMessage({
-    system: systemPrompt,
-    messages: [{ role: 'user', content: `Granska följande kapitel:\n\n${content}` }],
-    max_tokens: 8192,
-  });
-
-  const meta = extractMeta(response);
-  const text = extractText(response);
-  try {
-    const parsed = parseJsonResponse(text);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      console.error('[AI Review] Empty or invalid response from Claude:', text.slice(0, 500));
-      throw new Error('AI returnerade inga förslag. Försök igen.');
-    }
-    const validated = validateSuggestions(parsed, content);
-    return { result: validated, meta };
-  } catch (parseErr) {
-    console.error('[AI Review] Failed to parse response:', text.slice(0, 500));
-    throw new Error(`AI-svaret kunde inte tolkas: ${parseErr.message}`);
-  }
-}
-
-/**
  * Aggregate suggestion accept/reject patterns for a user across all projects.
  * Used to feed feedback into DNA reinforcement prompts.
  * Returns null if fewer than 10 suggestions have been reviewed (cold start guard).

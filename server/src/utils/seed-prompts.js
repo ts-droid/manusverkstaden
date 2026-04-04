@@ -169,27 +169,8 @@ Utöver grundgranskningen, bevaka särskilt:
   },
 
   // ═══ MODULER ═══
-  {
-    key: 'modul:develop',
-    content: `SKRIVUTVECKLINGSMODUL (AKTIV):
-Du har nu även rollen som kreativ medförfattare. Innan du genererar ny text:
-1. Kartlägg författarens språkliga DNA (meningsrytm, ordval, bildspråk, dialogstil)
-2. Analysera emotionellt landskap per kapitel
-3. Matcha alltid den kartlagda profilen vid textgenerering
-4. Presentera alltid 3 alternativa riktningar vid brainstorming
-5. Visa alltid syfte, placering och påverkan vid ny text`,
-  },
-  {
-    key: 'modul:translate',
-    content: `ÖVERSÄTTNINGSMODUL (AKTIV):
-Principer:
-- Bevara författarens röst, rytm och tonalitet
-- Kulturell anpassning > ordagrann översättning
-- Idiomatik framför ordagrannhet
-- Bevara registervariationer (talspråk, slang, formellt)
-- Skapa översättningsordlista med alla egennamn och återkommande termer
-- Leverera med översättningskommentarer per kapitel`,
-  },
+  // modul:develop — BORTTAGEN (ersatt av ai:develop_* prompter)
+  // modul:translate — BORTTAGEN (ersatt av ai:translate)
 
   // ═══ BACKEND AI-PROMPTER ═══
   // ai:review — BORTTAGEN (ersatt av ai:review_pass1-4 multi-pass system)
@@ -695,6 +676,8 @@ async function seedPrompts() {
     'format:develop_newscene', 'format:brainstorm', 'format:dna_profile', 'format:translation',
     'ai:dna_profile',
     'ai:review',
+    'modul:develop',
+    'modul:translate',
   ];
   for (const key of deprecated) {
     const deleted = await prisma.promptConfig.deleteMany({ where: { key } });
