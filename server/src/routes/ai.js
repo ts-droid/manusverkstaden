@@ -452,15 +452,29 @@ router.post('/develop', async (req, res, next) => {
     const { mode, input, context, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus } = req.body;
     const chapterId = req.body.chapterId ? String(req.body.chapterId) : null;
 
+    // Fetch full DNA from database — don't rely on what frontend sends
+    let fullStoryDna = null;
+    let fullAuthorDna = null;
+    let fullDnaProfile = dnaProfile; // fallback to frontend-sent
+
     if (chapterId) {
       const chapter = await prisma.chapter.findUnique({
         where: { id: chapterId },
-        include: { project: { select: { userId: true } } },
+        include: { project: { select: { userId: true, dnaProfile: true, storyDna: true } } },
       });
       if (!chapter || chapter.project.userId !== req.user.id) {
         return res.status(404).json({ error: 'Kapitlet hittades inte' });
       }
+      fullDnaProfile = chapter.project.dnaProfile || dnaProfile;
+      fullStoryDna = chapter.project.storyDna;
     }
+
+    // Fetch author DNA from user record
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { authorDna: true },
+    });
+    fullAuthorDna = user?.authorDna || null;
 
     const wordCount = input.trim().split(/\s+/).length;
     const limit = await checkUsageLimit(req.user.id, 'develop', wordCount);
@@ -469,7 +483,8 @@ router.post('/develop', async (req, res, next) => {
     }
 
     const { result, meta } = await developText(mode, input, {
-      context, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus,
+      context, dnaProfile: fullDnaProfile, storyDna: fullStoryDna, authorDna: fullAuthorDna,
+      emotionMap, chapterTitle, userInstruction, rewriteFocus,
     });
     await recordUsage(req.user.id, 'develop', wordCount, meta);
 

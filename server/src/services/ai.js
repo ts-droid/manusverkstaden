@@ -995,7 +995,7 @@ Returnera ENBART giltig JSON utan förklaringar:
  * Writing development: brainstorm, expand, rewrite, newscene.
  */
 export async function developText(mode, input, options = {}) {
-  const { context, dnaProfile, emotionMap, chapterTitle, userInstruction, rewriteFocus } =
+  const { context, dnaProfile, storyDna, authorDna, emotionMap, chapterTitle, userInstruction, rewriteFocus } =
     typeof options === 'string' ? { context: options } : options;
 
   const defaultModes = {
@@ -1008,10 +1008,45 @@ export async function developText(mode, input, options = {}) {
   // Fetch admin prompt (falls back to default)
   const basePrompt = await getPrompt(`ai:develop_${mode}`, defaultModes[mode] || defaultModes.brainstorm);
 
-  // Build system prompt with DNA profile and emotion context
+  // Build system prompt — DNA gets highest priority placement
   let systemPrompt = basePrompt;
 
-  if (dnaProfile) {
+  // ── AUTHOR DNA (cumulative, cross-project) — highest priority ──
+  if (authorDna && typeof authorDna === 'object') {
+    const parts = [];
+    parts.push('\n\n═══ FÖRFATTARENS DNA-PROFIL (HÖGSTA PRIORITET) ═══');
+    parts.push('All genererad text MÅSTE matcha denna profil. DNA-profilen är facit för författarens röst.');
+    if (authorDna.styleSummary) parts.push(`\nStilsammanfattning: ${authorDna.styleSummary}`);
+    if (authorDna.sentencePatterns) parts.push(`Meningsrytm: ${authorDna.sentencePatterns}`);
+    if (authorDna.vocabularyLevel) parts.push(`Ordnivå: ${authorDna.vocabularyLevel}`);
+    if (authorDna.dialogueStyle) parts.push(`Dialogstil: ${authorDna.dialogueStyle}`);
+    if (authorDna.imageryPatterns) parts.push(`Bildspråk: ${authorDna.imageryPatterns}`);
+    if (authorDna.narrativeVoice) parts.push(`Berättarröst: ${authorDna.narrativeVoice}`);
+    if (authorDna.tonality) parts.push(`Tonalitet: ${authorDna.tonality}`);
+    if (authorDna.rhythmProfile) parts.push(`Rytmprofil: ${authorDna.rhythmProfile}`);
+    if (authorDna.wordFrequencySignature) parts.push(`Ordfrekvens: ${authorDna.wordFrequencySignature}`);
+    if (authorDna.intentionalChoices?.length > 0) {
+      parts.push(`\nIntentionella stilval (RESPEKTERA, ändra ALDRIG): ${authorDna.intentionalChoices.join(', ')}`);
+    }
+    systemPrompt += parts.join('\n');
+  }
+
+  // ── STORY DNA (per-project: themes, symbols, structure) ──
+  if (storyDna && typeof storyDna === 'object') {
+    const parts = [];
+    parts.push('\n\n═══ VERKETS DNA ═══');
+    if (storyDna.themes) parts.push(`Teman: ${Array.isArray(storyDna.themes) ? storyDna.themes.join(', ') : storyDna.themes}`);
+    if (storyDna.symbols) parts.push(`Symbolik: ${Array.isArray(storyDna.symbols) ? storyDna.symbols.join(', ') : storyDna.symbols}`);
+    if (storyDna.narrativeStructure) parts.push(`Narrativ struktur: ${storyDna.narrativeStructure}`);
+    if (storyDna.worldRules) parts.push(`Världens regler: ${storyDna.worldRules}`);
+    if (storyDna.centralConflict) parts.push(`Central konflikt: ${storyDna.centralConflict}`);
+    if (storyDna.motifs) parts.push(`Motiv: ${Array.isArray(storyDna.motifs) ? storyDna.motifs.join(', ') : storyDna.motifs}`);
+    if (storyDna.settingDetails) parts.push(`Miljö: ${storyDna.settingDetails}`);
+    systemPrompt += parts.join('\n');
+  }
+
+  // ── Fallback: legacy dnaProfile (compact format) ──
+  if (!authorDna && dnaProfile && typeof dnaProfile === 'object') {
     const dnaStr = [
       dnaProfile.perspective && `Perspektiv: ${dnaProfile.perspective}`,
       dnaProfile.tense && `Tempus: ${dnaProfile.tense}`,
@@ -1020,16 +1055,17 @@ export async function developText(mode, input, options = {}) {
       dnaProfile.dialogStyle && `Dialogstil: ${dnaProfile.dialogStyle}`,
       dnaProfile.dominantImagery && `Bildspråk: ${dnaProfile.dominantImagery}`,
     ].filter(Boolean).join(', ');
-    if (dnaStr) systemPrompt += `\n\nFörfattarens DNA-profil: ${dnaStr}`;
+    if (dnaStr) systemPrompt += `\n\n═══ DNA-PROFIL ═══\n${dnaStr}`;
   }
 
+  // ── Emotion map ──
   if (emotionMap) {
     const emotionStr = [
       emotionMap.dominantEmotion && `Dominant känsla: ${emotionMap.dominantEmotion}`,
       emotionMap.tension != null && `Spänningsnivå: ${Math.round(emotionMap.tension * 100)}%`,
       emotionMap.arc && `Emotionell båge: ${emotionMap.arc}`,
     ].filter(Boolean).join(', ');
-    if (emotionStr) systemPrompt += `\nKapitlets emotionella karta: ${emotionStr}`;
+    if (emotionStr) systemPrompt += `\n\nKapitlets emotionella karta: ${emotionStr}`;
   }
 
   if (context) {
