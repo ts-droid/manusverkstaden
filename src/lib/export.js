@@ -361,9 +361,10 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
     const processedText = cleanTextForExport(rawText);
     const textParagraphs = processedText.split(/\n\s*\n/).filter(p => p.trim());
 
-    // Extract the actual chapter heading from content (first paragraph if it matches
-    // a chapter heading pattern), to avoid duplicating "KAPITEL 1" + "FÖRSTA KAPITLET"
-    const headingPattern = /^((?:kapitel|chapter)\s+\d+|(?:f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugo\S*|trettio\S*|fyrtio\S*|femtio\S*)\s+kapitlet)$/i;
+    // Strip any remaining single newlines within paragraphs — these create
+    // invisible line breaks in Word that break first-line indentation.
+    // Also strip heading from content to avoid duplicating chapter title.
+    const headingPattern = /^((?:kapitel|chapter)\s+\d+|(?:f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugo\S*|trettio\S*|fyrtio\S*|femtio\S*)\s+kapitlet.*)$/i;
     let exportTitle = chapter.title;
     let bodyParagraphs = textParagraphs;
 
@@ -377,11 +378,16 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
 
     const children = [
       formatTitle(exportTitle, { font, fontSize, chapterTitleStyle, chapterTitleAlign, chapterStartPosition }),
-      ...bodyParagraphs.map(text => new Paragraph({
-        spacing: { line: lineSpacingTwips, after: paragraphSpacing ? Math.round(lineSpacingTwips * 0.5) : 0 },
-        indent: indentTwips > 0 ? { firstLine: indentTwips } : undefined,
-        children: parseFormattedText(text.trim(), font, sizeHalfPts),
-      })),
+      ...bodyParagraphs.map(text => {
+        // Critical: remove ALL newlines within each paragraph text.
+        // Embedded \n becomes a soft return in Word, which breaks firstLine indent.
+        const cleanText = text.trim().replace(/\n/g, ' ').replace(/ {2,}/g, ' ');
+        return new Paragraph({
+          spacing: { line: lineSpacingTwips, after: paragraphSpacing ? Math.round(lineSpacingTwips * 0.5) : 0 },
+          indent: indentTwips > 0 ? { firstLine: indentTwips } : undefined,
+          children: parseFormattedText(cleanText, font, sizeHalfPts),
+        });
+      }),
     ];
 
     return {
