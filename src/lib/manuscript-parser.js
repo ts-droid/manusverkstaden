@@ -355,11 +355,39 @@ export function splitIntoParagraphs(chapterContent) {
     .map((text) => text.replace(/([^\n])\n(?=[^\n])/g, '$1 ').replace(/ {2,}/g, ' ').trim())
     .filter((text) => text.length > 0);
 
+  // Merge broken paragraphs: if a chunk doesn't end with sentence-ending punctuation
+  // (.!?""»), it's likely a line that was broken by Word/Mammoth import — join with next.
+  // Exception: very short lines that look like headings/titles (e.g. "FÖRSTA KAPITLET")
+  const merged = [];
+  for (let i = 0; i < raw.length; i++) {
+    const text = raw[i];
+    if (merged.length > 0) {
+      const prev = merged[merged.length - 1];
+      const prevTrimmed = prev.replace(/\s+$/, '');
+      const lastChar = prevTrimmed.slice(-1);
+      // Detect headings/subtitles: ALL CAPS, "Kapitel…", numbered, or short single-word/phrase lines
+      // that don't contain commas (i.e. not a broken sentence mid-clause)
+      const wordCount = prev.split(/\s+/).length;
+      const looksLikeHeading = prev.length < 80 && (
+        prev === prev.toUpperCase() ||                              // ALL CAPS
+        /^(kapitel|chapter|\d+\.?\s)/i.test(prev) ||               // "Kapitel X", "1. Something"
+        (wordCount <= 5 && !/,/.test(prev))                         // Short phrase without comma — likely a title/subtitle
+      );
+
+      // Join if previous doesn't end with sentence punctuation and isn't a heading
+      if (!looksLikeHeading && prevTrimmed.length > 0 && !['.', '!', '?', '\u201D', '\u2019', '\u00BB', '"', "'", '\u2026', ')'].includes(lastChar)) {
+        merged[merged.length - 1] = prev + ' ' + text;
+        continue;
+      }
+    }
+    merged.push(text);
+  }
+
   // Dedup consecutive identical paragraphs (from develop-insert bugs)
   const deduped = [];
-  for (let i = 0; i < raw.length; i++) {
-    if (i > 0 && raw[i] === raw[i - 1]) continue;
-    deduped.push(raw[i]);
+  for (let i = 0; i < merged.length; i++) {
+    if (i > 0 && merged[i] === merged[i - 1]) continue;
+    deduped.push(merged[i]);
   }
 
   return deduped.map((text, index) => ({

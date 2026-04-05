@@ -5,6 +5,7 @@ import { saveProject, loadProject, clearProject } from "./lib/storage";
 import { exportToDocx, downloadBlob, sanitizeText, formatForPrint } from "./lib/export";
 import { useAuth } from "./contexts/AuthContext";
 import { apiClient, AuthError } from "./lib/api-client";
+import { startConnectionMonitor, onStatusChange, getConnectionStatus, getPendingCount } from "./lib/connection-monitor";
 
 // ─── DATA ───
 import { GENRES } from "./data/genres";
@@ -4094,6 +4095,14 @@ export default function App() {
   const [showExport, setShowExport] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchState, setSearchState] = useState(null); // { query, matches, activeMatchIdx, caseSensitive }
+  const [connectionStatus, setConnectionStatus] = useState("online"); // "online" | "offline" | "reconnecting"
+
+  // ─── CONNECTION MONITOR ───
+  useEffect(() => {
+    startConnectionMonitor();
+    const unsub = onStatusChange((status) => setConnectionStatus(status));
+    return unsub;
+  }, []);
 
   // Keyboard shortcuts: Ctrl/Cmd+F → search, Escape → close
   useEffect(() => {
@@ -5848,6 +5857,32 @@ export default function App() {
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: font, background: bg, color: ink, overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* CONNECTION WARNING BANNER */}
+      {connectionStatus !== "online" && (
+        <div style={{
+          background: connectionStatus === "reconnecting" ? "#fef3c7" : "#fef2f2",
+          borderBottom: `1px solid ${connectionStatus === "reconnecting" ? "#f59e0b" : "#ef4444"}`,
+          padding: "8px 24px",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          fontFamily: uiFont,
+          fontSize: 12,
+          flexShrink: 0,
+          zIndex: 1000,
+        }}>
+          <span style={{ fontSize: 16 }}>{connectionStatus === "reconnecting" ? "\u26A0\uFE0F" : "\uD83D\uDD34"}</span>
+          <span style={{ color: connectionStatus === "reconnecting" ? "#92400e" : "#991b1b", fontWeight: 500 }}>
+            {connectionStatus === "reconnecting"
+              ? "Återansluter till servern \u2014 dina \u00e4ndringar sparas lokalt..."
+              : "Servern \u00e4r inte tillg\u00e4nglig just nu. Dina \u00e4ndringar sparas lokalt i webbl\u00e4saren."}
+          </span>
+          <span style={{ color: connectionStatus === "reconnecting" ? "#b45309" : "#dc2626", fontSize: 11, marginLeft: "auto" }}>
+            St\u00e4ng inte webbl\u00e4sarf\u00f6nstret
+          </span>
+        </div>
+      )}
 
       {/* HEADER */}
       <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: surface, flexShrink: 0 }}>

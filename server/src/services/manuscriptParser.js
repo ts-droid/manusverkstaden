@@ -46,6 +46,36 @@ export async function parseUploadedFile(file) {
 }
 
 /**
+ * Merge broken paragraphs: if a paragraph doesn't end with sentence-ending
+ * punctuation, it's a line broken by Word/Mammoth — join with next paragraph.
+ */
+function mergeBrokenParagraphs(content) {
+  const paras = content.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 0);
+  const merged = [];
+  for (let i = 0; i < paras.length; i++) {
+    const text = paras[i];
+    if (merged.length > 0) {
+      const prev = merged[merged.length - 1];
+      const lastChar = prev.slice(-1);
+      // Detect headings/subtitles: ALL CAPS, "Kapitel…", numbered, or short single-word/phrase lines
+      // that don't contain commas (i.e. not a broken sentence mid-clause)
+      const wordCount = prev.split(/\s+/).length;
+      const looksLikeHeading = prev.length < 80 && (
+        prev === prev.toUpperCase() ||                              // ALL CAPS
+        /^(kapitel|chapter|\d+\.?\s)/i.test(prev) ||               // "Kapitel X", "1. Something"
+        (wordCount <= 5 && !/,/.test(prev))                         // Short phrase without comma — likely a title/subtitle
+      );
+      if (!looksLikeHeading && prev.length > 0 && !['.', '!', '?', '\u201D', '\u2019', '\u00BB', '"', "'", '\u2026', ')'].includes(lastChar)) {
+        merged[merged.length - 1] = prev + ' ' + text;
+        continue;
+      }
+    }
+    merged.push(text);
+  }
+  return merged.join('\n\n');
+}
+
+/**
  * Split text into chapters based on Swedish chapter markers.
  */
 /**
@@ -58,7 +88,7 @@ function buildChaptersFromMarkers(text, markers) {
     const contentStart = text.indexOf('\n', headingEnd);
     const start = contentStart !== -1 ? contentStart + 1 : headingEnd;
     const end = i + 1 < markers.length ? markers[i + 1].index : text.length;
-    const content = text.slice(start, end).trim();
+    const content = mergeBrokenParagraphs(text.slice(start, end).trim());
     const words = content.split(/\s+/).filter(w => w).length;
     if (content.length === 0) continue;
     chapters.push({ title: markers[i].title, content, wordCount: words });
@@ -109,7 +139,9 @@ function splitIntoChapters(text) {
  * Fallback: split text into chunks of approximately `maxWords` words.
  */
 function splitByWordCount(text, maxWords) {
-  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
+  // First merge broken paragraphs, then split for word count
+  const fixed = mergeBrokenParagraphs(text);
+  const paragraphs = fixed.split(/\n\s*\n/).filter(p => p.trim());
   const chapters = [];
   let current = [];
   let currentWords = 0;

@@ -3,7 +3,10 @@
  *
  * Replaces direct Anthropic API calls with server-side proxied calls.
  * Manages JWT access tokens with automatic refresh.
+ * Queues failed mutation requests for retry when server is offline.
  */
+
+import { queueSave, getConnectionStatus, registerFlushCallback } from './connection-monitor.js';
 
 class ApiClient {
   constructor() {
@@ -202,11 +205,28 @@ class ApiClient {
 
   // ─── CHAPTERS ───
 
+  /**
+   * Save with offline resilience: queues the request if it fails due to
+   * network errors (not auth errors). Returns null on queued saves.
+   */
+  async safeSave(path, method, data) {
+    try {
+      return await this.request(path, {
+        method,
+        body: JSON.stringify(data),
+      });
+    } catch (err) {
+      // Auth errors should propagate — user must re-login
+      if (err instanceof AuthError) throw err;
+      // Network / server errors — queue for retry
+      console.warn(`[API] Save failed, queuing: ${method} ${path}`, err.message);
+      queueSave(path, method, data);
+      return null;
+    }
+  }
+
   async updateChapter(id, data) {
-    return this.request(`/chapters/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
+    return this.safeSave(`/chapters/${id}`, 'PATCH', data);
   }
 
   async getChapter(id) {
@@ -216,10 +236,7 @@ class ApiClient {
   // ─── SUGGESTIONS ───
 
   async updateSuggestion(id, status) {
-    return this.request(`/suggestions/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
+    return this.safeSave(`/suggestions/${id}`, 'PATCH', { status });
   }
 
   async createSuggestion(data) {
@@ -279,3 +296,16 @@ export class AuthError extends Error {
 
 // Singleton instance
 export const apiClient = new ApiClient();
+
+// Register flush callback so connection-monitor can replay queued saves with auth
+registerFlushCallback(async (path, method, body) => {
+  try {
+    await apiClient.request(path, {
+      method,
+      body: JSON.stringify(body),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+});
