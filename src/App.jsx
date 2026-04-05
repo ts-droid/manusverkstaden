@@ -2924,6 +2924,13 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
   const [loading, setLoading] = useState(true);
   const [activeChapter, setActiveChapter] = useState(0); // index in chapter list
 
+  // Editing state
+  const [editingSide, setEditingSide] = useState(null); // null | "left" | "right"
+  const [editedContent, setEditedContent] = useState({}); // { chapterIndex: "text..." }
+  const [savedProjectId, setSavedProjectId] = useState(null); // ID of duplicated project
+  const [savingStatus, setSavingStatus] = useState(null); // null | "saving" | "saved" | "creating"
+  const saveTimerRef = useRef(null);
+
   useEffect(() => {
     (async () => {
       try {
@@ -2997,49 +3004,183 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
     return merged;
   };
 
-  const parasA = normalizeForCompare(chA?.content);
-  const parasB = normalizeForCompare(chB?.content);
+  // Get raw or edited content for the active chapter on each side
+  const rawContentA = editingSide === "left" && editedContent[activeChapter] !== undefined
+    ? editedContent[activeChapter] : chA?.content;
+  const rawContentB = editingSide === "right" && editedContent[activeChapter] !== undefined
+    ? editedContent[activeChapter] : chB?.content;
+
+  const parasA = normalizeForCompare(rawContentA);
+  const parasB = normalizeForCompare(rawContentB);
 
   // Check if content is identical after normalization
   const hasDiff = parasA.join("\n\n") !== parasB.join("\n\n");
 
-  const renderPanel = (project, chapter, paragraphs, side) => (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Panel header */}
-      <div style={{
-        padding: "10px 16px", borderBottom: `1px solid ${border}`,
-        background: side === "left" ? "#f0ece5" : "#e8ece5", flexShrink: 0,
-      }}>
-        <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 2 }}>
-          {project.title}
-        </div>
-        <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>
-          {chapter ? `${chapter.title} \u00b7 ${chapter.wordCount || 0} ord` : "Kapitel saknas"}
-        </div>
-      </div>
-      {/* Panel content */}
-      <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
-        {paragraphs.length > 0 ? paragraphs.map((para, i) => {
-          // Check if this paragraph exists in the other side
-          const otherParas = side === "left" ? parasB : parasA;
-          const isDifferent = !otherParas.includes(para);
-          return (
-            <p key={i} style={{
-              fontFamily: font, fontSize: 14, lineHeight: 1.7, color: ink,
-              margin: "0 0 14px",
-              background: isDifferent ? (side === "left" ? "#fef2f2" : "#f0fdf4") : "transparent",
-              padding: isDifferent ? "2px 4px" : 0,
-              borderRadius: isDifferent ? 3 : 0,
-              borderLeft: isDifferent ? `3px solid ${side === "left" ? "#ef4444" : "#22c55e"}` : "none",
-              paddingLeft: isDifferent ? 10 : 0,
-            }}>{para}</p>
+  // Auto-save edited content to duplicated project
+  const autoSave = useCallback(async (chapterIndex, newText) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSavingStatus("saving");
+
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const sourceProject = editingSide === "left" ? projectA : projectB;
+        const chapters = (sourceProject.chapters || []).sort((a, b) => a.number - b.number);
+
+        // If no duplicated project yet, create one
+        let targetProjectId = savedProjectId;
+        if (!targetProjectId) {
+          setSavingStatus("creating");
+          const now = new Date();
+          const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+          const res = await apiClient.duplicateProject(
+            editingSide === "left" ? projectIdA : projectIdB,
+            `${sourceProject.title} – redigerad ${dateStr}`
           );
-        }) : (
-          <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, fontStyle: "italic" }}>{"Inget innehåll"}</p>
-        )}
+          targetProjectId = res.project?.id || res.id;
+          setSavedProjectId(targetProjectId);
+
+          // Load duplicated project to get chapter IDs
+          const dupProject = await apiClient.getProject(targetProjectId);
+          const dupData = dupProject.project || dupProject;
+          if (editingSide === "left") setProjectA(prev => ({ ...prev, _dupChapters: (dupData.chapters || []).sort((a, b) => a.number - b.number) }));
+          else setProjectB(prev => ({ ...prev, _dupChapters: (dupData.chapters || []).sort((a, b) => a.number - b.number) }));
+        }
+
+        // Get the duplicated project's chapter ID for this index
+        const editProject = editingSide === "left" ? projectA : projectB;
+        const dupChapters = editProject._dupChapters;
+        if (dupChapters && dupChapters[chapterIndex]) {
+          const wordCount = newText.split(/\s+/).filter(w => w).length;
+          await apiClient.updateChapter(dupChapters[chapterIndex].id, {
+            content: newText,
+            wordCount,
+          });
+        }
+
+        setSavingStatus("saved");
+        setTimeout(() => setSavingStatus(prev => prev === "saved" ? null : prev), 2000);
+      } catch (err) {
+        console.error("Auto-save error:", err);
+        setSavingStatus(null);
+      }
+    }, 1200);
+  }, [editingSide, savedProjectId, projectA, projectB, projectIdA, projectIdB]);
+
+  // Start editing a side
+  const handleStartEdit = (side) => {
+    if (editingSide && editingSide !== side) return; // locked to other side
+    if (!editingSide) {
+      setEditingSide(side);
+      // Initialize edited content with current chapter content
+      const chapter = side === "left" ? chA : chB;
+      if (chapter && editedContent[activeChapter] === undefined) {
+        setEditedContent(prev => ({ ...prev, [activeChapter]: chapter.content || "" }));
+      }
+    }
+  };
+
+  // Handle text change in editing textarea
+  const handleEditChange = (chapterIndex, newText) => {
+    setEditedContent(prev => ({ ...prev, [chapterIndex]: newText }));
+    autoSave(chapterIndex, newText);
+  };
+
+  const renderPanel = (project, chapter, paragraphs, side) => {
+    const isEditing = editingSide === side;
+    const isLocked = editingSide && editingSide !== side;
+    const editText = isEditing && editedContent[activeChapter] !== undefined
+      ? editedContent[activeChapter] : (chapter?.content || "");
+
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", opacity: isLocked ? 0.7 : 1 }}>
+        {/* Panel header */}
+        <div style={{
+          padding: "10px 16px", borderBottom: `1px solid ${border}`,
+          background: side === "left" ? "#f0ece5" : "#e8ece5", flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 2 }}>
+              {project.title}
+            </div>
+            <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>
+              {chapter ? `${chapter.title} \u00b7 ${chapter.wordCount || 0} ord` : "Kapitel saknas"}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {isEditing && savingStatus === "creating" && (
+              <span style={{ fontFamily: uiFont, fontSize: 10, color: accent, fontWeight: 500 }}>{"Skapar version..."}</span>
+            )}
+            {isEditing && savingStatus === "saving" && (
+              <span style={{ fontFamily: uiFont, fontSize: 10, color: muted, fontWeight: 500 }}>{"Sparar..."}</span>
+            )}
+            {isEditing && savingStatus === "saved" && (
+              <span style={{ fontFamily: uiFont, fontSize: 10, color: "#27864a", fontWeight: 500 }}>{"\u2713 Sparat"}</span>
+            )}
+            {isEditing && (
+              <span style={{
+                fontFamily: uiFont, fontSize: 9, padding: "2px 8px", borderRadius: 4,
+                background: accent, color: "#fff", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em",
+              }}>Redigerar</span>
+            )}
+            {!editingSide && !isLocked && chapter && (
+              <button onClick={() => handleStartEdit(side)} style={{
+                fontFamily: uiFont, fontSize: 10, padding: "4px 10px", borderRadius: 5,
+                border: `1px solid ${border}`, background: surface, color: ink,
+                cursor: "pointer", fontWeight: 500,
+              }}>{"\u270E Redigera"}</button>
+            )}
+          </div>
+        </div>
+        {/* Panel content */}
+        <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
+          {isEditing ? (
+            <textarea
+              value={editText}
+              onChange={(e) => handleEditChange(activeChapter, e.target.value)}
+              style={{
+                width: "100%", height: "100%", minHeight: 400, border: "none", outline: "none",
+                fontFamily: font, fontSize: 14, lineHeight: 1.7, color: ink, background: "transparent",
+                resize: "none", padding: 0,
+              }}
+            />
+          ) : (
+            paragraphs.length > 0 ? paragraphs.map((para, i) => {
+              const otherParas = side === "left" ? parasB : parasA;
+              const isDifferent = !otherParas.includes(para);
+              return (
+                <p key={i} style={{
+                  fontFamily: font, fontSize: 14, lineHeight: 1.7, color: ink,
+                  margin: "0 0 14px",
+                  background: isDifferent ? (side === "left" ? "#fef2f2" : "#f0fdf4") : "transparent",
+                  padding: isDifferent ? "2px 4px" : 0,
+                  borderRadius: isDifferent ? 3 : 0,
+                  borderLeft: isDifferent ? `3px solid ${side === "left" ? "#ef4444" : "#22c55e"}` : "none",
+                  paddingLeft: isDifferent ? 10 : 0,
+                }}>{para}</p>
+              );
+            }) : (
+              <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, fontStyle: "italic" }}>{"Inget innehåll"}</p>
+            )
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  // When switching chapters while editing, load the content for that chapter
+  const handleChapterSwitch = (i) => {
+    // If editing, save the edited content mapping for the new chapter index
+    if (editingSide) {
+      const chapters = editingSide === "left"
+        ? (projectA.chapters || []).sort((a, b) => a.number - b.number)
+        : (projectB.chapters || []).sort((a, b) => a.number - b.number);
+      if (editedContent[i] === undefined && chapters[i]) {
+        setEditedContent(prev => ({ ...prev, [i]: chapters[i].content || "" }));
+      }
+    }
+    setActiveChapter(i);
+  };
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: font, background: bg, color: ink, overflow: "hidden" }}>
@@ -3051,10 +3192,26 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
           <button onClick={onBack} style={{ fontFamily: uiFont, fontSize: 12, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>{"\u2190 Tillbaka"}</button>
           <div style={{ width: 1, height: 20, background: border }} />
           <span style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{"\u2194 J\u00e4mf\u00f6r versioner"}</span>
+          {editingSide && (
+            <>
+              <div style={{ width: 1, height: 20, background: border }} />
+              <span style={{ fontFamily: uiFont, fontSize: 11, color: accent, fontWeight: 500 }}>
+                {"Redigerar " + (editingSide === "left" ? projectA.title : projectB.title)}
+              </span>
+            </>
+          )}
         </div>
-        {!hasDiff && chA && chB && (
-          <span style={{ fontFamily: uiFont, fontSize: 11, color: "#27864a", fontWeight: 500 }}>{"\u2713 Identiskt inneh\u00e5ll"}</span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {editingSide && (
+            <button onClick={() => { setEditingSide(null); setEditedContent({}); setSavedProjectId(null); setSavingStatus(null); }} style={{
+              fontFamily: uiFont, fontSize: 11, padding: "5px 14px", borderRadius: 6,
+              border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500,
+            }}>{"Avsluta redigering"}</button>
+          )}
+          {!hasDiff && chA && chB && !editingSide && (
+            <span style={{ fontFamily: uiFont, fontSize: 11, color: "#27864a", fontWeight: 500 }}>{"\u2713 Identiskt inneh\u00e5ll"}</span>
+          )}
+        </div>
       </header>
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -3067,7 +3224,7 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
             const title = cA?.title || cB?.title || `Kapitel ${i + 1}`;
             const isDiff = cA?.content !== cB?.content;
             return (
-              <button key={i} onClick={() => setActiveChapter(i)} style={{
+              <button key={i} onClick={() => handleChapterSwitch(i)} style={{
                 width: "100%", textAlign: "left", padding: "8px 12px", border: "none",
                 background: activeChapter === i ? accentLight : "transparent",
                 cursor: "pointer", fontFamily: uiFont, fontSize: 11,
