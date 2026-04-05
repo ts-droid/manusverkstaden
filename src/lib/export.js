@@ -1,7 +1,10 @@
 /**
  * Export Utility
  *
- * Generates print-ready .docx files with typography options.
+ * Two-stage pipeline for print-ready .docx files:
+ *   1. sanitizeText()  — Remove hidden characters, fix line breaks, validate
+ *   2. formatForPrint() — Apply Swedish typographic standards
+ *
  * Also supports markdown export with suggestion annotations.
  */
 
@@ -19,45 +22,157 @@ import {
   SectionType,
 } from 'docx';
 
-/**
- * Margin presets in twips (1 cm = 567 twips).
- */
-const MARGIN_PRESETS = {
-  normal: { top: 1440, right: 1440, bottom: 1440, left: 1440 },       // 2.54 cm
-  wide: { top: 1800, right: 1800, bottom: 1800, left: 1800 },         // 3.17 cm
-  narrow: { top: 1080, right: 1080, bottom: 1080, left: 1080 },       // 1.91 cm
-};
+// ═══════════════════════════════════════════════════════════════════════════
+// STAGE 1: SANITIZE — Clean hidden characters and structural problems
+// ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Clean text for export — remove invisible/problematic characters
- * that break formatting in print-ready documents.
+ * Sanitize text for export — removes all invisible/problematic characters
+ * and structural issues. Returns { text, issues[] } where issues lists
+ * everything that was found and fixed.
+ */
+export function sanitizeText(text) {
+  const issues = [];
+  let result = text;
+
+  // ─── Line endings ───
+  const crlfCount = (result.match(/\r\n/g) || []).length;
+  const crCount = (result.match(/\r(?!\n)/g) || []).length;
+  if (crlfCount || crCount) {
+    issues.push({ type: 'lineEndings', count: crlfCount + crCount, desc: 'Radbrytningar normaliserade (Windows → Unix)' });
+  }
+  result = result.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // ─── Invisible Unicode characters ───
+  const invisibles = result.match(/[\u200B\u200C\u200D\u00AD\uFEFF\u2060\u200E\u200F]/g);
+  if (invisibles) {
+    issues.push({ type: 'invisibleChars', count: invisibles.length, desc: `${invisibles.length} dolda Unicode-tecken borttagna` });
+  }
+  result = result.replace(/[\u200B\u200C\u200D\u00AD\uFEFF\u2060\u200E\u200F]/g, '');
+
+  // ─── Tabs ───
+  const tabCount = (result.match(/\t/g) || []).length;
+  if (tabCount) {
+    issues.push({ type: 'tabs', count: tabCount, desc: `${tabCount} tabbar ersatta med mellanslag` });
+  }
+  result = result.replace(/\t/g, ' ');
+
+  // ─── Non-breaking spaces ───
+  const nbspCount = (result.match(/\u00A0/g) || []).length;
+  if (nbspCount) {
+    issues.push({ type: 'nbsp', count: nbspCount, desc: `${nbspCount} hårda mellanslag normaliserade` });
+  }
+  result = result.replace(/\u00A0/g, ' ');
+
+  // ─── Multiple spaces ───
+  const multiSpaces = (result.match(/([^\n]) {2,}/g) || []).length;
+  if (multiSpaces) {
+    issues.push({ type: 'multiSpaces', count: multiSpaces, desc: `${multiSpaces} dubbla mellanslag kollapsade` });
+  }
+  result = result.replace(/([^\n]) {2,}/g, '$1 ');
+
+  // ─── Single newlines within paragraphs (broken sentences) ───
+  const singleNewlines = (result.match(/([^\n])\n(?=[^\n])/g) || []).length;
+  if (singleNewlines) {
+    issues.push({ type: 'brokenLines', count: singleNewlines, desc: `${singleNewlines} brutna rader sammanfogade` });
+  }
+  result = result.replace(/([^\n])\n(?=[^\n])/g, '$1 ');
+  result = result.replace(/ {2,}/g, ' ');
+
+  // ─── Excessive newlines ───
+  const excessiveNewlines = (result.match(/\n{3,}/g) || []).length;
+  if (excessiveNewlines) {
+    issues.push({ type: 'excessiveNewlines', count: excessiveNewlines, desc: `${excessiveNewlines} överflödiga blankrader borttagna` });
+  }
+  result = result.replace(/\n{3,}/g, '\n\n');
+
+  // ─── Trailing whitespace ───
+  const trailingSpaces = (result.match(/[ \t]+$/gm) || []).length;
+  if (trailingSpaces) {
+    issues.push({ type: 'trailingSpaces', count: trailingSpaces, desc: `${trailingSpaces} rader med avslutande mellanslag rensade` });
+  }
+  result = result.replace(/[ \t]+$/gm, '');
+
+  return { text: result.trim(), issues };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STAGE 2: FORMAT — Apply Swedish typographic standards for print
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Format sanitized text according to Swedish typographic print standards.
+ * Call AFTER sanitizeText().
+ */
+export function formatForPrint(text) {
+  let result = text;
+
+  // ─── Quotes: Swedish standard ───
+  // Swedish uses "citattecken" (right double quotes on both sides)
+  // or »guillemets» — we standardize to typographic double quotes
+  result = result.replace(/[\u201C\u201D]/g, '\u201D');     // left/right double → right (Swedish "")
+  result = result.replace(/[\u2018\u2019]/g, '\u2019');     // left/right single → right
+  // Straight quotes → Swedish typographic quotes
+  // "text" → \u201Dtext\u201D (only when clearly wrapping a word/phrase)
+  result = result.replace(/"([^"]+)"/g, '\u201D$1\u201D');
+
+  // ─── Dashes: Swedish standard ───
+  // Hyphen variants → regular hyphen
+  result = result.replace(/[\u2010\u2011]/g, '-');
+  // Figure dash → en-dash
+  result = result.replace(/\u2012/g, '\u2013');
+  // Dialog marker: Swedish uses en-dash (–) with space, not em-dash
+  // em-dash → en-dash (Swedish convention)
+  result = result.replace(/\u2014/g, '\u2013');
+  // Ensure space around en-dash when used as parenthetical
+  result = result.replace(/(\S)\u2013(\S)/g, '$1 \u2013 $2');
+  // But dialog lines start with – without preceding space
+  result = result.replace(/^\u2013\s*/gm, '\u2013 ');
+
+  // ─── Ellipsis: proper Unicode character ───
+  result = result.replace(/\.{3}/g, '\u2026');
+
+  // ─── Spaces before punctuation (remove) ───
+  result = result.replace(/ +([.,;:!?])/g, '$1');
+
+  // ─── Space after punctuation (ensure) ───
+  // Add space after .,;:!? if followed by a letter (but not in numbers like 3.14)
+  result = result.replace(/([.,;:!?])([A-Za-zÀ-ÿÅÄÖåäö])/g, '$1 $2');
+
+  // ─── Non-breaking space before colon/semicolon (French style — optional for Swedish) ───
+  // Swedish doesn't require this, but we ensure no double-space
+
+  // ─── Number formatting ───
+  // Thin space in large numbers: 1 000 000 (Swedish standard, not 1,000,000)
+  // Only apply to standalone numbers, not within words
+  result = result.replace(/\b(\d{1,3})(\d{3})\b/g, '$1\u00A0$2');
+
+  // ─── Fix common word-processing artifacts ───
+  // Double periods
+  result = result.replace(/\.\.(?!\.)/g, '.');
+  // Space before closing parenthesis / bracket
+  result = result.replace(/ +\)/g, ')');
+  // Space after opening parenthesis / bracket
+  result = result.replace(/\( +/g, '(');
+
+  return result;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LEGACY COMPAT
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Combined clean function (used internally by exportToDocx).
+ * Runs both stages.
  */
 function cleanTextForExport(text) {
-  return text
-    // Replace tabs with single space
-    .replace(/\t/g, ' ')
-    // Collapse multiple spaces into one (except line starts for intentional formatting)
-    .replace(/([^\n]) {2,}/g, '$1 ')
-    // Remove zero-width spaces, soft hyphens, byte order marks, and other invisible Unicode
-    .replace(/[\u200B\u200C\u200D\u00AD\uFEFF\u2060\u200E\u200F]/g, '')
-    // Replace non-breaking spaces with regular spaces (except after short words like "i", "å")
-    .replace(/\u00A0/g, ' ')
-    // Normalize different dash types: en-dash stays, em-dash stays, but weird dashes normalize
-    .replace(/[\u2010\u2011]/g, '-')       // hyphen variants → regular hyphen
-    .replace(/\u2012/g, '\u2013')           // figure dash → en-dash
-    // Normalize quotes to Swedish standard
-    .replace(/[\u201C\u201D]/g, '\u201D')   // left/right double quotes → right double quote (Swedish uses "")
-    .replace(/[\u2018\u2019]/g, '\u2019')   // left/right single quotes → right single quote
-    // Remove trailing whitespace from each line
-    .replace(/[ \t]+$/gm, '')
-    // Collapse 3+ consecutive newlines into 2 (preserve paragraph breaks but remove excessive spacing)
-    .replace(/\n{3,}/g, '\n\n')
-    // Ensure consistent line endings
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    // Trim the whole text
-    .trim();
+  const { text: sanitized } = sanitizeText(text);
+  return formatForPrint(sanitized);
 }
+
 
 /**
  * Apply accepted suggestions to chapter text.
@@ -77,18 +192,26 @@ function applyAcceptedChanges(text, paragraphs, accepted) {
   return result;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MARGIN & TYPOGRAPHY PRESETS
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
- * Alignment map from string to docx constant.
+ * Margin presets in twips (1 cm = 567 twips).
  */
+const MARGIN_PRESETS = {
+  normal: { top: 1440, right: 1440, bottom: 1440, left: 1440 },       // 2.54 cm
+  wide: { top: 1800, right: 1800, bottom: 1800, left: 1800 },         // 3.17 cm
+  narrow: { top: 1080, right: 1080, bottom: 1080, left: 1080 },       // 1.91 cm
+};
+
 const ALIGN_MAP = {
   left: AlignmentType.LEFT,
   center: AlignmentType.CENTER,
   right: AlignmentType.RIGHT,
 };
 
-/**
- * Chapter start position in twips.
- */
 const CHAPTER_START_SPACING = {
   direct: 400,    // small gap
   third: 4800,    // ~1/3 down the page
@@ -122,6 +245,11 @@ function formatTitle(title, options) {
   });
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DOCX EXPORT
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
  * Export manuscript as .docx with typography options.
  *
@@ -153,7 +281,6 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
 
   const marginValues = MARGIN_PRESETS[margins] || MARGIN_PRESETS.normal;
   const sizeHalfPts = fontSize * 2;
-  // Line spacing: docx uses 240 twips per single line
   const lineSpacingTwips = Math.round(240 * lineSpacing);
 
   // ─── Title page ───
@@ -203,21 +330,17 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
    */
   function parseFormattedText(str, baseFont, baseSize) {
     const runs = [];
-    // Match **bold** and *italic*
     const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
     let lastIdx = 0;
     let match;
 
     while ((match = regex.exec(str)) !== null) {
-      // Add plain text before match
       if (match.index > lastIdx) {
         runs.push(new TextRun({ text: str.slice(lastIdx, match.index), font: baseFont, size: baseSize }));
       }
       if (match[2]) {
-        // **bold**
         runs.push(new TextRun({ text: match[2], font: baseFont, size: baseSize, bold: true }));
       } else if (match[3]) {
-        // *italic*
         runs.push(new TextRun({ text: match[3], font: baseFont, size: baseSize, italics: true }));
       }
       lastIdx = match.index + match[0].length;
@@ -232,15 +355,15 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
   const chapterSections = chapters.map((chapter, chapterIdx) => {
     const paras = paragraphsByChapter?.[chapter.id] || [];
     const rawText = applyAcceptedChanges(chapter.content, paras, accepted);
+
+    // Two-stage pipeline: sanitize → format for print
     const processedText = cleanTextForExport(rawText);
     const textParagraphs = processedText.split(/\n\s*\n/).filter(p => p.trim());
 
-    const indentTwips = Math.round(firstLineIndent * 567); // cm to twips
+    const indentTwips = Math.round(firstLineIndent * 567);
 
     const children = [
-      // Chapter title
       formatTitle(chapter.title, { font, fontSize, chapterTitleStyle, chapterTitleAlign, chapterStartPosition }),
-      // Body paragraphs
       ...textParagraphs.map(text => new Paragraph({
         spacing: { line: lineSpacingTwips, after: paragraphSpacing ? Math.round(lineSpacingTwips * 0.5) : 0 },
         indent: indentTwips > 0 ? { firstLine: indentTwips } : undefined,
@@ -250,7 +373,7 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
 
     return {
       properties: {
-        type: chapterIdx === 0 ? SectionType.NEXT_PAGE : SectionType.NEXT_PAGE,
+        type: SectionType.NEXT_PAGE,
         page: {
           margin: marginValues,
           pageNumbers: pageNumbers ? { start: chapterIdx === 0 ? 1 : undefined } : undefined,
@@ -272,7 +395,7 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
             new TextRun({
               text: headerStyle === 'title' ? title
                 : headerStyle === 'author' ? (authorName || '')
-                : headerStyle === 'both' ? `${authorName || ''} — ${title}`
+                : headerStyle === 'both' ? `${authorName || ''} \u2013 ${title}`
                 : '',
               font,
               size: 16,
@@ -307,7 +430,6 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
   // ─── Build document ───
   const doc = new Document({
     sections: [
-      // Title page
       {
         properties: {
           page: { margin: marginValues },
@@ -317,7 +439,6 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
         footers: {},
         children: titlePageChildren,
       },
-      // Chapters
       ...chapterSections.map(section => ({
         ...section,
         headers: headerConfig,
@@ -329,10 +450,13 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
   return await Packer.toBlob(doc);
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OTHER EXPORT FORMATS
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
  * Trigger file download in the browser.
- * @param {Blob} blob - File data
- * @param {string} filename - Download filename
  */
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);

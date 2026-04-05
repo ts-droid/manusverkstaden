@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { parseManuscript, splitIntoParagraphs, countWords } from "./lib/manuscript-parser";
 import { ANALYSIS_LEVELS } from "./lib/prompt-builder";
 import { saveProject, loadProject, clearProject } from "./lib/storage";
-import { exportToDocx, downloadBlob } from "./lib/export";
+import { exportToDocx, downloadBlob, sanitizeText, formatForPrint } from "./lib/export";
 import { useAuth } from "./contexts/AuthContext";
 import { apiClient, AuthError } from "./lib/api-client";
 
@@ -1941,6 +1941,7 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
   const [activePreset, setActivePreset] = useState("fiction");
   const [exporting, setExporting] = useState(false);
   const [exportScope, setExportScope] = useState("all"); // "all" or chapter id
+  const [sanitizeReport, setSanitizeReport] = useState(null); // null = not run, [] = clean, [...] = issues found
 
 
   // ─── PRESETS (Swedish publishing standards) ───
@@ -2010,6 +2011,19 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
   const exportChapters = exportScope === "all" ? chapters : chapters.filter(ch => ch.id === exportScope);
   const exportFileName = exportScope === "all" ? fileName : `${fileName} – ${exportChapters[0]?.title || "Kapitel"}`;
 
+  // Step 1: Run sanitize check on all chapters
+  const handleSanitizeCheck = () => {
+    const allIssues = [];
+    for (const ch of exportChapters) {
+      const { issues } = sanitizeText(ch.content || "");
+      if (issues.length > 0) {
+        allIssues.push({ chapter: ch.title, issues });
+      }
+    }
+    setSanitizeReport(allIssues);
+  };
+
+  // Step 2: Export (sanitize + format happens inside exportToDocx)
   const handleExport = async () => {
     setExporting(true);
     try {
@@ -2221,6 +2235,44 @@ function ExportModal({ chapters, paragraphsByChapter, accepted, rejected, fileNa
               Hon stod vid fönstret och såg ut över den stilla sjön. Dimman låg tät över vattnet.
             </div>
           </div>
+        </div>
+
+        {/* ─── SANITIZE CHECK ─── */}
+        <div style={{ marginBottom: 12 }}>
+          {sanitizeReport === null ? (
+            <button onClick={handleSanitizeCheck} style={{
+              width: "100%", padding: "10px 0", borderRadius: 8, border: `1px solid ${border}`,
+              background: surface, color: ink, fontSize: 12, fontWeight: 500, cursor: "pointer",
+              fontFamily: uiFont, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            }}>
+              Kontrollera text innan export
+            </button>
+          ) : sanitizeReport.length === 0 ? (
+            <div style={{
+              padding: "10px 14px", borderRadius: 8, background: "#f0faf3", border: "1px solid #c6e6d0",
+              fontFamily: uiFont, fontSize: 11.5, color: "#27864a", display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span style={{ fontSize: 16 }}>✓</span>
+              <span>Texten är ren — inga dolda tecken eller formateringsproblem hittades</span>
+            </div>
+          ) : (
+            <div style={{
+              padding: "10px 14px", borderRadius: 8, background: "#fdf8ef", border: "1px solid #e8d9a8",
+              fontFamily: uiFont, fontSize: 11, color: "#7a6520",
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 11.5 }}>
+                Hittade {sanitizeReport.reduce((s, r) => s + r.issues.length, 0)} formateringsproblem — åtgärdas automatiskt vid export:
+              </div>
+              {sanitizeReport.map((r, ri) => (
+                <div key={ri} style={{ marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600 }}>{r.chapter}:</span>
+                  {r.issues.map((iss, ii) => (
+                    <span key={ii} style={{ marginLeft: 6 }}>{iss.desc}{ii < r.issues.length - 1 ? "," : ""}</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <button
