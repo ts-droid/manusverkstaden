@@ -48,6 +48,7 @@ app.get('/api/health', (req, res) => {
 // ─── STARTUP TASKS (runs once at startup) ───
 import { PrismaClient } from '@prisma/client';
 import { seedPrompts } from './utils/seed-prompts.js';
+import { fixBrokenParagraphs } from './utils/fix-broken-paragraphs.js';
 
 const prismaSetup = new PrismaClient();
 (async () => {
@@ -73,6 +74,13 @@ const prismaSetup = new PrismaClient();
     console.log('[startup] Prompts seeded/migrated');
   } catch (err) {
     console.error('[startup] Prompt seeding failed:', err.message);
+  }
+
+  // One-time fix: merge broken paragraphs in existing chapter content
+  try {
+    await fixBrokenParagraphs();
+  } catch (err) {
+    console.error('[startup] Paragraph fix failed:', err.message);
   }
 })();
 

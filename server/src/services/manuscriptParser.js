@@ -60,7 +60,7 @@ export async function parseUploadedFile(file) {
  * Merge broken paragraphs: if a paragraph doesn't end with sentence-ending
  * punctuation, it's a line broken by Word/Mammoth — join with next paragraph.
  */
-function mergeBrokenParagraphs(content) {
+export function mergeBrokenParagraphs(content) {
   const paras = content.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 0);
   const merged = [];
   for (let i = 0; i < paras.length; i++) {
