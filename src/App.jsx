@@ -2967,20 +2967,41 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
   const chA = chaptersA[activeChapter];
   const chB = chaptersB[activeChapter];
 
-  // Simple word-level diff highlighting
-  const diffTexts = (textA, textB) => {
-    if (!textA || !textB) return { a: textA || "", b: textB || "", hasDiff: true };
-    if (textA === textB) return { a: textA, b: textB, hasDiff: false };
-
-    // Split into paragraphs and compare
-    const parasA = textA.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-    const parasB = textB.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-    return { parasA, parasB, hasDiff: true };
+  // Normalize text: join single \n, merge broken paragraphs, clean whitespace
+  const normalizeForCompare = (text) => {
+    if (!text) return [];
+    // Join single newlines within paragraphs
+    let cleaned = text.replace(/([^\n])\n(?=[^\n])/g, "$1 ").replace(/ {2,}/g, " ");
+    // Split into paragraphs
+    const raw = cleaned.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+    // Merge broken paragraphs (same heuristic as everywhere else)
+    const merged = [];
+    for (const para of raw) {
+      if (merged.length > 0) {
+        const prev = merged[merged.length - 1];
+        const lastChar = prev.slice(-1);
+        const wordCount = prev.split(/\s+/).length;
+        const looksLikeHeading = prev.length < 80 && (
+          prev === prev.toUpperCase() ||
+          /^(kapitel|chapter|\d+\.?\s)/i.test(prev) ||
+          (wordCount <= 5 && !/,/.test(prev))
+        );
+        if (!looksLikeHeading && prev.length > 0 &&
+            !['.', '!', '?', '\u201D', '\u2019', '\u00BB', '"', "'", '\u2026', ')'].includes(lastChar)) {
+          merged[merged.length - 1] = prev + ' ' + para;
+          continue;
+        }
+      }
+      merged.push(para);
+    }
+    return merged;
   };
 
-  const { parasA = [], parasB = [], hasDiff } = chA && chB
-    ? diffTexts(chA.content, chB.content)
-    : { parasA: (chA?.content || "").split(/\n\s*\n/).filter(Boolean), parasB: (chB?.content || "").split(/\n\s*\n/).filter(Boolean), hasDiff: true };
+  const parasA = normalizeForCompare(chA?.content);
+  const parasB = normalizeForCompare(chB?.content);
+
+  // Check if content is identical after normalization
+  const hasDiff = parasA.join("\n\n") !== parasB.join("\n\n");
 
   const renderPanel = (project, chapter, paragraphs, side) => (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
