@@ -5157,148 +5157,100 @@ export default function App() {
   // ─── BAKE IN: apply text replacement to chapter content + save to DB ───
   // Uses setChapters(prev => ...) to always read CURRENT state (no stale closures)
   // Helper: fuzzy replace (handles whitespace differences between AI original and actual text)
-  const fuzzyReplaceInText = (text, original, replacement) => {
-    const normS = s => s.replace(/\s+/g, ' ').trim();
-    // Exact match
-    if (text.includes(original)) return text.replace(original, replacement);
-    // Normalized match: find position in normalized string, map back to original
-    const normText = normS(text);
-    const normOrig = normS(original);
-    const normIdx = normText.indexOf(normOrig);
-    if (normIdx === -1) return null;
-    // Map normalized index back to original text position
-    let origStart = -1, origEnd = -1, ni = 0, ti = 0;
-    // Skip leading whitespace in original text
-    while (ti < text.length && /\s/.test(text[ti]) && ni === 0) ti++;
-    while (ti <= text.length && ni <= normIdx + normOrig.length) {
-      if (ni === normIdx && origStart === -1) origStart = ti;
-      if (ni === normIdx + normOrig.length) { origEnd = ti; break; }
-      if (ti >= text.length) break;
-      if (/\s/.test(text[ti])) {
-        while (ti < text.length && /\s/.test(text[ti])) ti++;
-        ni++;
-      } else {
-        ti++; ni++;
+  const applyReplacementToContent = (chapterId, originalText, replacementText, paraId = null) => {
+    // Use state callback to always work with fresh state — avoids stale closure bugs
+    setParagraphsByChapter(prev => {
+      const paras = prev[chapterId];
+      if (!paras || paras.length === 0) return prev;
+
+      // If paraId given, go directly to that paragraph; otherwise search
+      let targetIdx = -1;
+      let matchInPara = null;
+
+      if (paraId) {
+        targetIdx = paras.findIndex(p => p.id === paraId);
+        if (targetIdx !== -1) {
+          matchInPara = findInText(paras[targetIdx].text, originalText);
+        }
       }
-    }
-    if (origEnd === -1) origEnd = text.length;
-    if (origStart === -1) return null;
-    return text.slice(0, origStart) + replacement + text.slice(origEnd);
-  };
 
-  const applyReplacementToContent = (chapterId, originalText, replacementText) => {
-    // Work at paragraph level to avoid fuzzy matching across the entire chapter
-    const paras = paragraphsByChapter[chapterId];
-    if (!paras || paras.length === 0) return;
-
-    // Find which paragraph contains the original text
-    let targetIdx = -1;
-    let matchInPara = null;
-    for (let i = 0; i < paras.length; i++) {
-      const match = findInText(paras[i].text, originalText);
-      if (match) {
-        targetIdx = i;
-        matchInPara = match;
-        break;
+      // Fallback: search all paragraphs
+      if (!matchInPara) {
+        for (let i = 0; i < paras.length; i++) {
+          const match = findInText(paras[i].text, originalText);
+          if (match) { targetIdx = i; matchInPara = match; break; }
+        }
       }
-    }
 
-    if (targetIdx === -1 || !matchInPara) {
-      console.warn("[Bake-in] Could not find original text in any paragraph:", originalText.slice(0, 80));
-      return;
-    }
+      if (targetIdx === -1 || !matchInPara) {
+        console.warn("[Bake-in] Could not find original text:", originalText.slice(0, 80));
+        return prev;
+      }
 
-    // Replace within the specific paragraph using exact positions
-    const para = paras[targetIdx];
-    const newParaText = para.text.slice(0, matchInPara.idx) + replacementText + para.text.slice(matchInPara.idx + matchInPara.len);
+      // EXACT positional replacement — slice at the matched position
+      const para = paras[targetIdx];
+      const newParaText = para.text.slice(0, matchInPara.idx) + replacementText + para.text.slice(matchInPara.idx + matchInPara.len);
 
-    // Update paragraph directly — keep suggestions attached
-    const updatedParas = paras.map((p, i) =>
-      i === targetIdx ? { ...p, text: newParaText } : p
-    );
+      const updatedParas = paras.map((p, i) =>
+        i === targetIdx ? { ...p, text: newParaText } : p
+      );
 
-    // Update paragraphs (synchronous — no setTimeout race condition)
-    setParagraphsByChapter(prev => ({ ...prev, [chapterId]: updatedParas }));
+      // Rebuild chapter content and save
+      const newContent = updatedParas.map(p => p.text).join("\n\n");
+      setChapters(prevCh => prevCh.map(c =>
+        c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c
+      ));
+      if (serverProjectId) {
+        apiClient.updateChapter(chapterId, { content: newContent }).catch(e => console.error("[Bake-in] DB save:", e));
+      }
 
-    // Rebuild chapter content from updated paragraphs
-    const newContent = updatedParas.map(p => p.text).join("\n\n");
-    setChapters(prev => prev.map(c =>
-      c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c
-    ));
-
-    // Save to database
-    if (serverProjectId) {
-      apiClient.updateChapter(chapterId, { content: newContent })
-        .catch(e => {
-          console.error("[Bake-in] DB save failed:", e);
-          setSaveStatus("error");
-        });
-    }
+      return { ...prev, [chapterId]: updatedParas };
+    });
   };
 
   // Batch version: apply multiple replacements in ONE state update
   const applyBatchReplacements = (chapterId, replacements) => {
-    const paras = paragraphsByChapter[chapterId];
-    if (!paras || paras.length === 0) return;
+    setParagraphsByChapter(prev => {
+      const paras = prev[chapterId];
+      if (!paras || paras.length === 0) return prev;
 
-    // Work on a mutable copy of paragraph texts
-    const updatedParas = paras.map(p => ({ ...p }));
-    let applied = 0;
+      const updatedParas = paras.map(p => ({ ...p }));
+      let applied = 0;
 
-    for (const { original, replacement } of replacements) {
-      if (!original || !replacement) continue;
-      // Find which paragraph contains this original text
-      for (let i = 0; i < updatedParas.length; i++) {
-        const match = findInText(updatedParas[i].text, original);
-        if (match) {
-          updatedParas[i] = {
-            ...updatedParas[i],
-            text: updatedParas[i].text.slice(0, match.idx) + replacement + updatedParas[i].text.slice(match.idx + match.len),
-          };
-          applied++;
-          break;
+      for (const { original, replacement } of replacements) {
+        if (!original || !replacement) continue;
+        for (let i = 0; i < updatedParas.length; i++) {
+          const match = findInText(updatedParas[i].text, original);
+          if (match) {
+            updatedParas[i] = {
+              ...updatedParas[i],
+              text: updatedParas[i].text.slice(0, match.idx) + replacement + updatedParas[i].text.slice(match.idx + match.len),
+            };
+            applied++;
+            break;
+          }
         }
       }
-    }
 
-    if (applied === 0) return;
+      if (applied === 0) return prev;
 
-    setParagraphsByChapter(prev => ({ ...prev, [chapterId]: updatedParas }));
+      const newContent = updatedParas.map(p => p.text).join("\n\n");
+      setChapters(prevCh => prevCh.map(c =>
+        c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c
+      ));
+      if (serverProjectId) {
+        apiClient.updateChapter(chapterId, { content: newContent }).catch(e => console.error("[Batch bake-in] DB save:", e));
+      }
 
-    const newContent = updatedParas.map(p => p.text).join("\n\n");
-    setChapters(prev => prev.map(c =>
-      c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c
-    ));
-
-    if (serverProjectId) {
-      apiClient.updateChapter(chapterId, { content: newContent })
-        .catch(e => {
-          console.error("[Batch bake-in] DB save failed:", e);
-          setSaveStatus("error");
-        });
-    }
+      return { ...prev, [chapterId]: updatedParas };
+    });
   };
 
-  // ─── GET EFFECTIVE TEXT (with accepted replacements applied) ───
+  // ─── GET EFFECTIVE TEXT ───
+  // Since accepted replacements are baked directly into para.text by applyReplacementToContent,
+  // the effective text IS para.text — no post-processing needed.
   const getEffectiveText = (para) => {
-    if (!para?.suggestions?.length) return para?.text || "";
-    let text = para.text;
-    // Apply accepted replacements — but only if the replacement isn't already baked into para.text
-    const acceptedSuggestions = (para.suggestions || []).filter(s => accepted.has(s.id) && s.original && s.replacement);
-    if (acceptedSuggestions.length === 0) return text;
-    // Sort by position (reverse) to apply from end to start
-    const withPos = acceptedSuggestions.map(s => {
-      // Check if replacement is already in the text (baked in by applyReplacementToContent)
-      const normS = str => str.replace(/\s+/g, ' ').trim();
-      const alreadyBaked = normS(text).includes(normS(s.replacement));
-      if (alreadyBaked) return { s, match: null }; // Skip — already applied
-      const match = findInText(text, s.original);
-      return { s, match };
-    }).filter(x => x.match).sort((a, b) => b.match.idx - a.match.idx);
-    for (const { s, match } of withPos) {
-      text = text.slice(0, match.idx) + s.replacement + text.slice(match.idx + match.len);
-    }
-    return text;
+    return para?.text || "";
   };
 
 
@@ -5819,9 +5771,10 @@ export default function App() {
         if (isRej) {
           parts.push(<span key={`s${s.id}`} data-suggestion-id={s.id}>{...renderFormatted(matchedText, `r${s.id}`)}</span>);
         } else {
-          // If accepted and replacement is baked in, matchedText IS the replacement — show as-is
-          // If accepted but not yet baked in, show s.replacement
-          const displayText = isAcc && s.replacement && matchedText !== s.replacement ? s.replacement : matchedText;
+          // matchedText is always what's in para.text at that position:
+          // - pending: matchedText = original text (show as-is)
+          // - accepted (baked in): matchedText = replacement text (show as-is)
+          const displayText = matchedText;
           parts.push(
             <span key={`s${s.id}`} data-suggestion-id={s.id} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
               background: isAcc ? "#dcfce7" : isAct ? `${p.color}30` : `${p.color}0c`,
@@ -6264,16 +6217,16 @@ export default function App() {
                           setActiveSuggestion(null);
                           setHighlightTermState(null);
                           apiClient.updateSuggestion(s.id, "ACCEPTED").catch(e => console.error("Save accept failed:", e));
-                          // Bake replacement into chapter content (uses prev=> for fresh state)
+                          // Bake replacement into chapter content — pass paraId for exact targeting
                           if (s.original && s.replacement && activeChapter) {
-                            applyReplacementToContent(activeChapter, s.original, s.replacement);
+                            applyReplacementToContent(activeChapter, s.original, s.replacement, attachedPara?.id);
                           }
                         }}
                         onReject={() => { setRejected(prev => new Set([...prev, s.id])); setActiveSuggestion(null); setHighlightTermState(null); apiClient.updateSuggestion(s.id, "REJECTED").catch(e => console.error("Save reject failed:", e)); }}
                         onUndo={() => {
-                          // Restore original text for ALL accepted suggestions
+                          // Restore original text — search for replacement (which is now in text)
                           if (accepted.has(s.id) && s.original && s.replacement && activeChapter) {
-                            applyReplacementToContent(activeChapter, s.replacement, s.original);
+                            applyReplacementToContent(activeChapter, s.replacement, s.original, attachedPara?.id);
                           }
                           setAccepted(prev => { const n = new Set(prev); n.delete(s.id); return n; });
                           setRejected(prev => { const n = new Set(prev); n.delete(s.id); return n; });
