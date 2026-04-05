@@ -145,8 +145,9 @@ export function formatForPrint(text) {
 
   // ─── Number formatting ───
   // Thin space in large numbers: 1 000 000 (Swedish standard, not 1,000,000)
-  // Only apply to standalone numbers, not within words
-  result = result.replace(/\b(\d{1,3})(\d{3})\b/g, '$1\u00A0$2');
+  // Only apply to numbers with 5+ digits to avoid breaking years (1962, 2024)
+  result = result.replace(/\b(\d{1,3})(\d{3})(\d{3})\b/g, '$1\u00A0$2\u00A0$3');  // millions
+  result = result.replace(/\b(\d{2,3})(\d{3})\b/g, '$1\u00A0$2');                  // 10 000 – 999 000
 
   // ─── Fix common word-processing artifacts ───
   // Double periods
@@ -360,11 +361,23 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
     const processedText = cleanTextForExport(rawText);
     const textParagraphs = processedText.split(/\n\s*\n/).filter(p => p.trim());
 
+    // Extract the actual chapter heading from content (first paragraph if it matches
+    // a chapter heading pattern), to avoid duplicating "KAPITEL 1" + "FÖRSTA KAPITLET"
+    const headingPattern = /^((?:kapitel|chapter)\s+\d+|(?:f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugo\S*|trettio\S*|fyrtio\S*|femtio\S*)\s+kapitlet)$/i;
+    let exportTitle = chapter.title;
+    let bodyParagraphs = textParagraphs;
+
+    if (textParagraphs.length > 0 && headingPattern.test(textParagraphs[0].trim())) {
+      // Use the manuscript's own heading as the export title
+      exportTitle = textParagraphs[0].trim();
+      bodyParagraphs = textParagraphs.slice(1);
+    }
+
     const indentTwips = Math.round(firstLineIndent * 567);
 
     const children = [
-      formatTitle(chapter.title, { font, fontSize, chapterTitleStyle, chapterTitleAlign, chapterStartPosition }),
-      ...textParagraphs.map(text => new Paragraph({
+      formatTitle(exportTitle, { font, fontSize, chapterTitleStyle, chapterTitleAlign, chapterStartPosition }),
+      ...bodyParagraphs.map(text => new Paragraph({
         spacing: { line: lineSpacingTwips, after: paragraphSpacing ? Math.round(lineSpacingTwips * 0.5) : 0 },
         indent: indentTwips > 0 ? { firstLine: indentTwips } : undefined,
         children: parseFormattedText(text.trim(), font, sizeHalfPts),
