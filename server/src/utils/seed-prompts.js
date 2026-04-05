@@ -174,9 +174,7 @@ Utöver grundgranskningen, bevaka särskilt:
 
   // ═══ BACKEND AI-PROMPTER ═══
   // ai:review — BORTTAGEN (ersatt av ai:review_pass1-4 multi-pass system)
-  {
-    // ai:dna_profile — BORTTAGEN (ersatt av ai:dna_author + ai:dna_story)
-  },
+  // ai:dna_profile — BORTTAGEN (ersatt av ai:dna_author + ai:dna_story)
   {
     key: 'ai:dna_story',
     content: `Du är en litterär analytiker specialiserad på narrativ analys. Analysera BERÄTTELSENS unika DNA — det som gör just denna historia speciell.

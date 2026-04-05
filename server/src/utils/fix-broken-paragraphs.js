@@ -18,7 +18,7 @@ export async function fixBrokenParagraphs() {
 
   try {
     // Check if migration already ran
-    const existing = await prisma.systemPrompt.findUnique({
+    const existing = await prisma.promptConfig.findUnique({
       where: { key: MIGRATION_KEY },
     }).catch(() => null);
 
@@ -65,7 +65,7 @@ export async function fixBrokenParagraphs() {
     }
 
     // Mark migration as done
-    await prisma.systemPrompt.upsert({
+    await prisma.promptConfig.upsert({
       where: { key: MIGRATION_KEY },
       create: { key: MIGRATION_KEY, content: `Applied at ${new Date().toISOString()}. Fixed ${fixed} chapters.` },
       update: {},

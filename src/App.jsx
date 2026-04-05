@@ -2931,6 +2931,56 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
   const [savingStatus, setSavingStatus] = useState(null); // null | "saving" | "saved" | "creating"
   const saveTimerRef = useRef(null);
 
+  // Auto-save edited content to duplicated project (must be before early returns — Rules of Hooks)
+  const autoSave = useCallback(async (chapterIndex, newText) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSavingStatus("saving");
+
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const sourceProject = editingSide === "left" ? projectA : projectB;
+        if (!sourceProject) return;
+
+        // If no duplicated project yet, create one
+        let targetProjectId = savedProjectId;
+        if (!targetProjectId) {
+          setSavingStatus("creating");
+          const now = new Date();
+          const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+          const res = await apiClient.duplicateProject(
+            editingSide === "left" ? projectIdA : projectIdB,
+            `${sourceProject.title} – redigerad ${dateStr}`
+          );
+          targetProjectId = res.project?.id || res.id;
+          setSavedProjectId(targetProjectId);
+
+          // Load duplicated project to get chapter IDs
+          const dupProject = await apiClient.getProject(targetProjectId);
+          const dupData = dupProject.project || dupProject;
+          if (editingSide === "left") setProjectA(prev => ({ ...prev, _dupChapters: (dupData.chapters || []).sort((a, b) => a.number - b.number) }));
+          else setProjectB(prev => ({ ...prev, _dupChapters: (dupData.chapters || []).sort((a, b) => a.number - b.number) }));
+        }
+
+        // Get the duplicated project's chapter ID for this index
+        const editProject = editingSide === "left" ? projectA : projectB;
+        const dupChapters = editProject?._dupChapters;
+        if (dupChapters && dupChapters[chapterIndex]) {
+          const wordCount = newText.split(/\s+/).filter(w => w).length;
+          await apiClient.updateChapter(dupChapters[chapterIndex].id, {
+            content: newText,
+            wordCount,
+          });
+        }
+
+        setSavingStatus("saved");
+        setTimeout(() => setSavingStatus(prev => prev === "saved" ? null : prev), 2000);
+      } catch (err) {
+        console.error("Auto-save error:", err);
+        setSavingStatus(null);
+      }
+    }, 1200);
+  }, [editingSide, savedProjectId, projectA, projectB, projectIdA, projectIdB]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -3015,56 +3065,6 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
 
   // Check if content is identical after normalization
   const hasDiff = parasA.join("\n\n") !== parasB.join("\n\n");
-
-  // Auto-save edited content to duplicated project
-  const autoSave = useCallback(async (chapterIndex, newText) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    setSavingStatus("saving");
-
-    saveTimerRef.current = setTimeout(async () => {
-      try {
-        const sourceProject = editingSide === "left" ? projectA : projectB;
-        const chapters = (sourceProject.chapters || []).sort((a, b) => a.number - b.number);
-
-        // If no duplicated project yet, create one
-        let targetProjectId = savedProjectId;
-        if (!targetProjectId) {
-          setSavingStatus("creating");
-          const now = new Date();
-          const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-          const res = await apiClient.duplicateProject(
-            editingSide === "left" ? projectIdA : projectIdB,
-            `${sourceProject.title} – redigerad ${dateStr}`
-          );
-          targetProjectId = res.project?.id || res.id;
-          setSavedProjectId(targetProjectId);
-
-          // Load duplicated project to get chapter IDs
-          const dupProject = await apiClient.getProject(targetProjectId);
-          const dupData = dupProject.project || dupProject;
-          if (editingSide === "left") setProjectA(prev => ({ ...prev, _dupChapters: (dupData.chapters || []).sort((a, b) => a.number - b.number) }));
-          else setProjectB(prev => ({ ...prev, _dupChapters: (dupData.chapters || []).sort((a, b) => a.number - b.number) }));
-        }
-
-        // Get the duplicated project's chapter ID for this index
-        const editProject = editingSide === "left" ? projectA : projectB;
-        const dupChapters = editProject._dupChapters;
-        if (dupChapters && dupChapters[chapterIndex]) {
-          const wordCount = newText.split(/\s+/).filter(w => w).length;
-          await apiClient.updateChapter(dupChapters[chapterIndex].id, {
-            content: newText,
-            wordCount,
-          });
-        }
-
-        setSavingStatus("saved");
-        setTimeout(() => setSavingStatus(prev => prev === "saved" ? null : prev), 2000);
-      } catch (err) {
-        console.error("Auto-save error:", err);
-        setSavingStatus(null);
-      }
-    }, 1200);
-  }, [editingSide, savedProjectId, projectA, projectB, projectIdA, projectIdB]);
 
   // Start editing a side
   const handleStartEdit = (side) => {
