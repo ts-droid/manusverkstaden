@@ -45,6 +45,11 @@ function cleanTextForImport(text) {
     .replace(/\n{3,}/g, '\n\n')                                            // 3+ newlines → 2
     .replace(/^\d{1,4}\s*$/gm, '')                                         // Remove standalone page numbers (lines with only 1-4 digits)
     .replace(/\n{3,}/g, '\n\n')                                            // Re-collapse after page number removal
+    // Join lines within paragraphs: single \n between non-empty lines → space
+    // Fixes Word/Mammoth inserting \n after each line within a paragraph
+    // Preserves \n\n (real paragraph breaks)
+    .replace(/([^\n])\n(?=[^\n])/g, '$1 ')
+    .replace(/ {2,}/g, ' ')                                                // Collapse double spaces from join
     .trim();
 }
 
@@ -347,7 +352,7 @@ export function countWords(text) {
 export function splitIntoParagraphs(chapterContent) {
   const raw = chapterContent
     .split(/\n\s*\n/)
-    .map((text) => text.trim())
+    .map((text) => text.replace(/([^\n])\n(?=[^\n])/g, '$1 ').replace(/ {2,}/g, ' ').trim())
     .filter((text) => text.length > 0);
 
   // Dedup consecutive identical paragraphs (from develop-insert bugs)

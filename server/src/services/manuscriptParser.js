@@ -17,6 +17,11 @@ function cleanTextForImport(text) {
     .replace(/\n{3,}/g, '\n\n')
     .replace(/^\d{1,4}\s*$/gm, '')                  // Remove standalone page numbers
     .replace(/\n{3,}/g, '\n\n')                      // Re-collapse after removal
+    // Join lines within paragraphs: single \n between non-empty lines → space
+    // This fixes Mammoth/Word inserting \n after each line of a paragraph
+    // Preserves \n\n (real paragraph breaks) and \n before/after empty lines
+    .replace(/([^\n])\n(?=[^\n])/g, '$1 ')
+    .replace(/ {2,}/g, ' ')                          // Collapse double spaces from join
     .trim();
 }
 
