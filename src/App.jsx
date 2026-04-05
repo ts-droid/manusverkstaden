@@ -2573,13 +2573,15 @@ function LandingPage({ onLogin, onRegister }) {
 }
 
 // ─── DASHBOARD VIEW ───
-function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile, onAdmin }) {
+function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile, onAdmin, onCompare }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // project to confirm delete
   const [usageData, setUsageData] = useState(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSelection, setCompareSelection] = useState([]); // [projectId, projectId]
 
   const SWEDISH_MONTHS = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
   const planLabels = { trial: "PROVA", PROVA: "PROVA", basic: "GRUND", GRUND: "GRUND", publisher: "FÖRLAG", FORLAG: "FÖRLAG" };
@@ -2738,8 +2740,38 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
           </div>
         )}
 
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: ink, margin: "0 0 6px", letterSpacing: "-0.02em" }}>Dina manus</h2>
-        <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 24px" }}>V&auml;lj ett projekt att arbeta med eller skapa ett nytt.</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: ink, margin: 0, letterSpacing: "-0.02em" }}>Dina manus</h2>
+          {projects.length >= 2 && (
+            <button onClick={() => { setCompareMode(!compareMode); setCompareSelection([]); }} style={{
+              fontFamily: uiFont, fontSize: 11, padding: "6px 14px", borderRadius: 7,
+              border: `1px solid ${compareMode ? accent : border}`,
+              background: compareMode ? accentLight : surface,
+              color: compareMode ? accent : muted, cursor: "pointer", fontWeight: 600,
+            }}>{compareMode ? "Avbryt j\u00e4mf\u00f6relse" : "\u2194 J\u00e4mf\u00f6r versioner"}</button>
+          )}
+        </div>
+        <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 24px" }}>
+          {compareMode
+            ? `V\u00e4lj 2 projekt att j\u00e4mf\u00f6ra${compareSelection.length > 0 ? ` (${compareSelection.length}/2 valda)` : ""}`
+            : "V\u00e4lj ett projekt att arbeta med eller skapa ett nytt."}
+        </p>
+
+        {/* Compare action bar */}
+        {compareMode && compareSelection.length === 2 && (
+          <div style={{
+            background: accentLight, border: `1px solid ${accent}`, borderRadius: 10, padding: "12px 20px",
+            marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <span style={{ fontFamily: uiFont, fontSize: 12, color: ink }}>
+              {projects.find(p => p.id === compareSelection[0])?.title} <span style={{ color: muted }}>vs</span> {projects.find(p => p.id === compareSelection[1])?.title}
+            </span>
+            <button onClick={() => onCompare(compareSelection[0], compareSelection[1])} style={{
+              fontFamily: uiFont, fontSize: 12, padding: "8px 20px", borderRadius: 7, border: "none",
+              background: accent, color: "#fff", cursor: "pointer", fontWeight: 600,
+            }}>J\u00e4mf\u00f6r \u2192</button>
+          </div>
+        )}
 
         {loading ? (
           <div style={{ textAlign: "center", padding: 60 }}>
@@ -2774,10 +2806,22 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
               // Genre badges
               const genres = project.genres || (project.genre ? [project.genre] : []);
 
+              const isSelected = compareSelection.includes(project.id);
+
               return (
-                <div key={project.id} style={{
-                  background: surface, borderRadius: 14, padding: "20px 20px 16px", border: `1px solid ${border}`,
+                <div key={project.id} onClick={compareMode ? () => {
+                  setCompareSelection(prev => {
+                    if (prev.includes(project.id)) return prev.filter(id => id !== project.id);
+                    if (prev.length >= 2) return [prev[1], project.id]; // Replace oldest
+                    return [...prev, project.id];
+                  });
+                } : undefined} style={{
+                  background: surface, borderRadius: 14, padding: "20px 20px 16px",
+                  border: `2px solid ${compareMode && isSelected ? accent : border}`,
                   display: "flex", flexDirection: "column", gap: 10, position: "relative", minHeight: 180,
+                  cursor: compareMode ? "pointer" : "default",
+                  boxShadow: compareMode && isSelected ? `0 0 0 3px ${accent}30` : "none",
+                  transition: "border-color 0.2s, box-shadow 0.2s",
                 }}>
                   {/* Three-dot menu */}
                   <div style={{ position: "absolute", top: 12, right: 12 }}>
@@ -2869,6 +2913,161 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── COMPARE VIEW ───
+function CompareView({ projectIdA, projectIdB, onBack }) {
+  const [projectA, setProjectA] = useState(null);
+  const [projectB, setProjectB] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeChapter, setActiveChapter] = useState(0); // index in chapter list
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [a, b] = await Promise.all([
+          apiClient.getProject(projectIdA),
+          apiClient.getProject(projectIdB),
+        ]);
+        setProjectA(a.project || a);
+        setProjectB(b.project || b);
+      } catch (err) {
+        console.error("Compare load error:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [projectIdA, projectIdB]);
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, flexDirection: "column", gap: 16 }}>
+        <div style={{ width: 36, height: 36, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+        <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>Laddar j\u00e4mf\u00f6relse...</div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (!projectA || !projectB) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, flexDirection: "column", gap: 16 }}>
+        <div style={{ fontFamily: uiFont, fontSize: 14, color: muted }}>Kunde inte ladda projekten.</div>
+        <button onClick={onBack} style={{ fontFamily: uiFont, fontSize: 12, padding: "8px 20px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>\u2190 Tillbaka</button>
+      </div>
+    );
+  }
+
+  const chaptersA = (projectA.chapters || []).sort((a, b) => a.number - b.number);
+  const chaptersB = (projectB.chapters || []).sort((a, b) => a.number - b.number);
+  const maxChapters = Math.max(chaptersA.length, chaptersB.length);
+
+  const chA = chaptersA[activeChapter];
+  const chB = chaptersB[activeChapter];
+
+  // Simple word-level diff highlighting
+  const diffTexts = (textA, textB) => {
+    if (!textA || !textB) return { a: textA || "", b: textB || "", hasDiff: true };
+    if (textA === textB) return { a: textA, b: textB, hasDiff: false };
+
+    // Split into paragraphs and compare
+    const parasA = textA.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+    const parasB = textB.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+    return { parasA, parasB, hasDiff: true };
+  };
+
+  const { parasA = [], parasB = [], hasDiff } = chA && chB
+    ? diffTexts(chA.content, chB.content)
+    : { parasA: (chA?.content || "").split(/\n\s*\n/).filter(Boolean), parasB: (chB?.content || "").split(/\n\s*\n/).filter(Boolean), hasDiff: true };
+
+  const renderPanel = (project, chapter, paragraphs, side) => (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Panel header */}
+      <div style={{
+        padding: "10px 16px", borderBottom: `1px solid ${border}`,
+        background: side === "left" ? "#f0ece5" : "#e8ece5", flexShrink: 0,
+      }}>
+        <div style={{ fontFamily: uiFont, fontSize: 11, fontWeight: 600, color: ink, marginBottom: 2 }}>
+          {project.title}
+        </div>
+        <div style={{ fontFamily: uiFont, fontSize: 10, color: muted }}>
+          {chapter ? `${chapter.title} \u00b7 ${chapter.wordCount || 0} ord` : "Kapitel saknas"}
+        </div>
+      </div>
+      {/* Panel content */}
+      <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
+        {paragraphs.length > 0 ? paragraphs.map((para, i) => {
+          // Check if this paragraph exists in the other side
+          const otherParas = side === "left" ? parasB : parasA;
+          const isDifferent = !otherParas.includes(para);
+          return (
+            <p key={i} style={{
+              fontFamily: font, fontSize: 14, lineHeight: 1.7, color: ink,
+              margin: "0 0 14px",
+              background: isDifferent ? (side === "left" ? "#fef2f2" : "#f0fdf4") : "transparent",
+              padding: isDifferent ? "2px 4px" : 0,
+              borderRadius: isDifferent ? 3 : 0,
+              borderLeft: isDifferent ? `3px solid ${side === "left" ? "#ef4444" : "#22c55e"}` : "none",
+              paddingLeft: isDifferent ? 10 : 0,
+            }}>{para}</p>
+          );
+        }) : (
+          <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, fontStyle: "italic" }}>Inget inneh\u00e5ll</p>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: font, background: bg, color: ink, overflow: "hidden" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,600;6..72,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Header */}
+      <header style={{ height: 56, borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", background: surface, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={onBack} style={{ fontFamily: uiFont, fontSize: 12, padding: "6px 14px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer", fontWeight: 500 }}>{"\u2190 Tillbaka"}</button>
+          <div style={{ width: 1, height: 20, background: border }} />
+          <span style={{ fontFamily: uiFont, fontSize: 13, fontWeight: 600, color: ink }}>{"\u2194 J\u00e4mf\u00f6r versioner"}</span>
+        </div>
+        {!hasDiff && chA && chB && (
+          <span style={{ fontFamily: uiFont, fontSize: 11, color: "#27864a", fontWeight: 500 }}>{"\u2713 Identiskt inneh\u00e5ll"}</span>
+        )}
+      </header>
+
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {/* Chapter sidebar */}
+        <div style={{ width: 160, borderRight: `1px solid ${border}`, overflow: "auto", background: surface, flexShrink: 0 }}>
+          <div style={{ padding: "12px 10px 6px", fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Kapitel</div>
+          {Array.from({ length: maxChapters }, (_, i) => {
+            const cA = chaptersA[i];
+            const cB = chaptersB[i];
+            const title = cA?.title || cB?.title || `Kapitel ${i + 1}`;
+            const isDiff = cA?.content !== cB?.content;
+            return (
+              <button key={i} onClick={() => setActiveChapter(i)} style={{
+                width: "100%", textAlign: "left", padding: "8px 12px", border: "none",
+                background: activeChapter === i ? accentLight : "transparent",
+                cursor: "pointer", fontFamily: uiFont, fontSize: 11,
+                color: activeChapter === i ? accent : ink,
+                fontWeight: activeChapter === i ? 600 : 400,
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                {isDiff && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#f59e0b", flexShrink: 0 }} />}
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Side-by-side panels */}
+        <div style={{ flex: 1, display: "flex" }}>
+          {renderPanel(projectA, chA, parasA, "left")}
+          <div style={{ width: 1, background: border }} />
+          {renderPanel(projectB, chB, parasB, "right")}
+        </div>
+      </div>
     </div>
   );
 }
@@ -4096,6 +4295,7 @@ export default function App() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchState, setSearchState] = useState(null); // { query, matches, activeMatchIdx, caseSensitive }
   const [connectionStatus, setConnectionStatus] = useState("online"); // "online" | "offline" | "reconnecting"
+  const [compareIds, setCompareIds] = useState(null); // [projectIdA, projectIdB] or null
 
   // ─── CONNECTION MONITOR ───
   useEffect(() => {
@@ -5480,6 +5680,7 @@ export default function App() {
       onLogout={async () => { await logout(); setView("loading"); }}
       onProfile={() => setView("profile")}
       onAdmin={() => setView("admin")}
+      onCompare={(idA, idB) => { setCompareIds([idA, idB]); setView("compare"); }}
     />
   );
 
@@ -5491,6 +5692,10 @@ export default function App() {
   // Profile
   if (view === "profile") return (
     <ProfileView user={user} onBack={() => setView("dashboard")} onAdmin={() => setView("admin")} onLogout={async () => { await logout(); setView("loading"); }} />
+  );
+
+  if (view === "compare" && compareIds) return (
+    <CompareView projectIdA={compareIds[0]} projectIdB={compareIds[1]} onBack={() => { setCompareIds(null); setView("dashboard"); }} />
   );
 
   if (view === "upload") return <OnboardingUpload onNext={handleUploadNext} />;
