@@ -2769,7 +2769,7 @@ function DashboardView({ user, onOpenProject, onNewProject, onLogout, onProfile,
             <button onClick={() => onCompare(compareSelection[0], compareSelection[1])} style={{
               fontFamily: uiFont, fontSize: 12, padding: "8px 20px", borderRadius: 7, border: "none",
               background: accent, color: "#fff", cursor: "pointer", fontWeight: 600,
-            }}>J\u00e4mf\u00f6r \u2192</button>
+            }}>{"Jämför →"}</button>
           </div>
         )}
 
@@ -2945,7 +2945,7 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, flexDirection: "column", gap: 16 }}>
         <div style={{ width: 36, height: 36, border: `3px solid ${border}`, borderTopColor: accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-        <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>Laddar j\u00e4mf\u00f6relse...</div>
+        <div style={{ fontFamily: uiFont, fontSize: 12, color: muted }}>{"Laddar jämförelse..."}</div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
@@ -2955,7 +2955,7 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: bg, flexDirection: "column", gap: 16 }}>
         <div style={{ fontFamily: uiFont, fontSize: 14, color: muted }}>Kunde inte ladda projekten.</div>
-        <button onClick={onBack} style={{ fontFamily: uiFont, fontSize: 12, padding: "8px 20px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>\u2190 Tillbaka</button>
+        <button onClick={onBack} style={{ fontFamily: uiFont, fontSize: 12, padding: "8px 20px", borderRadius: 7, border: `1px solid ${border}`, background: surface, color: ink, cursor: "pointer" }}>{"← Tillbaka"}</button>
       </div>
     );
   }
@@ -3014,7 +3014,7 @@ function CompareView({ projectIdA, projectIdB, onBack }) {
             }}>{para}</p>
           );
         }) : (
-          <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, fontStyle: "italic" }}>Inget inneh\u00e5ll</p>
+          <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, fontStyle: "italic" }}>{"Inget innehåll"}</p>
         )}
       </div>
     </div>
