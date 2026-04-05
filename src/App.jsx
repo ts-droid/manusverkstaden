@@ -5276,11 +5276,15 @@ export default function App() {
   const getEffectiveText = (para) => {
     if (!para?.suggestions?.length) return para?.text || "";
     let text = para.text;
-    // Apply accepted replacements — use same findInText as renderText for consistency
+    // Apply accepted replacements — but only if the replacement isn't already baked into para.text
     const acceptedSuggestions = (para.suggestions || []).filter(s => accepted.has(s.id) && s.original && s.replacement);
     if (acceptedSuggestions.length === 0) return text;
     // Sort by position (reverse) to apply from end to start
     const withPos = acceptedSuggestions.map(s => {
+      // Check if replacement is already in the text (baked in by applyReplacementToContent)
+      const normS = str => str.replace(/\s+/g, ' ').trim();
+      const alreadyBaked = normS(text).includes(normS(s.replacement));
+      if (alreadyBaked) return { s, match: null }; // Skip — already applied
       const match = findInText(text, s.original);
       return { s, match };
     }).filter(x => x.match).sort((a, b) => b.match.idx - a.match.idx);
@@ -5782,9 +5786,17 @@ export default function App() {
     const parts = [];
     let last = 0;
     // Pre-compute positions for sorting
-    const withPos = suggestions.filter(s => s.original).map(s => {
-
-      const match = findInText(text, s.original);
+    // For accepted suggestions whose replacement is already baked into para.text,
+    // search for s.replacement instead of s.original to avoid fuzzy mismatch duplication
+    const withPos = inlineSuggestions.filter(s => s.original).map(s => {
+      const isAcc = accepted.has(s.id);
+      // If accepted and replacement is baked into text, search for replacement instead
+      const searchText = isAcc && s.replacement ? s.replacement : s.original;
+      let match = findInText(text, searchText);
+      // Fallback: if accepted but replacement not found (not yet baked in), try original
+      if (!match && isAcc && s.replacement) {
+        match = findInText(text, s.original);
+      }
       return { s, match };
     }).filter(x => x.match).sort((a, b) => a.match.idx - b.match.idx);
 
@@ -5800,7 +5812,9 @@ export default function App() {
         if (isRej) {
           parts.push(<span key={`s${s.id}`} data-suggestion-id={s.id}>{...renderFormatted(matchedText, `r${s.id}`)}</span>);
         } else {
-          const displayText = isAcc && s.replacement ? s.replacement : matchedText;
+          // If accepted and replacement is baked in, matchedText IS the replacement — show as-is
+          // If accepted but not yet baked in, show s.replacement
+          const displayText = isAcc && s.replacement && matchedText !== s.replacement ? s.replacement : matchedText;
           parts.push(
             <span key={`s${s.id}`} data-suggestion-id={s.id} onClick={() => setActiveSuggestion(isAct ? null : s.id)} style={{
               background: isAcc ? "#dcfce7" : isAct ? `${p.color}30` : `${p.color}0c`,
