@@ -359,35 +359,51 @@ export async function exportToDocx({ title, chapters, paragraphsByChapter, accep
 
     // Two-stage pipeline: sanitize → format for print
     const processedText = cleanTextForExport(rawText);
-    const textParagraphs = processedText.split(/\n\s*\n/).filter(p => p.trim());
+    const rawParagraphs = processedText.split(/\n\s*\n/).filter(p => p.trim());
 
-    // Strip any remaining single newlines within paragraphs — these create
-    // invisible line breaks in Word that break first-line indentation.
-    // Also strip heading from content to avoid duplicating chapter title.
+    // Merge broken paragraphs: DB content may have \n\n between lines that
+    // belong to the same sentence (from Mammoth import). If a paragraph doesn't
+    // end with sentence-ending punctuation, merge it with the next paragraph.
+    const mergedParagraphs = [];
+    for (const para of rawParagraphs) {
+      const cleaned = para.trim().replace(/\n/g, ' ').replace(/ {2,}/g, ' ');
+      if (mergedParagraphs.length > 0) {
+        const prev = mergedParagraphs[mergedParagraphs.length - 1];
+        const lastChar = prev.slice(-1);
+        const wordCount = prev.split(/\s+/).length;
+        const looksLikeHeading = prev.length < 80 && (
+          prev === prev.toUpperCase() ||
+          /^(kapitel|chapter|\d+\.?\s)/i.test(prev) ||
+          (wordCount <= 5 && !/,/.test(prev))
+        );
+        if (!looksLikeHeading && prev.length > 0 &&
+            !['.', '!', '?', '\u201D', '\u2019', '\u00BB', '"', "'", '\u2026', ')'].includes(lastChar)) {
+          mergedParagraphs[mergedParagraphs.length - 1] = prev + ' ' + cleaned;
+          continue;
+        }
+      }
+      mergedParagraphs.push(cleaned);
+    }
+
+    // Strip heading from content to avoid duplicating chapter title
     const headingPattern = /^((?:kapitel|chapter)\s+\d+|(?:f[öo]rsta|andra|tredje|fj[äa]rde|femte|sj[äa]tte|sjunde|[åa]ttonde|nionde|tionde|elfte|tolfte|trettonde|fjortonde|femtonde|sextonde|sjuttonde|artonde|nittonde|tjugo\S*|trettio\S*|fyrtio\S*|femtio\S*)\s+kapitlet.*)$/i;
     let exportTitle = chapter.title;
-    let bodyParagraphs = textParagraphs;
+    let bodyParagraphs = mergedParagraphs;
 
-    if (textParagraphs.length > 0 && headingPattern.test(textParagraphs[0].trim())) {
-      // Use the manuscript's own heading as the export title
-      exportTitle = textParagraphs[0].trim();
-      bodyParagraphs = textParagraphs.slice(1);
+    if (mergedParagraphs.length > 0 && headingPattern.test(mergedParagraphs[0].trim())) {
+      exportTitle = mergedParagraphs[0].trim();
+      bodyParagraphs = mergedParagraphs.slice(1);
     }
 
     const indentTwips = Math.round(firstLineIndent * 567);
 
     const children = [
       formatTitle(exportTitle, { font, fontSize, chapterTitleStyle, chapterTitleAlign, chapterStartPosition }),
-      ...bodyParagraphs.map(text => {
-        // Critical: remove ALL newlines within each paragraph text.
-        // Embedded \n becomes a soft return in Word, which breaks firstLine indent.
-        const cleanText = text.trim().replace(/\n/g, ' ').replace(/ {2,}/g, ' ');
-        return new Paragraph({
-          spacing: { line: lineSpacingTwips, after: paragraphSpacing ? Math.round(lineSpacingTwips * 0.5) : 0 },
-          indent: indentTwips > 0 ? { firstLine: indentTwips } : undefined,
-          children: parseFormattedText(cleanText, font, sizeHalfPts),
-        });
-      }),
+      ...bodyParagraphs.map(text => new Paragraph({
+        spacing: { line: lineSpacingTwips, after: paragraphSpacing ? Math.round(lineSpacingTwips * 0.5) : 0 },
+        indent: indentTwips > 0 ? { firstLine: indentTwips } : undefined,
+        children: parseFormattedText(text, font, sizeHalfPts),
+      })),
     ];
 
     return {
