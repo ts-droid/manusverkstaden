@@ -5187,89 +5187,96 @@ export default function App() {
   };
 
   const applyReplacementToContent = (chapterId, originalText, replacementText) => {
-    // Safety: if replacement text already exists in the chapter, skip (prevent duplication)
-    let savedContent = null;
+    // Work at paragraph level to avoid fuzzy matching across the entire chapter
+    const paras = paragraphsByChapter[chapterId];
+    if (!paras || paras.length === 0) return;
 
-    setChapters(prev => {
-      const ch = prev.find(c => c.id === chapterId);
-      if (!ch) return prev;
-      // If replacement already exists in text, skip (prevent double-application)
-      const normCheck = s => s.replace(/\s+/g, ' ').trim();
-      if (replacementText && normCheck(ch.content).includes(normCheck(replacementText)) && normCheck(originalText) !== normCheck(replacementText)) {
-        return prev;
+    // Find which paragraph contains the original text
+    let targetIdx = -1;
+    let matchInPara = null;
+    for (let i = 0; i < paras.length; i++) {
+      const match = findInText(paras[i].text, originalText);
+      if (match) {
+        targetIdx = i;
+        matchInPara = match;
+        break;
       }
-      const newContent = fuzzyReplaceInText(ch.content, originalText, replacementText);
-      if (!newContent || newContent === ch.content) {
-        console.warn("[Bake-in] Could not find original text in chapter:", originalText.slice(0, 80));
-        return prev;
-      }
-      savedContent = newContent;
-      return prev.map(c => c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c);
-    });
+    }
 
-    // After chapter content updated, also refresh paragraphs to keep para.text in sync
-    setTimeout(() => {
-      if (savedContent) {
-        // Rebuild paragraphs from new content, preserving suggestions
-        const newParas = splitIntoParagraphs(savedContent);
-        const oldParas = paragraphsByChapter[chapterId] || [];
-        const enriched = newParas.map(np => {
-          // Match by text similarity — find closest old paragraph
-          const exact = oldParas.find(op => op.text === np.text);
-          if (exact?.suggestions?.length) return { ...np, suggestions: exact.suggestions };
-          // Fuzzy: check if old paragraph text is a substring or vice versa
-          const fuzzy = oldParas.find(op => np.text.includes(op.text?.substring(0, 40)) || op.text?.includes(np.text.substring(0, 40)));
-          if (fuzzy?.suggestions?.length) return { ...np, suggestions: fuzzy.suggestions };
-          return np;
+    if (targetIdx === -1 || !matchInPara) {
+      console.warn("[Bake-in] Could not find original text in any paragraph:", originalText.slice(0, 80));
+      return;
+    }
+
+    // Replace within the specific paragraph using exact positions
+    const para = paras[targetIdx];
+    const newParaText = para.text.slice(0, matchInPara.idx) + replacementText + para.text.slice(matchInPara.idx + matchInPara.len);
+
+    // Update paragraph directly — keep suggestions attached
+    const updatedParas = paras.map((p, i) =>
+      i === targetIdx ? { ...p, text: newParaText } : p
+    );
+
+    // Update paragraphs (synchronous — no setTimeout race condition)
+    setParagraphsByChapter(prev => ({ ...prev, [chapterId]: updatedParas }));
+
+    // Rebuild chapter content from updated paragraphs
+    const newContent = updatedParas.map(p => p.text).join("\n\n");
+    setChapters(prev => prev.map(c =>
+      c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c
+    ));
+
+    // Save to database
+    if (serverProjectId) {
+      apiClient.updateChapter(chapterId, { content: newContent })
+        .catch(e => {
+          console.error("[Bake-in] DB save failed:", e);
+          setSaveStatus("error");
         });
-        setParagraphsByChapter(prev => ({ ...prev, [chapterId]: enriched }));
-
-        if (serverProjectId) {
-          apiClient.updateChapter(chapterId, { content: savedContent })
-            .catch(e => {
-              console.error("[Bake-in] DB save failed:", e);
-              setSaveStatus("error");
-            });
-        }
-      } else {
-        console.warn("[Bake-in] No content saved — replacement not applied");
-      }
-    }, 0);
+    }
   };
 
   // Batch version: apply multiple replacements in ONE state update
   const applyBatchReplacements = (chapterId, replacements) => {
-    let savedContent = null;
+    const paras = paragraphsByChapter[chapterId];
+    if (!paras || paras.length === 0) return;
 
-    setChapters(prev => {
-      const ch = prev.find(c => c.id === chapterId);
-      if (!ch) return prev;
-      let content = ch.content;
-      let applied = 0;
-      for (const { original, replacement } of replacements) {
-        if (!original || !replacement) continue;
-        const result = fuzzyReplaceInText(content, original, replacement);
-        if (result && result !== content) {
-          content = result;
+    // Work on a mutable copy of paragraph texts
+    const updatedParas = paras.map(p => ({ ...p }));
+    let applied = 0;
+
+    for (const { original, replacement } of replacements) {
+      if (!original || !replacement) continue;
+      // Find which paragraph contains this original text
+      for (let i = 0; i < updatedParas.length; i++) {
+        const match = findInText(updatedParas[i].text, original);
+        if (match) {
+          updatedParas[i] = {
+            ...updatedParas[i],
+            text: updatedParas[i].text.slice(0, match.idx) + replacement + updatedParas[i].text.slice(match.idx + match.len),
+          };
           applied++;
-        } else {
-          console.warn("[Batch bake-in] Could not find:", original.slice(0, 60));
+          break;
         }
       }
-      if (content === ch.content) return prev;
-      savedContent = content;
-      return prev.map(c => c.id === chapterId ? { ...c, content, wordCount: countWords(content) } : c);
-    });
+    }
 
-    setTimeout(() => {
-      if (savedContent && serverProjectId) {
-        apiClient.updateChapter(chapterId, { content: savedContent })
-          .catch(e => {
-            console.error("[Batch bake-in] DB save failed:", e);
-            setSaveStatus("error");
-          });
-      }
-    }, 0);
+    if (applied === 0) return;
+
+    setParagraphsByChapter(prev => ({ ...prev, [chapterId]: updatedParas }));
+
+    const newContent = updatedParas.map(p => p.text).join("\n\n");
+    setChapters(prev => prev.map(c =>
+      c.id === chapterId ? { ...c, content: newContent, wordCount: countWords(newContent) } : c
+    ));
+
+    if (serverProjectId) {
+      apiClient.updateChapter(chapterId, { content: newContent })
+        .catch(e => {
+          console.error("[Batch bake-in] DB save failed:", e);
+          setSaveStatus("error");
+        });
+    }
   };
 
   // ─── GET EFFECTIVE TEXT (with accepted replacements applied) ───
