@@ -1,6 +1,17 @@
 import mammoth from 'mammoth';
 
 /**
+ * Convert a string to title case: "FÖRSTA KAPITLET" → "Första kapitlet"
+ */
+function toTitleCase(str) {
+  if (!str) return str;
+  if (str === str.toUpperCase() && str.length > 1) {
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  }
+  return str;
+}
+
+/**
  * Clean imported text — remove invisible Unicode characters, normalize
  * whitespace, and ensure consistent formatting BEFORE chapter splitting.
  */
@@ -91,7 +102,7 @@ function buildChaptersFromMarkers(text, markers) {
     const content = mergeBrokenParagraphs(text.slice(start, end).trim());
     const words = content.split(/\s+/).filter(w => w).length;
     if (content.length === 0) continue;
-    chapters.push({ title: markers[i].title, content, wordCount: words });
+    chapters.push({ title: toTitleCase(markers[i].title), content, wordCount: words });
   }
   return chapters.length > 0 ? chapters : splitByWordCount(text, 5000);
 }

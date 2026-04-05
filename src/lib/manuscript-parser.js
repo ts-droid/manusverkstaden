@@ -236,7 +236,8 @@ function splitIntoChapters(text) {
 
     // Extract chapter number from heading for proper ordering
     let chapterNumber = i + 1; // fallback to parse order
-    let displayTitle = `Kapitel ${i + 1}`; // sidebar label
+    // Use original title from manuscript, formatted nicely (title case)
+    let displayTitle = toTitleCase(title);
 
     // Check ordinal format: "Tjugoandra kapitlet" → number 22
     const ordinalMatch = title.match(new RegExp(`^(${SWEDISH_ORDINALS})\\s+kapitlet`, 'i'));
@@ -244,7 +245,6 @@ function splitIntoChapters(text) {
       const num = ordinalToNumber(ordinalMatch[1]);
       if (num) {
         chapterNumber = num;
-        displayTitle = `Kapitel ${num}`;
       }
     }
 
@@ -252,7 +252,6 @@ function splitIntoChapters(text) {
     const numericMatch = title.match(/(?:kapitel|chapter)\s+(\d+)/i);
     if (numericMatch) {
       chapterNumber = parseInt(numericMatch[1], 10);
-      displayTitle = `Kapitel ${chapterNumber}`;
     }
 
     // Include original heading in content so the manuscript text is unmodified
@@ -334,6 +333,19 @@ function splitByWordCount(text, targetWords) {
   }
 
   return chapters;
+}
+
+/**
+ * Convert a string to title case: "FÖRSTA KAPITLET" → "Första kapitlet"
+ */
+function toTitleCase(str) {
+  if (!str) return str;
+  // If ALL CAPS, convert to "First word capitalized, rest lowercase"
+  if (str === str.toUpperCase() && str.length > 1) {
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  }
+  // Already mixed case — keep as-is
+  return str;
 }
 
 /**
