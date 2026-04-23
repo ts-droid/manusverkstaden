@@ -255,6 +255,10 @@ class ApiClient {
   async getAdminPrompts() { return this.request('/admin/prompts'); }
   async updateAdminPrompt(key, content) { return this.request(`/admin/prompts/${key}`, { method: 'PUT', body: JSON.stringify({ content }) }); }
 
+  // Admin AI codeset switch
+  async getAdminCodesets() { return this.request('/admin/codesets'); }
+  async setAdminCodeset(id) { return this.request('/admin/codesets/active', { method: 'PUT', body: JSON.stringify({ id }) }); }
+
   // Admin word list
   async getAdminWordList() { return this.request('/admin/word-list'); }
   async addAdminWordEntry(data) { return this.request('/admin/word-list', { method: 'POST', body: JSON.stringify(data) }); }

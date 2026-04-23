@@ -10,6 +10,7 @@ if (process.env.NODE_ENV === 'production') {
   console.log('[config] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'MISSING');
   console.log('[config] JWT_SECRET:', process.env.JWT_SECRET ? 'SET' : 'MISSING (using default)');
   console.log('[config] ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'SET' : 'MISSING');
+  console.log('[config] OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'SET' : 'MISSING');
   console.log('[config] STRIPE_SECRET_KEY:', process.env.STRIPE_SECRET_KEY ? 'SET' : 'MISSING');
 }
 
@@ -26,6 +27,12 @@ export const config = {
 
   // Anthropic
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+
+  // OpenAI
+  openaiApiKey: process.env.OPENAI_API_KEY,
+
+  // Default AI codeset (claude-only, openai-only, or dual-provider)
+  defaultCodeset: process.env.DEFAULT_CODESET || 'claude-only',
 
   // Stripe
   stripeSecretKey: process.env.STRIPE_SECRET_KEY,

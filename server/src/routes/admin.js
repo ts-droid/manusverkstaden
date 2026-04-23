@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { getRevenueStats } from '../services/stripe-revenue.js';
+import { getActiveCodeset, setActiveCodeset, CODESETS } from '../services/aiProvider.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -343,6 +344,49 @@ router.put('/prompts/:key', async (req, res, next) => {
     });
 
     res.json({ prompt });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /codesets ───
+// Returns all available codesets + which one is currently active
+router.get('/codesets', async (req, res, next) => {
+  try {
+    const active = await getActiveCodeset();
+    res.json({
+      active: active.id,
+      codesets: Object.values(CODESETS).map(cs => ({
+        id: cs.id,
+        name: cs.name,
+        description: cs.description,
+        strategy: cs.strategy,
+        defaultProvider: cs.defaultProvider,
+        routing: cs.routing,
+        temperature: cs.temperature,
+        strengths: cs.strengths,
+        weaknesses: cs.weaknesses,
+        pipeline: cs.pipeline,
+        reasoning: cs.reasoning,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PUT /codesets/active ───
+// Switch the active codeset at runtime. Body: { id: "claude-only" | "openai-only" | "dual-provider" }
+router.put('/codesets/active', async (req, res, next) => {
+  try {
+    const { id } = req.body;
+    if (!id || !CODESETS[id]) {
+      return res.status(400).json({
+        error: `Ogiltigt kodset. Giltiga: ${Object.keys(CODESETS).join(', ')}`,
+      });
+    }
+    const codeset = await setActiveCodeset(id, req.user.email);
+    res.json({ active: codeset.id, codeset });
   } catch (err) {
     next(err);
   }

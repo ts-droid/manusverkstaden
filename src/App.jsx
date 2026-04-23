@@ -3475,6 +3475,10 @@ function SuperAdminView({ user, onBack, onDashboard }) {
     try { return JSON.parse(localStorage.getItem("mv_dismissed_patterns") || "[]"); } catch { return []; }
   });
   const [wordListSubTab, setWordListSubTab] = useState("candidates"); // "candidates" | "words"
+  // Codeset state (AI provider switch)
+  const [codesets, setCodesets] = useState([]);
+  const [activeCodeset, setActiveCodeset] = useState(null);
+  const [switchingCodeset, setSwitchingCodeset] = useState(false);
 
   const tabs = [
     { id: "overview", label: "Översikt" },
@@ -3482,6 +3486,7 @@ function SuperAdminView({ user, onBack, onDashboard }) {
     { id: "usage", label: "Förbrukning" },
     { id: "prompts", label: "Prompter" },
     { id: "wordlist", label: "Ordlista" },
+    { id: "ai", label: "AI-modell" },
   ];
 
   // Fetch data when tab changes
@@ -3515,6 +3520,12 @@ function SuperAdminView({ user, onBack, onDashboard }) {
           if (!cancelled) {
             setWordList(wlData.entries || []);
             setRejectedPatterns(rejData.patterns || []);
+          }
+        } else if (tab === "ai") {
+          const data = await apiClient.getAdminCodesets();
+          if (!cancelled) {
+            setCodesets(data.codesets || []);
+            setActiveCodeset(data.active || null);
           }
         }
       } catch (err) {
@@ -4421,6 +4432,152 @@ function SuperAdminView({ user, onBack, onDashboard }) {
                 })()}
               </div>
             )}
+          </div>
+        ))}
+
+        {/* ─── AI-MODELL (CODESET SWITCH) ─── */}
+        {tab === "ai" && (loading ? spinner : error ? errorBox : (
+          <div>
+            <p style={{ fontFamily: uiFont, fontSize: 13, color: muted, margin: "0 0 8px", lineHeight: 1.6 }}>
+              Välj vilket AI-kodset som ska användas för alla nya analyser. Växlingen sker direkt — befintliga pågående anrop slutförs med föregående kodset.
+            </p>
+            <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 24px", lineHeight: 1.6, fontStyle: "italic" }}>
+              Tips: Skapa ett projekt, kör med ett kodset, duplicera projektet, växla kodset, kör igen — använd sedan Jämför-vyn för att se skillnaderna.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {codesets.map(cs => {
+                const isActive = cs.id === activeCodeset;
+                return (
+                  <div key={cs.id} style={{
+                    background: surface,
+                    border: `2px solid ${isActive ? accent : border}`,
+                    borderRadius: 12,
+                    padding: "18px 22px",
+                    transition: "border-color 0.15s",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                          <h3 style={{ fontFamily: uiFont, fontSize: 15, fontWeight: 600, color: ink, margin: 0 }}>{cs.name}</h3>
+                          {isActive && (
+                            <span style={{
+                              fontFamily: uiFont, fontSize: 10, fontWeight: 600,
+                              padding: "3px 10px", borderRadius: 5,
+                              background: accent, color: "#fff",
+                              textTransform: "uppercase", letterSpacing: "0.04em",
+                            }}>Aktiv</span>
+                          )}
+                          <span style={{
+                            fontFamily: uiFont, fontSize: 10,
+                            padding: "3px 8px", borderRadius: 4,
+                            background: "#f0ece5", color: muted,
+                            textTransform: "uppercase", letterSpacing: "0.03em",
+                          }}>{cs.strategy}</span>
+                        </div>
+                        <p style={{ fontFamily: uiFont, fontSize: 12, color: muted, margin: "0 0 10px", lineHeight: 1.5 }}>
+                          {cs.description}
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (isActive || switchingCodeset) return;
+                          setSwitchingCodeset(true);
+                          try {
+                            const res = await apiClient.setAdminCodeset(cs.id);
+                            setActiveCodeset(res.active || cs.id);
+                          } catch (err) {
+                            alert("Kunde inte växla kodset: " + (err.message || "okänt fel"));
+                          } finally {
+                            setSwitchingCodeset(false);
+                          }
+                        }}
+                        disabled={isActive || switchingCodeset}
+                        style={{
+                          fontFamily: uiFont, fontSize: 12, fontWeight: 600,
+                          padding: "8px 18px", borderRadius: 7,
+                          border: isActive ? `1px solid ${border}` : "none",
+                          background: isActive ? "transparent" : accent,
+                          color: isActive ? muted : "#fff",
+                          cursor: isActive || switchingCodeset ? "default" : "pointer",
+                          opacity: switchingCodeset ? 0.6 : 1,
+                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                        }}>
+                        {isActive ? "✓ Aktiv" : switchingCodeset ? "Växlar..." : "Aktivera"}
+                      </button>
+                    </div>
+
+                    {/* Routing table */}
+                    {cs.routing && (
+                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${border}` }}>
+                        <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                          Routning per uppgift
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 6 }}>
+                          {Object.entries(cs.routing).map(([task, provider]) => (
+                            <div key={task} style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between",
+                              padding: "6px 10px", borderRadius: 6,
+                              background: provider === "claude" ? "#f5f0ea" : "#e8f3ee",
+                              fontSize: 11, fontFamily: uiFont,
+                            }}>
+                              <span style={{ color: ink, fontWeight: 500 }}>{task}</span>
+                              <span style={{
+                                fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em",
+                                color: provider === "claude" ? "#a0522d" : "#2d8659",
+                              }}>{provider}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Strengths / Weaknesses */}
+                    {(cs.strengths?.length > 0 || cs.weaknesses?.length > 0) && (
+                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${border}`, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                        {cs.strengths?.length > 0 && (
+                          <div>
+                            <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: "#2d8659", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                              Styrkor
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: 16, fontFamily: uiFont, fontSize: 11, color: ink, lineHeight: 1.6 }}>
+                              {cs.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {cs.weaknesses?.length > 0 && (
+                          <div>
+                            <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: "#b04040", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                              Svagheter
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: 16, fontFamily: uiFont, fontSize: 11, color: ink, lineHeight: 1.6 }}>
+                              {cs.weaknesses.map((w, i) => <li key={i}>{w}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Pipeline (dual-provider only) */}
+                    {cs.pipeline?.length > 0 && (
+                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${border}` }}>
+                        <div style={{ fontFamily: uiFont, fontSize: 10, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                          Pipeline-ordning
+                        </div>
+                        <ol style={{ margin: 0, paddingLeft: 18, fontFamily: uiFont, fontSize: 11, color: ink, lineHeight: 1.8 }}>
+                          {cs.pipeline.map((step, i) => <li key={i}>{step}</li>)}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: 24, padding: "14px 18px", background: "#fef9e7", border: "1px solid #f5e6a8", borderRadius: 8, fontFamily: uiFont, fontSize: 12, color: "#6b5a1a", lineHeight: 1.6 }}>
+              <strong>Obs:</strong> OpenAI-rutter kräver att <code style={{ background: "#f5e6a8", padding: "1px 5px", borderRadius: 3 }}>OPENAI_API_KEY</code> är satt i miljövariabler. Om nyckeln saknas växlar systemet automatiskt till Claude som fallback.
+            </div>
           </div>
         ))}
 

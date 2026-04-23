@@ -1,10 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaClient } from '@prisma/client';
-import { config } from '../config.js';
-
-const client = config.anthropicApiKey
-  ? new Anthropic({ apiKey: config.anthropicApiKey, timeout: 120000 })
-  : null;
+import { sendMessage as providerSendMessage, parseJsonResponse as providerParseJson } from './aiProvider.js';
 
 const prisma = new PrismaClient();
 
@@ -58,62 +53,46 @@ async function getWordListBlock() {
 }
 
 /**
- * Send a message to Claude API (server-side only).
+ * Send a message via the provider-agnostic aiProvider wrapper.
+ * The `promptKey` routes to the right provider/model based on the active codeset.
+ *
+ * The returned object has { text, meta, raw, provider, model } — we keep the
+ * old extractText/extractMeta helpers so downstream code can stay unchanged.
  */
-async function sendMessage({ model = 'claude-sonnet-4-20250514', max_tokens = 4096, system, messages }) {
-  if (!client) {
-    throw new Error('Anthropic API-nyckel saknas. Ställ in ANTHROPIC_API_KEY.');
-  }
-
-  const maxRetries = 2;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await client.messages.create({
-        model,
-        max_tokens,
-        system,
-        messages,
-      });
-      return response;
-    } catch (err) {
-      const status = err?.status || err?.error?.status;
-      const isRetryable = status === 500 || status === 529 || err?.code === 'ECONNRESET';
-      if (isRetryable && attempt < maxRetries) {
-        const delay = 1000 * (attempt + 1); // 1s, 2s
-        console.warn(`[AI] Retryable error (${status || err.code}), attempt ${attempt + 1}/${maxRetries}, waiting ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-      throw err;
-    }
-  }
+async function sendMessage(opts) {
+  return providerSendMessage(opts);
 }
 
-/**
- * Extract usage metadata from an Anthropic API response.
- */
-function extractMeta(response, model = 'claude-sonnet-4-20250514') {
+function extractMeta(response, fallbackModel = 'claude-sonnet-4-20250514') {
+  if (response?.meta) return response.meta;
   const usage = response?.usage || {};
   return {
-    inputTokens: usage.input_tokens || 0,
-    outputTokens: usage.output_tokens || 0,
-    model,
+    inputTokens: usage.input_tokens || usage.prompt_tokens || 0,
+    outputTokens: usage.output_tokens || usage.completion_tokens || 0,
+    model: fallbackModel,
   };
 }
 
 function extractText(response) {
-  if (!response?.content) return '';
-  return response.content
-    .filter(b => b.type === 'text')
-    .map(b => b.text)
-    .join('');
+  // New aiProvider format
+  if (response?.text != null) return response.text;
+  // Legacy Anthropic content blocks
+  if (response?.content) {
+    return response.content
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('');
+  }
+  // OpenAI legacy shape
+  if (response?.choices?.[0]?.message?.content) {
+    return response.choices[0].message.content;
+  }
+  return '';
 }
 
 function parseJsonResponse(text) {
-  // Try to extract JSON from markdown code blocks
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const jsonStr = codeBlockMatch ? codeBlockMatch[1].trim() : text.trim();
-  return JSON.parse(jsonStr);
+  // Use the provider wrapper's robust parser (handles markdown blocks + trimming)
+  return providerParseJson(text, { fallbackExtraction: true });
 }
 
 /**
@@ -406,6 +385,7 @@ Returnera ENBART JSON-arrayen.`);
     : pass1Prompt) + wordListBlock;
 
   const pass1Promise = sendMessage({
+    promptKey: 'pass1',
     system: pass1System,
     messages: [{ role: 'user', content: `Granska:\n\n${content}` }],
     max_tokens: 8192,
@@ -465,6 +445,7 @@ Returnera JSON-array (samma format som pass 1). Tom array [] om inga nya fel hit
     : '\n\nInga fel hittades i pass 1.';
 
   const pass2Response = await sendMessage({
+    promptKey: 'pass2',
     system: `${pass2Prompt}${dnaStr}${pass1Summary}${wordListBlock}`,
     messages: [{ role: 'user', content: `Granska igen:\n\n${content}` }],
     max_tokens: 8192,
@@ -509,7 +490,8 @@ Returnera JSON:
   }));
 
   const validateResponse = await sendMessage({
-    model: 'claude-haiku-4-5-20251001',
+    promptKey: 'validate',
+    cheap: true,
     system: validatePrompt,
     messages: [{ role: 'user', content: `Validera dessa ${allSuggestions.length} förslag:\n${JSON.stringify(suggestionsForValidation, null, 2)}\n\nOriginaltexten (för kontext):\n${content.slice(0, 8000)}` }],
     max_tokens: 4096,
@@ -595,6 +577,7 @@ Om inga stilistiska problem hittas, returnera en tom array: []`);
     const existingSummary = `\n\nRedan hittade fel (${allSuggestions.length} st validerade röda).`;
 
     const pass3Response = await sendMessage({
+      promptKey: 'pass3',
       system: `${pass3Prompt}${dnaStrFormatted}${existingSummary}`,
       messages: [{ role: 'user', content: `Analysera stil:\n\n${content}` }],
       max_tokens: 8192,
@@ -663,6 +646,7 @@ Returnera ENBART giltig JSON-array:
 Om inga förslag hittas, returnera en tom array: []`);
 
     const pass4Response = await sendMessage({
+      promptKey: 'pass4',
       system: `${pass4Prompt}${dnaStrFormatted}`,
       messages: [{ role: 'user', content: `Djupanalysera:\n\n${content}` }],
       max_tokens: 8192,
@@ -719,6 +703,7 @@ Tom array [] om inga problem hittas.`);
       : '';
 
     const pass3Response = await sendMessage({
+      promptKey: 'pass3',
       system: `${pass3Prompt}${dnaStrFormatted}${existingSummary}`,
       messages: [{ role: 'user', content: `Analysera stil:\n\n${content}` }],
       max_tokens: 8192,
@@ -740,6 +725,7 @@ Returnera ENBART giltig JSON-array med objekt: { "type", "priority", "level", "o
 Tom array [] om inga förslag hittas.`);
 
     const pass4Response = await sendMessage({
+      promptKey: 'pass4',
       system: `${pass4Prompt}${dnaStrFormatted}`,
       messages: [{ role: 'user', content: `Djupanalysera:\n\n${content}` }],
       max_tokens: 8192,
@@ -775,7 +761,8 @@ Returnera JSON:
 
     try {
       const validateResponse = await sendMessage({
-        model: 'claude-haiku-4-5-20251001',
+        promptKey: 'validate',
+        cheap: true,
         system: `${validatePrompt}${dnaStrFormatted}`,
         messages: [{ role: 'user', content: `Validera dessa ${allSuggestions.length} förslag:\n${JSON.stringify(suggestionsForValidation, null, 2)}\n\nOriginaltexten (för kontext):\n${content.slice(0, 8000)}` }],
         max_tokens: 4096,
@@ -891,14 +878,18 @@ Returnera ENBART giltig JSON utan förklaringar:
 
   const textSlice = allText.slice(0, 50000);
 
-  // Run both DNA analyses in parallel
+  // Run both DNA analyses in parallel (both cacheable — 30-day TTL in aiProvider)
   const [storyResponse, authorResponse] = await Promise.all([
     sendMessage({
+      promptKey: 'storyDNA',
+      cache: true,
       system: storyPrompt,
       messages: [{ role: 'user', content: `Analysera berättelsens DNA:\n\n${textSlice}` }],
       max_tokens: 4096,
     }),
     sendMessage({
+      promptKey: 'authorDNA',
+      cache: true,
       system: `${authorPrompt}${feedbackBlock}`,
       messages: [{ role: 'user', content: `Analysera författarens stil:\n\n${textSlice}` }],
       max_tokens: 4096,
@@ -1046,6 +1037,7 @@ export async function developText(mode, input, options = {}) {
   }
 
   const response = await sendMessage({
+    promptKey: 'develop',
     system: systemPrompt,
     messages: [{ role: 'user', content: userMsg }],
     max_tokens: 4096,
@@ -1124,7 +1116,7 @@ Returnera JSON:
 
   const model = 'claude-sonnet-4-20250514';
   const response = await sendMessage({
-    model,
+    promptKey: 'translate',
     system: systemPrompt,
     messages: [{ role: 'user', content }],
     max_tokens: 8192,
@@ -1176,6 +1168,7 @@ Returnera ENBART JSON.`;
   const systemPrompt = await getPrompt('ai:final_check', defaultPrompt);
 
   const response = await sendMessage({
+    promptKey: 'finalCheck',
     system: `${systemPrompt}\n\nGenrer: ${genres.join(', ') || 'inga'}`,
     messages: [{ role: 'user', content: `Gör en slutkontroll av följande manuskript:\n\n${allText.slice(0, 80000)}` }],
     max_tokens: 8192,
