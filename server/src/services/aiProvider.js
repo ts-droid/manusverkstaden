@@ -21,7 +21,6 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { config } from '../config.js';
 import { CODESETS, MODELS, resolveCall } from '../config/codesets.js';
@@ -76,31 +75,18 @@ export async function setActiveCodeset(id, updatedBy = 'admin') {
   return CODESETS[id];
 }
 
-// ─── Result cache (in-memory, 30-day TTL) ─────────────────────────────
-const resultCache = new Map();
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-function cacheKey({ promptKey, system, messages, model, temperature }) {
-  const payload = JSON.stringify({ promptKey, system, messages, model, temperature });
-  return crypto.createHash('sha256').update(payload).digest('hex');
-}
-
-function cacheGet(key) {
-  const entry = resultCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.at > CACHE_TTL_MS) {
-    resultCache.delete(key);
-    return null;
-  }
-  return entry.value;
-}
-
-function cacheSet(key, value) {
-  resultCache.set(key, { value, at: Date.now() });
-}
-
-// Which promptKeys should be cached (expensive, deterministic)
-const CACHEABLE_TASKS = new Set(['authorDNA', 'storyDNA']);
+// ─── Persistent storage note ──────────────────────────────────────────
+// DNA profiles are stored PERMANENTLY in the database:
+//   - User.authorDna        → per-user, cumulates across manuscripts
+//   - User.authorDnaVersion → version counter
+//   - Project.storyDna      → per-manuscript, saved forever
+//   - Project.dnaProfile    → legacy combined format
+//
+// The caller (reviewChapterMultiPass in ai.js) only calls generateDNAProfile
+// when dnaProfile is missing — DB acts as the persistent cache. No in-memory
+// cache is needed; the only reason to regenerate DNA is if the user explicitly
+// asks (e.g. "Recompute DNA" button in admin) or if the manuscript text changes
+// significantly.
 
 // ─── JSON parsing ─────────────────────────────────────────────────────
 export function parseJsonResponse(text, { fallbackExtraction = false } = {}) {
@@ -244,9 +230,11 @@ async function withRetry(fn, { maxRetries = 2, label = 'ai' } = {}) {
  * @param {number} [opts.max_tokens=4096]
  * @param {boolean} [opts.cheap=false] - Use the cheap model variant (haiku/gpt-4o-mini)
  * @param {number} [opts.temperature] - Override codeset temperature
- * @param {boolean} [opts.cache=false] - Enable result caching (auto-enabled for DNA tasks)
  * @param {boolean} [opts.allowFallback=true] - Try alternate provider if primary fails
  * @returns {Promise<{text, meta, raw, provider, model}>}
+ *
+ * Note: DNA profiles are persisted in the DB (User.authorDna, Project.storyDna)
+ * and callers already skip regeneration when DNA exists — no in-memory cache here.
  */
 export async function sendMessage({
   promptKey = 'default',
@@ -255,7 +243,6 @@ export async function sendMessage({
   max_tokens = 4096,
   cheap = false,
   temperature,
-  cache = false,
   allowFallback = true,
 }) {
   const codeset = await getActiveCodeset();
@@ -268,24 +255,6 @@ export async function sendMessage({
     system && !system.includes('Return ONLY valid JSON')
       ? `${system}\n\nREGLER: ${rulesBlock}`
       : system;
-
-  // Cache check
-  const shouldCache = cache || CACHEABLE_TASKS.has(promptKey);
-  let key;
-  if (shouldCache) {
-    key = cacheKey({
-      promptKey,
-      system: systemWithRules,
-      messages,
-      model: call.model,
-      temperature: effectiveTemp,
-    });
-    const hit = cacheGet(key);
-    if (hit) {
-      console.log(`[aiProvider] Cache hit for ${promptKey} (${call.provider})`);
-      return hit;
-    }
-  }
 
   const primaryCall = () =>
     call.provider === 'openai'
@@ -310,7 +279,6 @@ export async function sendMessage({
       maxRetries: 2,
       label: `aiProvider:${call.provider}:${promptKey}`,
     });
-    if (shouldCache && key) cacheSet(key, result);
     return result;
   } catch (primaryErr) {
     console.warn(
@@ -354,7 +322,6 @@ export async function sendMessage({
       maxRetries: 1,
       label: `aiProvider:fallback:${altProvider}:${promptKey}`,
     });
-    // Don't cache fallback results (quality may differ)
     return result;
   }
 }

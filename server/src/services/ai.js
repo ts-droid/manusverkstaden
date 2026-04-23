@@ -878,18 +878,19 @@ Returnera ENBART giltig JSON utan förklaringar:
 
   const textSlice = allText.slice(0, 50000);
 
-  // Run both DNA analyses in parallel (both cacheable — 30-day TTL in aiProvider)
+  // Run both DNA analyses in parallel.
+  // Persistent storage: storyDna saves to Project.storyDna, authorDna saves to
+  // User.authorDna (per-user, versioned). The caller in reviewChapterMultiPass
+  // already skips regeneration when DNA exists in DB — no in-memory cache needed.
   const [storyResponse, authorResponse] = await Promise.all([
     sendMessage({
       promptKey: 'storyDNA',
-      cache: true,
       system: storyPrompt,
       messages: [{ role: 'user', content: `Analysera berättelsens DNA:\n\n${textSlice}` }],
       max_tokens: 4096,
     }),
     sendMessage({
       promptKey: 'authorDNA',
-      cache: true,
       system: `${authorPrompt}${feedbackBlock}`,
       messages: [{ role: 'user', content: `Analysera författarens stil:\n\n${textSlice}` }],
       max_tokens: 4096,
